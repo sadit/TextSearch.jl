@@ -1,5 +1,5 @@
 module TextModel
-using NNS
+using SimilaritySearch
 include("io.jl")
 include("textconfig.jl")
 include("basicmodels.jl")
