@@ -1,12 +1,12 @@
 export EntModel, vectorize, id2token
 
 type EntModel
-    token2term::Dict{String,Term}
+    token2term::Dict{String,WeightedToken}
     config::TextConfig
 end
 
 function EntModel(model::DistModel)
-    token2term = Dict{String,Term}()
+    token2term = Dict{String,WeightedToken}()
     nclasses = length(model.sizes)
     tokenID = 0
     maxent = log2(nclasses)
@@ -21,14 +21,14 @@ function EntModel(model::DistModel)
             end
         end
         tokenID += 1
-        token2term[token] = Term(tokenID, maxent - e)
+        token2term[token] = WeightedToken(tokenID, maxent - e)
     end
 
     EntModel(token2term, model.config)
 end
 
 function id2token(model::EntModel)
-    m = Dict{Int,String}()
+    m = Dict{UInt64,String}()
     for (token, term) in model.token2term
         m[term.id] = token
     end
@@ -37,8 +37,9 @@ function id2token(model::EntModel)
 end
 
 function vectorize(text::String, model::EntModel; corrector::Function=identity)
-    vec = Term[]
     bow = compute_bow(text, model.config)
+    vec = Vector{WeightedToken}()
+    sizehint!(vec, length(bow))
 
     for (token, freq) in bow
         term = try
@@ -51,5 +52,5 @@ function vectorize(text::String, model::EntModel; corrector::Function=identity)
     end
 
     sort!(vec, by=(x) -> x.id)
-    DocumentType(vec)
+    VBOW(vec)
 end

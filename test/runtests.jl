@@ -33,15 +33,31 @@ begin # function test_dist()
     @show sentiment_text
     @show dmodel
     #TextModel.hist(dmodel)
-    @test [(dmap[t.id], t.weight) for t in vectorize(sentiment_text, dmodel).terms] == [("me<1>",1.0),("me<2>",0.0),("encanta<1>",1.0),("encanta<2>",0.0),("esto<1>",0.5),("esto<2>",0.5),("lol<1>",1.0),("lol<2>",0.0)]
+    @test [(dmap[t.id], t.weight) for t in vectorize(sentiment_text, dmodel).tokens] == [("me<1>",1.0),("me<2>",0.0),("encanta<1>",1.0),("encanta<2>",0.0),("esto<1>",0.5),("esto<2>",0.5),("lol<1>",1.0),("lol<2>",0.0)]
 
     emodel = EntModel(dmodel)
     @show emodel
     emap = id2token(emodel)
-    @test [(emap[t.id], t.weight) for t in vectorize(sentiment_text, emodel).terms] == [("esto",0.0),("encanta",1.0),("me",1.0),("lol",1.0)]
+    @test [(emap[t.id], t.weight) for t in vectorize(sentiment_text, emodel).tokens] == [("esto",0.0),("encanta",1.0),("me",1.0),("lol",1.0)]
 
     #@show [(maptoken[term.id], term.id, term.weight) for term in vectorize(sentiment_text, emodel).terms]
     # @show vectorize(text4, vmodel)
 end
 #@test
 # @test TextConfig()
+
+
+@testset "DocumentType and VBOW" begin
+    u = Dict("el" => 0.9, "hola" => 0.1, "mundo" => 0.2)
+    v = Dict("el" => 0.4, "hola" => 0.2, "mundo" => 0.4)
+    w = Dict("xel" => 0.4, "xhola" => 0.2, "xmundo" => 0.4)
+
+    u1 = VBOW(u)
+    v1 = VBOW(v)
+    w1 = VBOW(w)
+
+    dist = angle_distance
+    @test dist(u1, v1) == 0.5975474808029686
+    @test dist(u1, u1) <= eps(Float32)
+    @test dist(w1, u1) == 1.5707963267948966
+end

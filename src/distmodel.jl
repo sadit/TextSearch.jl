@@ -1,7 +1,7 @@
 export DistModel, feed!, fix!, fit!, vectorize, id2token
 
 type DistModel
-    token2id::Dict{String,Int}
+    token2id::Dict{String,UInt64}
     vhist::Vector{Float64}
     config::TextConfig
     sizes::Vector{Int}
@@ -41,7 +41,7 @@ end
 
 function id2token(model::DistModel)
     nclasses = length(model.sizes)
-    m = Dict{Int,String}()
+    m = Dict{UInt64,String}()
 
     for (token, id) in model.token2id
         b = id * nclasses
@@ -79,7 +79,6 @@ end
 
 function hist(model::DistModel)
     @show model.token2id
-    # gettoken = id2token(model)
     nclasses = length(model.sizes)
 
     for (token, id) in model.token2id
@@ -90,10 +89,10 @@ end
 
 function vectorize(text::String, model::DistModel; corrector::Function=identity)
     nclasses = length(model.sizes)
-    # nterms = length(model.vhist)
-    vec = Term[]
     bow = compute_bow(text, model.config)
-
+    vec = WeightedToken[]
+    sizehint!(vec, length(bow) * nclasses)
+    
     for (token, freq) in bow
         idtoken = try
             token = corrector(token)
@@ -106,10 +105,10 @@ function vectorize(text::String, model::DistModel; corrector::Function=identity)
 
         for i in 1:nclasses
             # info((token, i, @view model.vhist[b+1:b+nclasses]))
-            push!(vec, Term(b+i, model.vhist[b+i]))
+            push!(vec, WeightedToken(b+i, model.vhist[b+i]))
         end
     end
 
     sort!(vec, by=(x) -> x.id)
-    DocumentType(vec)
+    VBOW(vec)
 end

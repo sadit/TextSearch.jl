@@ -1,14 +1,7 @@
-export Token, VectorModel, fit!, save, load, compute_bow, vectorize, vectorize_tfidf, vectorize_tf, vectorize_idf, vectorize_rawfreq, id2token
-
-type Token
-    id::Int32
-    freq::Float32
-end
-
-Token() = new(0, 0)
+export VectorModel, fit!, save, load, compute_bow, vectorize, vectorize_tfidf, vectorize_tf, vectorize_idf, vectorize_rawfreq, id2token
 
 type VectorModel
-    voc::Dict{String,Token}
+    voc::Dict{String,WeightedToken}
     size::Int64
     filter_low::Int
     filter_high::Float64
@@ -32,10 +25,10 @@ end
 function load(istream, ::Type{VectorModel})
     m = JSON.parse(readline(istream))
     config = load(istream, TextConfig)
-    voc = Dict{String,Token}()
+    voc = Dict{String, WeightedToken}()
     for i in 1:m["length"]
         k, id, freq = JSON.parse(readline(istream))
-        voc[k] = Token(id, freq)
+        voc[k] = WeightedToken(id, freq)
     end
     VectorModel(voc, m["size"], m["filter_low"], m["filter_high"], config)
 end
@@ -49,7 +42,7 @@ function id2token(model::VectorModel)
     m
 end
 
-VectorModel() = VectorModel(Dict{String,Token}(), 0, 1, 1.0, TextConfig())
+VectorModel() = VectorModel(Dict{String, WeightedToken}(), 0, 1, 1.0, TextConfig())
 
 function VectorModel(config::TextConfig)
     model = VectorModel()
@@ -76,7 +69,7 @@ function fit!(model::VectorModel, corpus, get_text::Function=identity)
             continue
         end
 
-        model.voc[token] = Token(length(model.voc)+1, freq)
+        model.voc[token] = WeightedToken(length(model.voc)+1, freq)
     end
 end
 
@@ -102,7 +95,7 @@ function maxfreq(bow)
 end
 
 function weighted_vector(weighting_function::Function, text::String, model::VectorModel; corrector::Function=identity, maxlength=typemax(Int))
-    vec = Term[]
+    vec = WeightedToken[]
     bow = compute_bow(text, model.config)
     maxfreq_ = maxfreq(bow)
 
@@ -114,8 +107,8 @@ function weighted_vector(weighting_function::Function, text::String, model::Vect
             continue
         end
 
-        w = weighting_function(freq, maxfreq_, model.size, tokendata.freq)
-        push!(vec, Term(tokendata.id, w))
+        w = weighting_function(freq, maxfreq_, model.size, tokendata.weight)
+        push!(vec, WeightedToken(tokendata.id, w))
     end
 
     if length(vec) > maxlength
@@ -124,7 +117,7 @@ function weighted_vector(weighting_function::Function, text::String, model::Vect
     end
 
     sort!(vec, by=(x) -> x.id)
-    DocumentType(vec)
+    VBOW(vec)
 end
 
 function _tfidf(freq, maxfreq, N, freqToken)
