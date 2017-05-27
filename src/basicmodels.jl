@@ -60,7 +60,7 @@ function fit!(model::VectorModel, corpus, get_text::Function=identity)
         end
         model.size += 1
         if model.size % 10000 == 1
-            info("TfdfModel $(model.size) processed items")
+            info("VectorModel $(model.size) processed items")
         end
     end
 

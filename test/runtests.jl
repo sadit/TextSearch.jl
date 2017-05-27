@@ -20,9 +20,9 @@ begin # test_vmodel
     fit!(vmodel, corpus)
     @test length(vectorize(text1, vmodel)) == 3
     @test length(vectorize(text2, vmodel)) == 62
-    @show vectorize_tfidf(text, vmodel)
-    @show vectorize_tf(text, vmodel)
-    @show vectorize_idf(text, vmodel)
+    @show vectorize_tfidf(text1, vmodel)
+    @show vectorize_tf(text1, vmodel)
+    @show vectorize_idf(text1, vmodel)
 end
 
 begin # function test_dist()
