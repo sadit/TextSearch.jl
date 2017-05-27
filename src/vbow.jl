@@ -18,7 +18,7 @@ struct WeightedToken
     id::UInt64
     weight::Float64
 end
-    
+
 mutable struct VBOW
     tokens::Vector{WeightedToken}
     invnorm::Float64
@@ -26,7 +26,7 @@ end
 
 function VBOW(tokens::Vector{WeightedToken})
     xnorm::Float64 = 0.0
-    
+
     @fastmath @inbounds @simd for i = 1:length(tokens)
         xnorm += tokens[i].weight ^ 2
     end
@@ -34,7 +34,7 @@ function VBOW(tokens::Vector{WeightedToken})
     if length(tokens) > 0
         @fastmath xnorm = 1/sqrt(xnorm)
     end
-    
+
     VBOW(tokens, convert(Float64, xnorm))
 end
 
@@ -113,7 +113,7 @@ function cosine(a::VBOW, b::VBOW)::Float64
     return sum * a.invnorm * b.invnorm
 end
 
-function dump(ostream, item::VBOW)
+function save(ostream, item::VBOW)
     write(ostream, length(item.tokens) |> Int32)
     for x in item.tokens
         write(ostream, x.id, x.weight)
@@ -128,7 +128,7 @@ function load(istream, ::Type{VBOW})::VBOW
     @inbounds for i in 1:len
         vec[i] = WeightedToken(read(istream, UInt64), read(istream, Float64))
     end
- 
+
     invnorm = read(istream, Float64)
     VBOW(vec, invnorm)
 end
