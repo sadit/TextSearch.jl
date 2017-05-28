@@ -6,7 +6,13 @@ export iterlines, itertweets, loadpath, savepath
 import GZip
 import JSON
 
-function iterlines(fun, filename; maxlines=typemax(Int))
+"""
+   iterlines(fun, filename; maxlines=typemax(Int))
+
+Calls `fun` over each line of the given filename, skipping empty lines. It supports gzip compressed inputs.
+
+"""
+function iterlines(fun, filename::String; maxlines=typemax(Int))
     if endswith(filename, ".gz")
         f = GZip.open(filename)
         i = 0
@@ -31,6 +37,20 @@ function iterlines(fun, filename; maxlines=typemax(Int))
     end
 end
 
+
+"""
+   parsetweet(line) -> Dict{String,Any}
+
+Parses a json-dictionary string, which is the assumed object format.
+It supports two formats:
+
+- a raw json-dictionaries
+- a dictionary prefixed by some prefix key, that is, key<tab>json-dictionary
+
+After parsing the object, the `key` is inserted into the dictionary with the keyword "key"
+`dic["key"] = key`
+
+"""
 function parsetweet(line)
     if line[1] == '{'
         tweet = JSON.parse(line)
@@ -43,6 +63,14 @@ function parsetweet(line)
     tweet
 end
 
+"""
+   itertweets(fun, filename::String; maxlines=typemax(Int))
+   itertweets(fun, file; maxlines=typemax(Int))
+
+Calls `fun` for each object in the file. One object per line using
+the format supported by `parsetweet`
+
+"""
 function itertweets(fun, filename::String; maxlines=typemax(Int))
     iterlines(filename, maxlines=maxlines) do line
         tweet = parsetweet(line)
@@ -74,20 +102,5 @@ function getkeypath(dict, key)
         return v
     else
         return dict[key]
-    end
-end
-
-function savepath{T}(filename::String, obj::T)
-    d = dirname(filename)
-    !isdir(d) && mkpath(d)
-
-    open(filename, "w") do f
-        save(f, obj)
-    end
-end
-
-function loadpath{T}(filename::String, ::Type{T})
-    return open(filename) do f
-        load(f, T)
     end
 end
