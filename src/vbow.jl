@@ -12,9 +12,9 @@
 #    See the License for the specific language governing permissions and
 #    limitations under the License.
 
-export VBOW, cosine_distance, angle_distance, cosine, load, save
+export VBOW, cosine_distance, angle_distance, cosine
 
-import Base: +, *, ==
+import Base: +, *, ==, dot, length
 
 struct WeightedToken
     id::UInt64
@@ -85,7 +85,7 @@ function VBOW(bow::Dict{I, F}) where {I <: Any, F <: Real}
     VBOW(M)
 end
 
-Base.length(a::VBOW) = length(a.tokens)
+length(a::VBOW) = length(a.tokens)
 
 function cosine_distance(a::VBOW, b::VBOW)::Float64
     return 1.0 - cosine(a, b)
@@ -98,7 +98,7 @@ function angle_distance(a::VBOW, b::VBOW)
     return acos(c)
 end
 
-function Base.dot(a::VBOW, b::VBOW)::Float64
+function dot(a::VBOW, b::VBOW)::Float64
     n1=length(a.tokens)
     n2=length(b.tokens)
     # (n1 == 0 || n2 == 0) && return 0.0
@@ -203,26 +203,4 @@ function ==(a::VBOW, b::VBOW)
     else
         return false
     end
-end
-
-#Base.(*)(a::VBOW, b::VBOW) = prodvbow
-
-function save(ostream, item::VBOW)
-    write(ostream, length(item.tokens) |> Int32)
-    for x in item.tokens
-        write(ostream, x.id, x.weight)
-    end
-
-    write(ostream, item.invnorm)
-end
-
-function load(istream, ::Type{VBOW})::VBOW
-    len = read(istream, Int32)
-    vec = Vector{VBOW}(len)
-    @inbounds for i in 1:len
-        vec[i] = WeightedToken(read(istream, UInt64), read(istream, Float64))
-    end
-
-    invnorm = read(istream, Float64)
-    VBOW(vec, invnorm)
 end
