@@ -1,6 +1,6 @@
 export EntModel, vectorize, id2token
 
-type EntModel
+type EntModel <: Model
     token2term::Dict{String,WeightedToken}
     config::TextConfig
 end

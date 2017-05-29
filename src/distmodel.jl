@@ -1,6 +1,6 @@
 export DistModel, feed!, fix!, fit!, vectorize, id2token
 
-type DistModel
+type DistModel <: Model
     token2id::Dict{String,UInt64}
     vhist::Vector{Float64}
     config::TextConfig
@@ -92,7 +92,7 @@ function vectorize(text::String, model::DistModel; corrector::Function=identity)
     bow = compute_bow(text, model.config)
     vec = WeightedToken[]
     sizehint!(vec, length(bow) * nclasses)
-    
+
     for (token, freq) in bow
         idtoken = try
             token = corrector(token)

@@ -1,6 +1,8 @@
-export VectorModel, fit!, save, load, compute_bow, vectorize, vectorize_tfidf, vectorize_tf, vectorize_idf, vectorize_rawfreq, id2token
+export TextModel, VectorModel, fit!, compute_bow, vectorize, vectorize_tfidf, vectorize_tf, vectorize_idf, vectorize_rawfreq, id2token
 
-type VectorModel
+abstract type Model end
+
+type VectorModel <: Model
     voc::Dict{String,WeightedToken}
     size::Int64
     filter_low::Int
@@ -8,30 +10,31 @@ type VectorModel
     config::TextConfig
 end
 
-function save(ostream, model::VectorModel)
-    M = Dict{String,Any}(
-        "length" => length(model.voc),
-        "size" => model.size,
-        "filter_low" => model.filter_low,
-        "filter_high" => model.filter_high,
-    )
-    write(ostream, JSON.json(M), "\n")
-    save(ostream, model.config)
-    for (k, v) in model.voc
-        write(ostream, JSON.json((k, v.id, v.freq)), "\n")
-    end
-end
-
-function load(istream, ::Type{VectorModel})
-    m = JSON.parse(readline(istream))
-    config = load(istream, TextConfig)
-    voc = Dict{String, WeightedToken}()
-    for i in 1:m["length"]
-        k, id, freq = JSON.parse(readline(istream))
-        voc[k] = WeightedToken(id, freq)
-    end
-    VectorModel(voc, m["size"], m["filter_low"], m["filter_high"], config)
-end
+#
+# function save(ostream, model::VectorModel)
+#     M = Dict{String,Any}(
+#         "length" => length(model.voc),
+#         "size" => model.size,
+#         "filter_low" => model.filter_low,
+#         "filter_high" => model.filter_high,
+#     )
+#     write(ostream, JSON.json(M), "\n")
+#     save(ostream, model.config)
+#     for (k, v) in model.voc
+#         write(ostream, JSON.json((k, v.id, v.freq)), "\n")
+#     end
+# end
+#
+# function load(istream, ::Type{VectorModel})
+#     m = JSON.parse(readline(istream))
+#     config = load(istream, TextConfig)
+#     voc = Dict{String, WeightedToken}()
+#     for i in 1:m["length"]
+#         k, id, freq = JSON.parse(readline(istream))
+#         voc[k] = WeightedToken(id, freq)
+#     end
+#     VectorModel(voc, m["size"], m["filter_low"], m["filter_high"], config)
+# end
 
 function id2token(model::VectorModel)
     m = Dict{Int,String}()
@@ -154,4 +157,10 @@ end
 
 function vectorize(text::String, model::VectorModel; corrector::Function=identity, maxlength=typemax(Int))
     vectorize_tfidf(text, model, corrector=corrector, maxlength=maxlength)
+end
+
+function vectorize(textlist::Vector{String}, model::Model; corrector::Function=identity)
+    for text in textlist
+        vectorize(text, model, corrector=corrector)
+    end
 end

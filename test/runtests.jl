@@ -77,3 +77,13 @@ end
     @test dist(u1, u1) <= eps(Float32)
     @test dist(w1, u1) == 1.5707963267948966
 end
+
+@testset "operations" begin
+    u = VBOW(Dict("el" => 0.1, "hola" => 0.2, "mundo" => 0.4))
+    v = VBOW(Dict("el" => 0.2, "hola" => 0.4, "mundo" => 0.8))
+    w = VBOW(Dict("el" => 0.1^2, "hola" => 0.2^2, "mundo" => 0.4^2))
+    @test u == u
+    @test u != v
+    @test u + u == v
+    @test u * u == w
+end
