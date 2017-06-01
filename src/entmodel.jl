@@ -1,35 +1,37 @@
 export EntModel, vectorize, id2token
 
 type EntModel <: Model
-    token2term::Dict{String,WeightedToken}
+    tokens::Dict{String,WeightedToken}
     config::TextConfig
 end
 
-function EntModel(model::DistModel)
-    token2term = Dict{String,WeightedToken}()
+function EntModel(model::DistModel, initial)
+    tokens = Dict{String,WeightedToken}()
     nclasses = length(model.sizes)
     tokenID = 0
     maxent = log2(nclasses)
-    for (token, id) in model.token2id
-        b = id * nclasses  # id starts in 0
+    for (token, tokendist) in model.tokens
         e = 0.0
 
+        pop = initial * nclasses + sum(tokendist.dist)
+        # @show tokendist, initial, nclasses, sum(tokendist.dist)
         for j in 1:nclasses
-            pj = model.vhist[b+j]
+            pj = (tokendist.dist[j] + initial) / pop
+
             if pj > 0
                 e -= pj * log2(pj)
             end
         end
         tokenID += 1
-        token2term[token] = WeightedToken(tokenID, maxent - e)
+        tokens[token] = WeightedToken(tokenID, maxent - e)
     end
 
-    EntModel(token2term, model.config)
+    EntModel(tokens, model.config)
 end
 
 function id2token(model::EntModel)
     m = Dict{UInt64,String}()
-    for (token, term) in model.token2term
+    for (token, term) in model.tokens
         m[term.id] = token
     end
 
@@ -44,7 +46,7 @@ function vectorize(text::String, model::EntModel; corrector::Function=identity)
     for (token, freq) in bow
         term = try
             token = corrector(token)
-            model.token2term[token]
+            model.tokens[token]
         catch err
             continue
         end

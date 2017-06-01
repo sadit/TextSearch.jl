@@ -38,20 +38,26 @@ begin # test_vmodel
     @show vectorize_idf(text1, vmodel)
 end
 
-begin # function test_dist()
-    const labeled_corpus = [("me gusta", 1), ("me encanta", 1), ("lo odio", 2), ("odio esto", 2), ("me encanta esto LOL!", 1)]
+const labeled_corpus = [("me gusta", 1), ("me encanta", 1), ("lo odio", 2), ("odio esto", 2), ("me encanta esto LOL!", 1)]
+const sentiment_text = "lol, esto me encanta"
+
+@testset "DistModel tests" begin
     config = TextConfig()
     config.nlist = [1]
     dmodel = DistModel(config, 2)
     fit!(dmodel, labeled_corpus)
     dmap = id2token(dmodel)
-    sentiment_text = "lol, esto me encanta"
     @show sentiment_text
     @show dmodel
     #TextModel.hist(dmodel)
     @test [(dmap[t.id], t.weight) for t in vectorize(sentiment_text, dmodel).tokens] == [("me<1>",1.0),("me<2>",0.0),("encanta<1>",1.0),("encanta<2>",0.0),("esto<1>",0.5),("esto<2>",0.5),("lol<1>",1.0),("lol<2>",0.0)]
 
-    emodel = EntModel(dmodel)
+end
+
+@testset "EntModel tests" begin
+    dmodel = DistModel(config, 2)
+    feed!(dmodel, labeled_corpus)
+    emodel = EntModel(dmodel, 0)
     @show emodel
     emap = id2token(emodel)
     @test [(emap[t.id], t.weight) for t in vectorize(sentiment_text, emodel).tokens] == [("esto",0.0),("encanta",1.0),("me",1.0),("lol",1.0)]
