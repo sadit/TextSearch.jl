@@ -1,9 +1,19 @@
 export TextConfig, save, load, normalize_text, tokenize, wtokenize
 
-const PUNCTUACTION = """;:,.@#&\\-\"'/:*"""
-const SYMBOLS = "()[]¿?¡!{}~<>|"
-const SKIP_SYMBOLS = string(PUNCTUACTION, SYMBOLS)
+# const _PUNCTUACTION = """;:,.@#&\\-\"'/:*"""
+const _PUNCTUACTION = """;:,.&\\-\"'/:*"""
+const _SYMBOLS = "()[]¿?¡!{}~<>|"
+const PUNCTUACTION  = _PUNCTUACTION * _SYMBOLS
+# A symbol s in this list will be expanded to BLANK*s if the predecesor of s is neither s nor BLANK
+# On changes from s to BLANK or [^s] it will produce also produce an extra BLANK
+# Note that enabled del_punc will delete all these symbols without any of the previous expansions
+
+const BLANK_LIST = string(' ', '\t', '\n', '\v', '\r')
+const RE_USER = r"""@[^;:,.@#&\\\-\"'/:\*\(\)\[\]\¿\?\¡\!\{\}~\<\>\|\s]+"""
+const RE_URL = r"(http|ftp|https)://\S+"
 const BLANK = ' '
+const PUNCTUACTION_BLANK = string(PUNCTUACTION, BLANK)
+
 # SKIP_WORDS = set(["…", "..", "...", "...."])
 
 type TextConfig
@@ -42,13 +52,17 @@ function load(istream, ::Type{TextConfig})
     obj
 end
 
-function normalize_text(text::String, config::TextConfig)::Vector{Char}
+function normalize_text(text::String, config::TextConfig, findwords=false)::Vector{Char}
     if config.lc
         text = lowercase(text)
     end
 
     if config.del_url
-        text = replace(text, r"(http|ftp|https)://\S+", s"")
+        text = replace(text, RE_URL, s"")
+    end
+
+    if config.del_usr
+        text = replace(text, RE_USER, s"")
     end
 
     L = Char[BLANK]
@@ -60,15 +74,19 @@ function normalize_text(text::String, config::TextConfig)::Vector{Char}
             0x300 <= o && o <= 0x036F && continue
         end
 
-        if u in ('\n', '\r', ' ', '\t')
+        if u in BLANK_LIST
             u = BLANK
         elseif config.del_dup && prev == u
             continue
-        elseif config.del_punc && u in SKIP_SYMBOLS
+        elseif config.del_punc && u in PUNCTUACTION
             prev = u
             continue
         elseif config.del_num && isdigit(u)
             continue
+        # elseif findwords && prev in PUNCTUACTION && !(u in PUNCTUACTION)
+        #     push!(L, BLANK)
+        # elseif findwords && !(prev in PUNCTUACTION_BLANK) && u in PUNCTUACTION
+        #     push!(L, BLANK)
         end
 
         prev = u
@@ -86,13 +104,24 @@ function wtokenize(text::Vector{Char})
     @inbounds for i in 1:n
         c = text[i]
 
-        c in SKIP_SYMBOLS && continue
-
         if c == BLANK
             length(W) == 0 && continue
 
             push!(L, W |> join)
             W = Char[]
+
+        elseif i > 1
+            if text[i-1] in PUNCTUACTION && !(c in PUNCTUACTION)
+                push!(L, W |> join)
+                W = Char[c]
+                continue
+            elseif !(text[i-1] in PUNCTUACTION_BLANK) && c in PUNCTUACTION
+                push!(L, W |> join)
+                W = Char[c]
+                continue
+            else
+                push!(W, c)
+            end
         else
             push!(W, c)
         end

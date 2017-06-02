@@ -2,41 +2,54 @@
 using TextModel
 using Base.Test
 
-const text1 = "abracadabra patas de cabra que; hello world!!"
-const text2 = "pepe pecas pica papas con un pico; con un pepe pico las papas"
-const text3 = "me encanta ir de paseo"
-const text4 = "odio ir de paseo"
-const corpus = ["pepe pecas", "pica papas", "con un pico"]
+const text0 = "@user;) #jello.world"
+const text1 = "hello world!! @user;) #jello.world :)"
+const text2 = "a b c d e f g h i j k l m n o p q"
+const corpus = ["hello world :)", "@user;) excellent!!", "#jello world."]
 
-begin
+@testset "Character q-grams" begin
+    config = TextConfig()
+    config.del_usr = false
+    config.nlist = []
+    config.qlist = [3]
+    config.skiplist = []
+    @test compute_bow(text0, config) == Dict(") #"=>1,"llo"=>1,".wo"=>1,"orl"=>1,"rld"=>1,"ld "=>1,"wor"=>1,"ell"=>1,"r;)"=>1,"#je"=>1," @u"=>1,"ser"=>1,";) "=>1," #j"=>1,"jel"=>1,"lo."=>1,"@us"=>1,"use"=>1,"er;"=>1,"o.w"=>1)
+end
+
+@testset "Word n-grams" begin
+    config = TextConfig()
+    config.del_usr = false
+    config.nlist = [1, 2]
+    config.qlist = []
+    config.skiplist = []
+    @test compute_bow(text0, config) == Dict("@user"=>1,";) #jello"=>1,"@user ;)"=>1,"#jello"=>1,". world"=>1,"#jello ."=>1,"."=>1,"world"=>1,";)"=>1)
+end
+
+@testset "Skip-grams" begin
     config = TextConfig()
     config.nlist = []
     config.qlist = []
+    config.del_punc = true
     config.skiplist = [(2,1), (2, 2), (3, 1), (3, 2)]
-    @test compute_bow(text2, config) == Dict("pecas con con"=>1,"un un"=>1,"papas pico pepe"=>1,"pico pepe papas"=>1,"con con"=>1,"pica con pico"=>1,
-    "pepe pica"=>1,"pepe papas pico"=>1,"pica con"=>1,"pecas con"=>1,"papas pico"=>1,"con pico"=>2,"un con pepe"=>1,
-    "pico pepe"=>1,"un las"=>1,"pecas papas un"=>1,"un un las"=>1,"papas un"=>1,"un pico"=>1,"pica un"=>1,"con pepe"=>1,
-    "con pico un"=>1,"pico un"=>1,"pepe pica con"=>1,"pepe papas"=>2,"con con pico"=>1,"con pepe las"=>1,"pica un un"=>1,
-    "papas un con"=>1,"un con"=>1,"pico un pico"=>1,"pecas papas"=>1,"pepe las"=>1,"pico papas"=>1,"un pico papas"=>1)
+    #L = collect(compute_bow(text2, config))
+    #sort!(L)
+    @test compute_bow(text2, config) == Dict("f i"=>1,"j m"=>1,"b e h"=>1,"i k m"=>1,"c e"=>1,"h k n"=>1,"m o q"=>1,"j l"=>1,"j l n"=>1,"a d g"=>1,"c e g"=>1,"a c"=>1,"a d"=>1,"m p"=>1,"b d f"=>1,"f h j"=>1,"l o"=>1,"b d"=>1,"i l o"=>1,"c f"=>1,"e h"=>1,"b e"=>1,"j m p"=>1,"k m"=>1,"c f i"=>1,"g i"=>1,"e g"=>1,"i l"=>1,"k m o"=>1,"e h k"=>1,"d f h"=>1,"e g i"=>1,"l n p"=>1,"a c e"=>1,"f i l"=>1,"m o"=>1,"n p"=>1,"d g j"=>1,"d g"=>1,"n q"=>1,"g i k"=>1,"o q"=>1,"f h"=>1,"l n"=>1,"h j"=>1,"k n"=>1,"g j m"=>1,"g j"=>1,"h k"=>1,"i k"=>1,"h j l"=>1,"k n q"=>1,"d f"=>1)
 end
 
-begin # test_vmodel
+@testset "Tokenizer, BOW, and vectorize" begin # test_vmodel
     config = TextConfig()
-    config.nlist = [1,2,3]
-    config.qlist = [3,5]
-    config.skiplist = [(2,1)]
+    config.nlist = [1]
+    config.qlist = []
+    config.skiplist = []
 
-    @test tokenize(text1, config) == [" ab","abr","bra","rac","aca","cad","ada","dab","abr","bra","ra ","a p"," pa","pat","ata","tas","as ","s d"," de","de ","e c"," ca","cab","abr","bra","ra ","a q"," qu","que","ue;","e; ","; h"," he","hel","ell","llo","lo ","o w"," wo","wor","orl","rld","ld!","d!!","!! "," abra","abrac","braca","racad","acada","cadab","adabr","dabra","abra ","bra p","ra pa","a pat"," pata","patas","atas ","tas d","as de","s de "," de c","de ca","e cab"," cabr","cabra","abra ","bra q","ra qu","a que"," que;","que; ","ue; h","e; he","; hel"," hell","hello","ello ","llo w","lo wo","o wor"," worl","world","orld!","rld!!","ld!! ","abracadabra","patas","de","cabra","que","hello","world","abracadabra patas","patas de","de cabra","cabra que","que hello","hello world","abracadabra patas de","patas de cabra","de cabra que","cabra que hello","que hello world","abracadabra de","patas cabra","de que","cabra hello","que world"]
-    @test compute_bow(text2, config) == Dict("apa"=>2,"pico las papas"=>1,"epe p"=>2,"pico"=>2,"o; co"=>1,"on "=>2,"co;"=>1,"papas con un"=>1,"s p"=>2,"as co"=>1,"un pepe"=>1,"con u"=>2,"un pico con"=>1,"o las"=>1,"a p"=>1,"a pap"=>1,"ca pa"=>1," pi"=>3,"pico con"=>1," un"=>2,"con pico"=>1," papa"=>2,"eca"=>1,"epe"=>2,"pecas"=>2," pico"=>2," pepe"=>2,"n pep"=>1,"pepe pecas pica"=>1,"pica "=>1,"papas un"=>1,"ico; "=>1,"pico las"=>1,"pecas pica"=>1,"n pic"=>1,"; c"=>1,"ica"=>1,"pe pi"=>1,"apas "=>2,"n un "=>2,"ico"=>2,"as pa"=>1,"pica papas con"=>1,"cas"=>1,"co "=>1,"ecas "=>1,"cas p"=>1,"las p"=>1,"con un"=>2," peca"=>1,"pe pe"=>1, "con un pepe"=>1,"e pec"=>1,"pico "=>1,"papas"=>4,"as pi"=>1,"co la"=>1,"e pic"=>1,"pico con un"=>1," co"=>2," la"=>1,"pas"=>2,"con"=>4," con "=>2,"on un"=>2," pa"=>2,"pepe pico"=>1,"papas con"=>1,"un con"=>1,"; con"=>1,"pecas papas"=>1,"as "=>4,"pep"=>2,"pec"=>1,"co; c"=>1," pica"=>1,"con un pico"=>1,"pepe pica"=>1,"pico;"=>1,"un pe"=>1,"e p"=>2,"un pepe pico"=>1,"s con"=>1,"pico un"=>1,"ca "=>1,"pic"=>3,"un pi"=>1,"pas c"=>1,"pica papas"=>1,"pepe las"=>1,"las papas"=>1,"un "=>2,"pico papas"=>1,"s c"=>1,"un"=>2,"n u"=>2," un p"=>2,"pepe "=>2,"s pic"=>1,"n p"=>2,"pap"=>2," pe"=>3,"o; "=>1,"pepe"=>2,"pecas pica papas"=>1,"pepe pico las"=>1,"pica con"=>1," las "=>1,"pepe pecas"=>1,"ico l"=>1,"las"=>2,"o l"=>1,"s pap"=>1,"un pico"=>2,"con pepe"=>1,"pe "=>2,"ica p"=>1,"pica"=>1)
-
+    @test tokenize(text1, config) == String["hello", "world", "!!", ";)", "#jello", ".", "world", ":)"]
     vmodel = VectorModel(config)
     fit!(vmodel, corpus)
-    @test length(vectorize(text1, vmodel)) == 3
-    @test length(vectorize(text2, vmodel)) == 62
+    @test length(vectorize(text1, vmodel)) == 7
+    @test length(vectorize(text2, vmodel)) == 0
     @show vectorize_tfidf(text1, vmodel)
-    @show vectorize_tf(text1, vmodel)
-    @show vectorize_idf(text1, vmodel)
 end
+
 
 const labeled_corpus = [("me gusta", 1), ("me encanta", 1), ("lo odio", 2), ("odio esto", 2), ("me encanta esto LOL!", 1)]
 const sentiment_text = "lol, esto me encanta"
@@ -55,6 +68,8 @@ const sentiment_text = "lol, esto me encanta"
 end
 
 @testset "EntModel tests" begin
+    config = TextConfig()
+    config.nlist = [1]
     dmodel = DistModel(config, 2)
     feed!(dmodel, labeled_corpus)
     emodel = EntModel(dmodel, 0)
@@ -62,7 +77,7 @@ end
     emap = id2token(emodel)
     @test [(emap[t.id], t.weight) for t in vectorize(sentiment_text, emodel).tokens] == [("esto",0.0),("encanta",1.0),("me",1.0),("lol",1.0)]
 
-    #@show [(maptoken[term.id], term.id, term.weight) for term in vectorize(sentiment_text, emodel).terms]
+    # @show [(maptoken[term.id], term.id, term.weight) for term in vectorize(sentiment_text, emodel).terms]
     # @show vectorize(text4, vmodel)
 end
 #@test
