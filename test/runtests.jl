@@ -42,10 +42,10 @@ end
     config.qlist = []
     config.skiplist = []
 
-    @test tokenize(text1, config) == String["hello", "world", "!!", ";)", "#jello", ".", "world", ":)"]
+    @test tokenize(text1, config) == String["hello", "world", "!!",  "@user", ";)", "#jello", ".", "world", ":)"]
     vmodel = VectorModel(config)
     fit!(vmodel, corpus)
-    @test length(vectorize(text1, vmodel)) == 7
+    @test length(vectorize(text1, vmodel)) == 8
     @test length(vectorize(text2, vmodel)) == 0
     @show vectorize_tfidf(text1, vmodel)
 end
