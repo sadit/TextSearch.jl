@@ -1,7 +1,7 @@
 export TextConfig, save, load, normalize_text, tokenize, wtokenize
 
 # const _PUNCTUACTION = """;:,.@#&\\-\"'/:*"""
-const _PUNCTUACTION = """;:,.&\\-\"'/:*"""
+const _PUNCTUACTION = """;:,.&\\-\"'/:*“”«»"""
 const _SYMBOLS = "()[]¿?¡!{}~<>|"
 const PUNCTUACTION  = _PUNCTUACTION * _SYMBOLS
 # A symbol s in this list will be expanded to BLANK*s if the predecesor of s is neither s nor BLANK
@@ -9,7 +9,7 @@ const PUNCTUACTION  = _PUNCTUACTION * _SYMBOLS
 # Note that enabled del_punc will delete all these symbols without any of the previous expansions
 
 const BLANK_LIST = string(' ', '\t', '\n', '\v', '\r')
-const RE_USER = r"""@[^;:,.@#&\\\-\"'/:\*\(\)\[\]\¿\?\¡\!\{\}~\<\>\|\s]+"""
+const RE_USER = r"""@[^;:,.@#&\\\-\"'/:\*\(\)\[\]\¿\?\¡\!\{\}~\<\>\|\s]+“”«»"""
 const RE_URL = r"(http|ftp|https)://\S+"
 const BLANK = ' '
 const PUNCTUACTION_BLANK = string(PUNCTUACTION, BLANK)
