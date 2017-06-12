@@ -10,10 +10,11 @@ function EntModel(model::DistModel, initial)
     nclasses = length(model.sizes)
     tokenID = 0
     maxent = log2(nclasses)
+
     for (token, tokendist) in model.tokens
         e = 0.0
-
         pop = initial * nclasses + sum(tokendist.dist)
+
         # @show tokendist, initial, nclasses, sum(tokendist.dist)
         for j in 1:nclasses
             pj = (tokendist.dist[j] + initial) / pop

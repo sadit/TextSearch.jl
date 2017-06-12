@@ -1,3 +1,4 @@
+import Base: normalize!
 export DistModel, feed!, fix!, fit!, vectorize, id2token
 
 type TokenDist
@@ -55,6 +56,17 @@ function id2token(model::DistModel)
     end
 
     H
+end
+
+function normalize!(model::DistModel)
+    nclasses = length(model.sizes)
+    minsize = minimum(model.sizes)
+
+    for (token, tokendist) in model.tokens
+        for i in 1:nclasses
+            tokendist.dist[i] *= minsize / model.sizes[i]
+        end
+    end
 end
 
 function fix!(model::DistModel)
