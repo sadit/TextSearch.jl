@@ -1,4 +1,4 @@
-
+using Languages
 using TextModel
 using Base.Test
 
@@ -23,6 +23,12 @@ end
     config.qlist = []
     config.skiplist = []
     @test compute_bow(text0, config) == Dict("@user"=>1,";) #jello"=>1,"@user ;)"=>1,"#jello"=>1,". world"=>1,"#jello ."=>1,"."=>1,"world"=>1,";)"=>1)
+    config = TextConfig()
+    config.stem = true
+    config.del_sw = true
+    language!(config, SpanishLanguage)
+    @test compute_bow("cosas que tienen cositas; la locura de ser y estar", config) == Dict(";"=>1,"locur"=>1,"cos"=>1,"cosit"=>1)
+    @test compute_bow("pepe pecas pica papas con un pico pepe pecas pica papas", config) ==  Dict("pic"=>3,"pep"=>2,"pec"=>2,"pap"=>2)
 end
 
 @testset "Skip-grams" begin
@@ -44,7 +50,7 @@ end
 
     @test tokenize(text1, config) == String["hello", "world", "!!",  "@user", ";)", "#jello", ".", "world", ":)"]
     vmodel = VectorModel(config)
-    fit!(vmodel, corpus)
+    TextModel.fit!(vmodel, corpus)
     @test length(vectorize(text1, vmodel)) == 8
     @test length(vectorize(text2, vmodel)) == 0
     @show vectorize_tfidf(text1, vmodel)
@@ -58,7 +64,7 @@ const sentiment_text = "lol, esto me encanta"
     config = TextConfig()
     config.nlist = [1]
     dmodel = DistModel(config, 2)
-    fit!(dmodel, labeled_corpus)
+    TextModel.fit!(dmodel, labeled_corpus)
     dmap = id2token(dmodel)
     @show sentiment_text
     @show dmodel
