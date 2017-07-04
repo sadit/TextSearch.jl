@@ -21,7 +21,7 @@ notifications:
     on_start: never     # options: [always|never|change] default: alway
 
 # uncomment the following lines to override the default test script
-#script:
+script:
 #  - if [[ -a .git/shallow ]]; then git fetch --unshallow; fi
   - julia -e 'Pkg.clone("https://github.com/sadit/Languages.jl")'
   - julia -e 'Pkg.clone("https://github.com/sadit/TextAnalysis.jl")'
