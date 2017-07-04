@@ -109,8 +109,11 @@ end
     u = VBOW(Dict("el" => 0.1, "hola" => 0.2, "mundo" => 0.4))
     v = VBOW(Dict("el" => 0.2, "hola" => 0.4, "mundo" => 0.8))
     w = VBOW(Dict("el" => 0.1^2, "hola" => 0.2^2, "mundo" => 0.4^2))
+    y = VBOW(Dict("el" => 0.1/9, "hola" => 0.2/9, "mundo" => 0.4/9))
     @test u == u
     @test u != v
     @test u + u == v
     @test u * u == w
+    @test u * (1/9) == y
+    @test (1/9) * u == y
 end
