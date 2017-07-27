@@ -209,15 +209,15 @@ function *(a::VBOW, b::F) where {F <: Real}
     vec = Vector{WeightedToken}()
     n=length(a.tokens)
     sizehint!(vec, n)
-    i = 1;
+    i = 1
     @fastmath @inbounds while i <= n
         push!(vec, WeightedToken(a.tokens[i].id, a.tokens[i].weight*b))
         i += 1
     end
+
     return VBOW(vec)
 end
 
 function *(b::F, a::VBOW) where {F <: Real}
     return a * b
 end
-

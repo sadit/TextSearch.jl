@@ -58,13 +58,13 @@ function id2token(model::DistModel)
     H
 end
 
-function normalize!(model::DistModel)
+function normalize!(model::DistModel, by=minimum)
     nclasses = length(model.sizes)
-    minsize = minimum(model.sizes)
+    val = by(model.sizes)
 
     for (token, tokendist) in model.tokens
         for i in 1:nclasses
-            tokendist.dist[i] *= minsize / model.sizes[i]
+            tokendist.dist[i] *= val / model.sizes[i]
         end
     end
 end
@@ -84,8 +84,11 @@ function fix!(model::DistModel)
     model
 end
 
-function fit!(model::DistModel, corpus; get_text_klass::Function=identity)
+function fit!(model::DistModel, corpus; get_text_klass::Function=identity, normalize=nothing)
     feed!(model, corpus, get_text_klass=get_text_klass)
+    if normalize != nothing
+        normalize!(model, normalize)
+    end
     fix!(model)
 end
 

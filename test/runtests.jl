@@ -73,6 +73,20 @@ const sentiment_text = "lol, esto me encanta"
 
 end
 
+@testset "DistModel-normalize! tests" begin
+    config = TextConfig()
+    config.nlist = [1]
+    dmodel = DistModel(config, 2)
+    TextModel.fit!(dmodel, labeled_corpus, normalize=minimum)
+    dmap = id2token(dmodel)
+    @show sentiment_text
+    @show dmodel
+    #TextModel.hist(dmodel)
+    d1 = [(dmap[t.id], t.weight) for t in vectorize(sentiment_text, dmodel).tokens]
+    d2 = [("me<1>", 1.0), ("me<2>", 0.0), ("encanta<1>", 1.0), ("encanta<2>", 0.0), ("esto<1>", 0.4), ("esto<2>", 0.6), ("lol<1>", 1.0), ("lol<2>", 0.0)]
+    @test string(d1) == string(d2)
+end
+
 @testset "EntModel tests" begin
     config = TextConfig()
     config.nlist = [1]
