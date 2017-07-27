@@ -7,6 +7,12 @@ const text1 = "hello world!! @user;) #jello.world :)"
 const text2 = "a b c d e f g h i j k l m n o p q"
 const corpus = ["hello world :)", "@user;) excellent!!", "#jello world."]
 
+@testset "Constructors" begin
+    @test VBOW(Dict("hola" => 1, "mundo" => 1, "!" => 8)) == VBOW([("hola", 1), ("mundo", 1), ("!", 8)])
+    @test cosine(VBOW(Dict("hola" => 1, "mundo" => 1, "!" => 8)), VBOW([("hola", 1), ("mundo", 1), ("!", 8)])) ≈ 1.0
+end
+
+exit(0)
 @testset "Character q-grams" begin
     config = TextConfig()
     config.del_usr = false
