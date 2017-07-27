@@ -138,10 +138,10 @@ end
 end
 
 @testset "io" begin
-    buff = IOBuffer("""{"key1d": "value1a", "key2c": "value2a"}
-{"key1c": "value1b", "key2c": "value2b"}
-{"key1b": "value1c", "key2b": "value2c"}
-{"key1a": "value1d", "key2a": "value2d"}""")
+    buff = IOBuffer("""{"key1": "value1a", "key2c": "value2a"}
+{"key1": "value1b", "key2c": "value2b"}
+{"key1": "value1c", "key2b": "value2c"}
+{"key1": "value1d", "key2a": "value2d"}""")
     for x in itertweets(buff)
         print(x)
     end
