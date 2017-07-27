@@ -12,7 +12,6 @@ const corpus = ["hello world :)", "@user;) excellent!!", "#jello world."]
     @test cosine(VBOW(Dict("hola" => 1, "mundo" => 1, "!" => 8)), VBOW([("hola", 1), ("mundo", 1), ("!", 8)])) ≈ 1.0
 end
 
-exit(0)
 @testset "Character q-grams" begin
     config = TextConfig()
     config.del_usr = false
@@ -136,4 +135,14 @@ end
     @test u * u == w
     @test u * (1/9) == y
     @test (1/9) * u == y
+end
+
+@testset "io" begin
+    buff = IOBuffer("""{"key1d": "value1a", "key2c": "value2a"}
+{"key1c": "value1b", "key2c": "value2b"}
+{"key1b": "value1c", "key2b": "value2c"}
+{"key1a": "value1d", "key2a": "value2d"}""")
+    for x in itertweets(buff)
+        print(x)
+    end
 end
