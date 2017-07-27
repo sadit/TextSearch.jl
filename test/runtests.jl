@@ -142,7 +142,7 @@ end
 {"key1": "value1b", "key2c": "value2b"}
 {"key1": "value1c", "key2b": "value2c"}
 {"key1": "value1d", "key2a": "value2d"}""")
-    for x in itertweets(buff)
-        print(x)
+    itertweets(buff) do x
+        info(x)
     end
 end
