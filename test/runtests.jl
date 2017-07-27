@@ -119,9 +119,9 @@ end
     w1 = VBOW(w)
 
     dist = angle_distance
-    @test dist(u1, v1) == 0.5975474808029686
+    @test dist(u1, v1) ≈ 0.5975474808029686
     @test dist(u1, u1) <= eps(Float32)
-    @test dist(w1, u1) == 1.5707963267948966
+    @test dist(w1, u1) ≈ 1.5707963267948966
 end
 
 @testset "operations" begin
