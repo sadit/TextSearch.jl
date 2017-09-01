@@ -1,7 +1,7 @@
-export TextConfig, save, load, normalize_text, tokenize, wtokenize, language!
-
-using Languages
-using TextAnalysis
+export TextConfig, save, load, normalize_text, tokenize, wtokenize
+#, language!
+# using Languages
+# using SnowballStemmer
 
 # const _PUNCTUACTION = """;:,.@#&\\-\"'/:*"""
 const _PUNCTUACTION = """;:,.&\\-\"'/:*“”«»"""
@@ -19,34 +19,33 @@ const PUNCTUACTION_BLANK = string(PUNCTUACTION, BLANK)
 
 # SKIP_WORDS = set(["…", "..", "...", "...."])
 
-type TextConfig{L}
+type TextConfig
     del_diac::Bool
     del_dup::Bool
     del_punc::Bool
     del_num::Bool
     del_url::Bool
     del_usr::Bool
-    del_sw::Bool
+    # del_sw::Bool
 
     lc::Bool
-    stem::Bool
-
+    # stem::Bool
+    # tokenizers
     qlist::Vector{Int}
     nlist::Vector{Int}
     skiplist::Vector{Tuple{Int,Int}}
-
-    lang::L
-    stemmer::Nullable{Stemmer}
-    stopwords::Set{String}
+    # word normalizer
+    normalize::Function
 end
 
-function language!(config::TextConfig, lang)
-    stemmer = config.stem ? Nullable{Stemmer}(Stemmer(name(lang))) : Nullable{Stemmer}()
-    sw = Set(stopwords(lang))
-    config.lang = lang
-    config.stemmer = stemmer
-    config.stopwords = sw
-end
+
+# function language!(config::TextConfig, lang)
+#     stemmer = config.stem ? Nullable{Stemmer}(Stemmer(name(lang))) : Nullable{Stemmer}()
+#     sw = Set(stopwords(lang))
+#     config.lang = lang
+#     config.stemmer = stemmer
+#     config.stopwords = sw
+# end
 
 function TextConfig(;del_diac=true,
                     del_dup=false,
@@ -54,18 +53,21 @@ function TextConfig(;del_diac=true,
                     del_num=true,
                     del_url=true,
                     del_usr=true,
-                    del_sw=false,
+                    # del_sw=false,
 
                     lc=true,
-                    stem=false,
+                    # stem=false,
 
                     qlist=Int[],
                     nlist=Int[1],
                     skiplist=Tuple{Int,Int}[],
-                    lang=EnglishLanguage)
 
-    stemmer = stem ? Nullable{Stemmer}(Stemmer(name(lang))) : Nullable{Stemmer}()
-    sw = Set(stopwords(lang))
+                    normalize=identity
+                    # lang="english"
+                    )
+
+    # stemmer = stem ? Nullable{Stemmer}(Stemmer(name(lang))) : Nullable{Stemmer}()
+    # sw = Set(stopwords(lang))
 
     TextConfig(
         del_diac,
@@ -74,18 +76,16 @@ function TextConfig(;del_diac=true,
         del_num,
         del_url,
         del_usr,
-        del_sw,
+        # del_sw,
 
         lc,
-        stem,
+        # stem,
 
         qlist,
         nlist,
         skiplist,
 
-        lang,
-        stemmer,
-        sw
+        normalize
     )
 end
 
@@ -134,15 +134,21 @@ function normalize_text(text::String, config::TextConfig, findwords=false)::Vect
     L
 end
 
-function push_token!(output::Vector{String}, token::String, config::TextConfig)
-    if config.del_sw && token in config.stopwords
-        return
-    end
-    if config.stem
-        push!(output, stem(get(config.stemmer), token))
-    else
+function push_word!(output::Vector{String}, token::String, config::TextConfig)
+    # if config.del_sw && token in config.stopwords
+    #     return
+    # end
+    token = config.normalize(token)
+
+    if length(token) > 0
         push!(output, token)
     end
+
+    # if config.stem
+    # push!(output, stem(get(config.stemmer), token))
+    # else
+    # push!(output, token)
+    # end
 end
 
 function wtokenize(text::Vector{Char}, config::TextConfig)
@@ -155,15 +161,15 @@ function wtokenize(text::Vector{Char}, config::TextConfig)
         if c == BLANK
             length(W) == 0 && continue
 
-            push_token!(L, W |> join, config)
+            push_word!(L, W |> join, config)
             W = Char[]
         elseif i > 1
             if text[i-1] in PUNCTUACTION && !(c in PUNCTUACTION)
-                push_token!(L, W |> join, config)
+                push_word!(L, W |> join, config)
                 W = Char[c]
                 continue
             elseif !(text[i-1] in PUNCTUACTION_BLANK) && c in PUNCTUACTION
-                push_token!(L, W |> join, config)
+                push_word!(L, W |> join, config)
                 W = Char[c]
                 continue
             else
@@ -174,7 +180,7 @@ function wtokenize(text::Vector{Char}, config::TextConfig)
         end
     end
 
-    length(W) > 0 && push_token!(L, W |> join, config)
+    length(W) > 0 && push_word!(L, W |> join, config)
     return L
 end
 
@@ -203,7 +209,7 @@ function tokenize(text::Vector{Char}, config::TextConfig)
                 push!(L, join(wl, BLANK))
             end
         end
-        
+
         @inbounds for (qsize, skip) in config.skiplist
             for start in 1:(n - (qsize + (qsize - 1) * skip) + 1)
                 if qsize == 2
