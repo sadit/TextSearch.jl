@@ -1,6 +1,6 @@
 export EntModel, vectorize, id2token
 
-type EntModel <: Model
+mutable struct EntModel <: Model
     tokens::Dict{String,WeightedToken}
     config::TextConfig
 end

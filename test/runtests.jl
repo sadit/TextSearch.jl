@@ -146,3 +146,29 @@ end
         info(x)
     end
 end
+
+@testset "transpose vbow" begin
+    config = TextConfig()
+    config.nlist = [1]
+    config.qlist = []
+    config.skiplist = []
+    _corpus = [
+        "la casa roja",
+        "la casa verde",
+        "la casa azul",
+        "la manzana roja",
+        "la pera verde esta rica",
+        "la manzana verde esta rica",
+        "la hoja verde",
+    ]
+    vmodel = VectorModel(config)
+    TextModel.fit!(vmodel, _corpus)
+    @show _corpus
+    @show vmodel.voc
+    tokenmap = id2token(vmodel)
+    X = [vectorize(x, vmodel) for x in _corpus]
+    X̂ = transpose(X)
+    for (i, x) in enumerate(X̂)
+        info("word $i - $(tokenmap[i]): ", [(a.id, a.weight) for a in x.tokens])
+    end
+end

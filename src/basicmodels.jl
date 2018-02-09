@@ -1,8 +1,10 @@
-export TextModel, VectorModel, fit!, compute_bow, vectorize, vectorize_tfidf, vectorize_tf, vectorize_idf, vectorize_rawfreq, id2token
+export TextModel, VectorModel, fit!, inverse_vbow
+    compute_bow, vectorize, vectorize_tfidf,
+    vectorize_tf, vectorize_idf, vectorize_rawfreq, id2token
 
 abstract type Model end
 
-type VectorModel <: Model
+mutable struct VectorModel <: Model
     voc::Dict{String,WeightedToken}
     size::Int64
     filter_low::Int
@@ -38,11 +40,17 @@ end
 
 function id2token(model::VectorModel)
     m = Dict{Int,String}()
-    for (word, token) in model
+    for (word, token) in model.voc
         m[token.id] = word
     end
 
     m
+end
+
+function inverse_vbow(vec, vocmap)
+    s = collect(vec.tokens)
+    sort!(s, by=x -> -x.weight)
+    [(vocmap[token.id], token.weight) for token in s]
 end
 
 VectorModel() = VectorModel(Dict{String, WeightedToken}(), 0, 1, 1.0, TextConfig())
@@ -53,7 +61,7 @@ function VectorModel(config::TextConfig)
     model
 end
 
-function fit!(model::VectorModel, corpus, get_text::Function=identity)
+function fit!(model::VectorModel, corpus; get_text::Function=identity)
     V = Dict{String,Int}()
     for item in corpus
         text = get_text(item)
@@ -63,9 +71,11 @@ function fit!(model::VectorModel, corpus, get_text::Function=identity)
         end
         model.size += 1
         if model.size % 10000 == 1
-            info("VectorModel $(model.size) processed items")
+            info("advance VectorModel: $(model.size) processed items")
         end
     end
+
+    info("finished VectorModel: $(model.size) processed items")
 
     for (token, freq) in V
         if freq < model.filter_low || freq > model.filter_high * model.size
@@ -159,8 +169,6 @@ function vectorize(text::String, model::VectorModel; corrector::Function=identit
     vectorize_tfidf(text, model, corrector=corrector, maxlength=maxlength)
 end
 
-function vectorize(textlist::Vector{String}, model::Model; corrector::Function=identity)
-    for text in textlist
-        vectorize(text, model, corrector=corrector)
-    end
+function vectorize(textlist::AbstractVector{String}, model::Model; corrector::Function=identity)
+    [vectorize(text, model, corrector=corrector) for text in textlist]
 end

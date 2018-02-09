@@ -19,7 +19,7 @@ const PUNCTUACTION_BLANK = string(PUNCTUACTION, BLANK)
 
 # SKIP_WORDS = set(["…", "..", "...", "...."])
 
-type TextConfig
+mutable struct TextConfig
     del_diac::Bool
     del_dup::Bool
     del_punc::Bool

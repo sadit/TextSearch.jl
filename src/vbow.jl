@@ -12,9 +12,10 @@
 #    See the License for the specific language governing permissions and
 #    limitations under the License.
 
-export VBOW, cosine_distance, angle_distance, cosine
+export VBOW, cosine_distance, angle_distance, cosine, transpose
 
 import Base: +, *, ==, dot, length
+import Base: transpose
 
 struct WeightedToken
     id::UInt64
@@ -47,7 +48,7 @@ function invnorm(bow::VBOW)
     bow.invnorm
 end
 
-function VBOW(bow::Vector{Tuple{I, F}}) where {I <: Any, F <: Real}
+function VBOW(bow::AbstractVector{Tuple{I, F}}) where {I <: Any, F <: Real}
     M = Vector{WeightedToken}(length(bow))
     i = 1
     if I <: Integer
@@ -220,4 +221,36 @@ end
 
 function *(b::F, a::VBOW) where {F <: Real}
     return a * b
+end
+
+function transpose(matrix::AbstractVector{VBOW})
+    M = Dict{UInt, Vector{WeightedToken}}()
+    maxID = 0
+    for (objID, vector) in enumerate(matrix)
+        for token in vector.tokens
+            wt = WeightedToken(objID, token.weight)
+            if haskey(M, token.id)
+                push!(M[token.id], wt)
+            else
+                M[token.id] = [wt]
+            end
+
+            maxID = max(token.id, maxID)
+        end
+    end
+
+    V = Vector{VBOW}(Int(maxID))
+    i = UInt64(1)
+    while i <= maxID
+        if haskey(M, i)
+            V[i] = VBOW(M[i])
+        else
+            # "Unused token $i"
+            V[i] = VBOW([WeightedToken(0, 0.0)])
+        end
+
+        i += 1
+    end
+
+    V
 end

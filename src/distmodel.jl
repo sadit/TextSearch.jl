@@ -1,14 +1,14 @@
 import Base: normalize!
 export DistModel, feed!, fix!, fit!, vectorize, id2token
 
-type TokenDist
+mutable struct TokenDist
     id::UInt64
     dist::Vector{Float64}
 end
 
 TokenDist(id, nclasses::Int) = TokenDist(id, zeros(Float64, nclasses))
 
-type DistModel <: Model
+mutable struct DistModel <: Model
     tokens::Dict{String,TokenDist}
     config::TextConfig
     sizes::Vector{Int}
