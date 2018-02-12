@@ -1,4 +1,4 @@
-export TextModel, VectorModel, fit!, inverse_vbow
+export TextModel, VectorModel, fit!, inverse_vbow,
     compute_bow, vectorize, vectorize_tfidf,
     vectorize_tf, vectorize_idf, vectorize_rawfreq, id2token
 

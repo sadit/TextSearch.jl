@@ -12,7 +12,7 @@ const PUNCTUACTION  = _PUNCTUACTION * _SYMBOLS
 # Note that enabled del_punc will delete all these symbols without any of the previous expansions
 
 const BLANK_LIST = string(' ', '\t', '\n', '\v', '\r')
-const RE_USER = r"""@[^;:,.@#&\\\-\"'/:\*\(\)\[\]\¿\?\¡\!\{\}~\<\>\|\s]+“”«»"""
+const RE_USER = r"""@[^;:,.@#&\\\-\"'/:\*\(\)\[\]\¿\?\¡\!\{\}~\<\>\|\s]+"""
 const RE_URL = r"(http|ftp|https)://\S+"
 const BLANK = ' '
 const PUNCTUACTION_BLANK = string(PUNCTUACTION, BLANK)
@@ -185,7 +185,8 @@ function wtokenize(text::Vector{Char}, config::TextConfig)
 end
 
 function tokenize(text::String, config::TextConfig)
-    tokenize(normalize_text(text, config), config)
+    t = normalize_text(text, config)
+    tokenize(t, config)
 end
 
 function tokenize(text::Vector{Char}, config::TextConfig)

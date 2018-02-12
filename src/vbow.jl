@@ -1,4 +1,4 @@
-#  Copyright 2016, 2017 Eric S. Tellez <eric.tellez@infotec.mx>
+#  Copyright 2016, 2017, 2018 Eric S. Tellez <eric.tellez@infotec.mx>
 #
 #    Licensed under the Apache License, Version 2.0 (the "License");
 #    you may not use this file except in compliance with the License.
@@ -12,10 +12,9 @@
 #    See the License for the specific language governing permissions and
 #    limitations under the License.
 
-export VBOW, cosine_distance, angle_distance, cosine, transpose
-
 import Base: +, *, ==, dot, length
-import Base: transpose
+
+export VBOW, cosine_distance, angle_distance, cosine, dtranspose
 
 struct WeightedToken
     id::UInt64
@@ -34,12 +33,12 @@ end
 function invnorm(bow::VBOW)
     if bow.invnorm < 0.0
         xnorm::Float64 = 0.0
-        @fastmath @inbounds @simd for i = 1:length(bow.tokens)
+        @inbounds @simd for i = 1:length(bow.tokens)
             xnorm += bow.tokens[i].weight ^ 2
         end
 
         if length(bow.tokens) > 0
-            @fastmath bow.invnorm = 1/sqrt(xnorm)
+            bow.invnorm = 1/sqrt(xnorm)
         else
             bow.invnorm = 0.0
         end
@@ -107,7 +106,7 @@ function dot(a::VBOW, b::VBOW)::Float64
     sum::Float64 = 0.0
     i = 1; j = 1
 
-    @fastmath @inbounds while i <= n1 && j <= n2
+    @inbounds while i <= n1 && j <= n2
         c = cmp(a.tokens[i].id, b.tokens[j].id)
         if c == 0
             sum += a.tokens[i].weight * b.tokens[j].weight
@@ -140,7 +139,7 @@ function +(a::VBOW, b::VBOW)
     sizehint!(vec, max(n1, n2))
 
     i = 1; j = 1
-    @fastmath @inbounds while i <= n1 && j <= n2
+    @inbounds while i <= n1 && j <= n2
         c = cmp(a.tokens[i].id, b.tokens[j].id)
         if c == 0
             push!(vec, WeightedToken(a.tokens[i].id, a.tokens[i].weight + b.tokens[j].weight))
@@ -172,7 +171,7 @@ function *(a::VBOW, b::VBOW)
     sizehint!(vec, min(n1, n2))
 
     i = 1; j = 1
-    @fastmath @inbounds while i <= n1 && j <= n2
+    @inbounds while i <= n1 && j <= n2
         c = cmp(a.tokens[i].id, b.tokens[j].id)
         if c == 0
             push!(vec, WeightedToken(a.tokens[i].id, a.tokens[i].weight * b.tokens[j].weight))
@@ -211,7 +210,7 @@ function *(a::VBOW, b::F) where {F <: Real}
     n=length(a.tokens)
     sizehint!(vec, n)
     i = 1
-    @fastmath @inbounds while i <= n
+    @inbounds while i <= n
         push!(vec, WeightedToken(a.tokens[i].id, a.tokens[i].weight*b))
         i += 1
     end
@@ -223,9 +222,9 @@ function *(b::F, a::VBOW) where {F <: Real}
     return a * b
 end
 
-function transpose(matrix::AbstractVector{VBOW})
+function dtranspose(matrix::AbstractVector{VBOW})
     M = Dict{UInt, Vector{WeightedToken}}()
-    maxID = 0
+
     for (objID, vector) in enumerate(matrix)
         for token in vector.tokens
             wt = WeightedToken(objID, token.weight)
@@ -234,23 +233,8 @@ function transpose(matrix::AbstractVector{VBOW})
             else
                 M[token.id] = [wt]
             end
-
-            maxID = max(token.id, maxID)
         end
     end
-
-    V = Vector{VBOW}(Int(maxID))
-    i = UInt64(1)
-    while i <= maxID
-        if haskey(M, i)
-            V[i] = VBOW(M[i])
-        else
-            # "Unused token $i"
-            V[i] = VBOW([WeightedToken(0, 0.0)])
-        end
-
-        i += 1
-    end
-
-    V
+    
+    M
 end

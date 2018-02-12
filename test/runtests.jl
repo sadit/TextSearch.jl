@@ -52,6 +52,7 @@ end
     config.nlist = [1]
     config.qlist = []
     config.skiplist = []
+    config.del_usr = false
 
     @test tokenize(text1, config) == String["hello", "world", "!!",  "@user", ";)", "#jello", ".", "world", ":)"]
     vmodel = VectorModel(config)
@@ -147,7 +148,7 @@ end
     end
 end
 
-@testset "transpose vbow" begin
+@testset "dtranspose vbow" begin
     config = TextConfig()
     config.nlist = [1]
     config.qlist = []
@@ -167,8 +168,8 @@ end
     @show vmodel.voc
     tokenmap = id2token(vmodel)
     X = [vectorize(x, vmodel) for x in _corpus]
-    X̂ = transpose(X)
-    for (i, x) in enumerate(X̂)
-        info("word $i - $(tokenmap[i]): ", [(a.id, a.weight) for a in x.tokens])
+    dX = dtranspose(X)
+    for (keyid, tokens) in dX
+        info("word $keyid - $(tokenmap[keyid]): ", [(a.id, a.weight) for a in tokens])
     end
 end
