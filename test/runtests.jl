@@ -165,7 +165,7 @@ end
     vmodel = VectorModel(config)
     TextModel.fit!(vmodel, _corpus)
     @show _corpus
-    @show vmodel.voc
+    @show vmodel.token2id
     tokenmap = id2token(vmodel)
     X = [vectorize(x, vmodel) for x in _corpus]
     dX = dtranspose(X)

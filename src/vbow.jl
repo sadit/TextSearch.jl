@@ -16,7 +16,7 @@ import Base: +, *, ==, dot, length
 
 export VBOW, cosine_distance, angle_distance, cosine, dtranspose
 
-struct WeightedToken
+mutable struct WeightedToken
     id::UInt64
     weight::Float64
 end
@@ -92,9 +92,13 @@ function cosine_distance(a::VBOW, b::VBOW)::Float64
 end
 
 function angle_distance(a::VBOW, b::VBOW)
-    c = cosine(a, b)
-    c = max(c, -1)
-    c = min(c, 1)
+    c::Float64 = cosine(a, b)
+    if c < -1.0
+        c = -1.0
+    elseif c > 1.0
+        c = 1.0
+    end
+
     return acos(c)
 end
 
@@ -138,6 +142,7 @@ function +(a::VBOW, b::VBOW)
     n2=length(b.tokens)
     sizehint!(vec, max(n1, n2))
 
+    @assert (n1 > 0 && n2 > 0) "empty n1:$n1 n2:$n2"
     i = 1; j = 1
     @inbounds while i <= n1 && j <= n2
         c = cmp(a.tokens[i].id, b.tokens[j].id)
@@ -151,10 +156,20 @@ function +(a::VBOW, b::VBOW)
         else
             push!(vec, WeightedToken(b.tokens[j].id, b.tokens[j].weight))
             j += 1
-        end
+        end    
     end
 
-    return VBOW(vec)
+    @inbounds while i <= n1
+        push!(vec, WeightedToken(a.tokens[i].id, a.tokens[i].weight))
+        i += 1
+    end
+
+    @inbounds while j <= n2
+        push!(vec, WeightedToken(b.tokens[j].id, b.tokens[j].weight))
+        j += 1
+    end
+
+    VBOW(vec)
 end
 
 #Base::+(a::VBOW, b::VBOW) = sum_vbow
