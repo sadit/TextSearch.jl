@@ -1,9 +1,14 @@
 export TextModel, VectorModel, fit!, inverse_vbow,
-    compute_vbow, compute_bow, vectorize, vectorize_tfidf,
-    vectorize_tf, vectorize_idf, vectorize_rawfreq, id2token
+    compute_bow, vectorize, id2token, Tfidf, Tf, Idf, Freq
 
 abstract type Model end
+abstract type Weighting end
 
+abstract type Tfidf <: Weighting end
+abstract type Tf <: Weighting end
+abstract type Idf <: Weighting end
+abstract type Freq <: Weighting end 
+	
 mutable struct VectorModel <: Model
     token2id::Dict{String,Int}
     weights::Dict{Int,Float64}
@@ -39,8 +44,8 @@ end
 function fit!(model::VectorModel, corpus; get_text::Function=identity)
     V = Dict{String,Int}()
     for item in corpus
-        text = get_text(item)
-        voc = compute_bow(text, model.config)
+        data = get_text(item)
+        voc = compute_bow(data, model.config)
         for (token, freq) in voc
             V[token] = get(V, token, 0) + freq
         end
@@ -66,9 +71,11 @@ function fit!(model::VectorModel, corpus; get_text::Function=identity)
    # model.weights[0] = model.filter_low + 1  # for unknown tokens
 end
 
-function compute_bow(text::String, config::TextConfig)
-    voc = Dict{String,Int}()
-
+function compute_bow(text::String, config::TextConfig, voc=nothing)
+	if voc == nothing
+		voc = Dict{String,Int}()
+	end
+	
     for token in tokenize(text, config)
         freq = get(voc, token, 0) + 1
         voc[token] = freq
@@ -77,98 +84,100 @@ function compute_bow(text::String, config::TextConfig)
     voc
 end
 
-function raw_vbow(idtokens, model::VectorModel)
-    b = WeightedToken[WeightedToken(idtokens[1], 1.0)]
-    sizehint!(b, length(idtokens))
-    for i in 2:length(idtokens)
-        if idtokens[i-1] == idtokens[i]
-            b[end].weight += 1
-        else
-            push!(b, WeightedToken(idtokens[i], 1.0))
-        end
-    end
-    
-    maxfreq_ = 0.0
-    for t in b
-        if maxfreq_ < t.weight
-            maxfreq_ = t.weight
-        end
-    end
-    
-    b, maxfreq_
+function compute_bow(arr, config::TextConfig)
+	v = Dict{String,Int}()
+	
+	for text in arr
+		compute_bow(text::String, config, v)
+	end
+	
+	v
 end
 
-function weighted_vector(weighting_function::Function, text::String, model::VectorModel; maxlength=typemax(Int))::VBOW
-    # bow = compute_bow(text, model.config)
-    tokens = tokenize(text, model.config)
-    if length(tokens) == 0
-        return VBOW(WeightedToken[])
+function compute_bow(text::String, model::VectorModel, voc=nothing)
+	if voc == nothing
+		voc = Dict{Int,Int}()
+	end
+	
+    for token in tokenize(text, model.config)
+		i = get(model.token2id, token, 0)
+		if i > 0
+			voc[i] = get(voc, i, 0) + 1
+		end
     end
 
-    idtokens = Int[] # [get(model.token2id, t, 0) for t in tokens]
-    sizehint!(idtokens, length(tokens))
-    for t in tokens
-        id = get(model.token2id, t, 0)
-        if id > 0
-            push!(idtokens, id)
-        end
-    end
-    if length(idtokens) == 0
-        return VBOW(WeightedToken[])
-    end
-    sort!(idtokens)
-
-    vbow, maxfreq = raw_vbow(idtokens, model)
-
-    for t in vbow
-        t.weight = weighting_function(t.weight, maxfreq, model.size, model.weights[t.id])
-    end
-
-    if length(vbow) > maxlength
-        sort!(vbow, by=(x) -> -x.weight)
-        vbow = vbow[1:maxlength]
-        sort!(vbow, by=(x) -> x.id)
-    end
-
-    VBOW(vbow)
+    voc
 end
 
-function _tfidf(freq, maxfreq, N, freqToken)
+function compute_bow(arr, model::VectorModel)
+	v = Dict{Int,Int}()
+	
+	for text in arr
+		compute_bow(text::String, model, v)
+	end
+	
+	v
+end
+
+function maxfreq(vow)::Int
+	m = 0
+	@inbounds for v in values(vow)
+		if v > m
+			m = v
+		end
+		# m = max(m, v)
+	end
+	
+	m
+end
+
+function weighted_vector(weighting::Type, data, model::Model; maxlength=typemax(Int))::VBOW
+	raw = compute_bow(data, model)
+	bow = VBOW(raw)
+	m = maxfreq(raw)
+	for t in bow.tokens
+        t.weight = _weight(weighting, t.weight, m, model.size, model.weights[t.id])
+    end
+	
+	bow.invnorm = -1.0
+
+    if length(bow) > maxlength
+        sort!(bow.tokens, by=(x) -> -x.weight)
+        bow = bow[1:maxlength]
+        sort!(bow.tokens, by=(x) -> x.id)
+    end
+
+	bow
+end
+
+function _weight(::Type{Tfidf}, freq, maxfreq, N, freqToken)::Float64
     (freq / maxfreq) * log(N / freqToken)
 end
 
-function _tf(freq, maxfreq, N, freqToken)
+function _weight(::Type{Tf}, freq, maxfreq, N, freqToken)::Float64
     (freq / maxfreq)
 end
 
-function _idf(freq, maxfreq, N, freqToken)
+function _weight(::Type{Idf}, freq, maxfreq, N, freqToken)::Float64
     log(N / freqToken)
 end
 
-function _rawfreq(freq, maxfreq, N, freqToken)
+function _weight(::Type{Freq}, freq, maxfreq, N, freqToken)::Float64
     freq
 end
 
-function vectorize_tfidf(text::String, model::VectorModel; maxlength=typemax(Int))
-    weighted_vector(_tfidf, text, model, maxlength=maxlength)
+#function vectorize(weighting::Weighting, data::String, model::VectorModel; maxlength=typemax(Int))
+#	weighted_vector(weighting, data, model, maxlength=maxlength)
+#end
+
+function vectorize(weighting::Weighting, data, model::Model; maxlength=typemax(Int))
+	weighted_vector(weighting, data, model, maxlength=maxlength)
 end
 
-function vectorize_tf(text::String, model::VectorModel; maxlength=typemax(Int))
-    weighted_vector(_tf, text, model, maxlength=maxlength)
-end
+#function vectorize(data::String, model::VectorModel; maxlength=typemax(Int))
+#	weighted_vector(Tfidf, data, model, maxlength=maxlength)
+#end
 
-function vectorize_idf(text::String, model::VectorModel; maxlength=typemax(Int))
-    weighted_vector(_idf, text, model, maxlength=maxlength)
-end
-
-function vectorize_rawfreq(text::String, model::VectorModel; maxlength=typemax(Int))
-    weighted_vector(_rawfreq, text, model, maxlength=maxlength)
-end
-
-function vectorize(text::String, model::VectorModel; maxlength=typemax(Int))
-    vectorize_tfidf(text, model, maxlength=maxlength)
-end
-
-function vectorize(textlist::AbstractVector{String}, model::Model)
-    [vectorize(text, model) for text in textlist]
+function vectorize(data, model::Model; maxlength=typemax(Int))
+	weighted_vector(Tfidf, data, model, maxlength=maxlength)
 end

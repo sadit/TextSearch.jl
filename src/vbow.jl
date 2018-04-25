@@ -103,8 +103,8 @@ function angle_distance(a::VBOW, b::VBOW)
 end
 
 function dot(a::VBOW, b::VBOW)::Float64
-    n1=length(a.tokens)
-    n2=length(b.tokens)
+    n1 = length(a.tokens)
+    n2 = length(b.tokens)
     # (n1 == 0 || n2 == 0) && return 0.0
 
     sum::Float64 = 0.0
@@ -181,8 +181,8 @@ end
 """
 function *(a::VBOW, b::VBOW)
     vec = Vector{WeightedToken}()
-    n1=length(a.tokens)
-    n2=length(b.tokens)
+    n1 = length(a.tokens)
+    n2 = length(b.tokens)
     sizehint!(vec, min(n1, n2))
 
     i = 1; j = 1

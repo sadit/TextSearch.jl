@@ -138,7 +138,7 @@ function push_word!(output::Vector{String}, token::String, config::TextConfig)
     # if config.del_sw && token in config.stopwords
     #     return
     # end
-    token = config.normalize(token)
+    token = config.normalize(token)::String
 
     if length(token) > 0
         push!(output, token)
