@@ -1,13 +1,7 @@
 export TextModel, VectorModel, fit!, inverse_vbow,
-    compute_bow, vectorize, id2token, Tfidf, Tf, Idf, Freq
+    compute_bow, vectorize, id2token, TfidfModel, TfModel, IdfModel, FreqModel
 
 abstract type Model end
-abstract type Weighting end
-
-abstract type Tfidf <: Weighting end
-abstract type Tf <: Weighting end
-abstract type Idf <: Weighting end
-abstract type Freq <: Weighting end 
 	
 mutable struct VectorModel <: Model
     token2id::Dict{String,Int}
@@ -16,6 +10,22 @@ mutable struct VectorModel <: Model
     filter_low::Int
     filter_high::Float64
     config::TextConfig
+end
+
+struct TfidfModel <: Model
+    vmodel::VectorModel
+end
+
+struct TfModel <: Model
+    vmodel::VectorModel
+end
+
+struct IdfModel <: Model
+    vmodel::VectorModel
+end
+
+struct FreqModel <: Model
+    vmodel::VectorModel
 end
 
 function id2token(model::VectorModel)
@@ -41,10 +51,9 @@ function VectorModel(config::TextConfig)
     model
 end
 
-function fit!(model::VectorModel, corpus; get_text::Function=identity)
+function fit!(model::VectorModel, corpus)
     V = Dict{String,Int}()
-    for item in corpus
-        data = get_text(item)
+    for data in corpus
         voc = compute_bow(data, model.config)
         for (token, freq) in voc
             V[token] = get(V, token, 0) + freq
@@ -131,53 +140,30 @@ function maxfreq(vow)::Int
 	m
 end
 
-function weighted_vector(weighting::Type, data, model::Model; maxlength=typemax(Int))::VBOW
-	raw = compute_bow(data, model)
+function vectorize(data, model::T)::VBOW where {T <: Union{TfidfModel,TfModel,IdfModel,FreqModel}}
+	raw = compute_bow(data, model.vmodel)
 	bow = VBOW(raw)
 	m = maxfreq(raw)
 	for t in bow.tokens
-        t.weight = _weight(weighting, t.weight, m, model.size, model.weights[t.id])
+        t.weight = _weight(model, t.weight, m, model.vmodel.size, model.vmodel.weights[t.id])
     end
 	
 	bow.invnorm = -1.0
-
-    if length(bow) > maxlength
-        sort!(bow.tokens, by=(x) -> -x.weight)
-        bow = bow[1:maxlength]
-        sort!(bow.tokens, by=(x) -> x.id)
-    end
-
 	bow
 end
 
-function _weight(::Type{Tfidf}, freq, maxfreq, N, freqToken)::Float64
+function _weight(model::TfidfModel, freq, maxfreq, N, freqToken)::Float64
     (freq / maxfreq) * log(N / freqToken)
 end
 
-function _weight(::Type{Tf}, freq, maxfreq, N, freqToken)::Float64
+function _weight(model::TfModel, freq, maxfreq, N, freqToken)::Float64
     (freq / maxfreq)
 end
 
-function _weight(::Type{Idf}, freq, maxfreq, N, freqToken)::Float64
+function _weight(model::IdfModel, freq, maxfreq, N, freqToken)::Float64
     log(N / freqToken)
 end
 
-function _weight(::Type{Freq}, freq, maxfreq, N, freqToken)::Float64
+function _weight(model::FreqModel, freq, maxfreq, N, freqToken)::Float64
     freq
-end
-
-#function vectorize(weighting::Weighting, data::String, model::VectorModel; maxlength=typemax(Int))
-#	weighted_vector(weighting, data, model, maxlength=maxlength)
-#end
-
-function vectorize(weighting::Weighting, data, model::Model; maxlength=typemax(Int))
-	weighted_vector(weighting, data, model, maxlength=maxlength)
-end
-
-#function vectorize(data::String, model::VectorModel; maxlength=typemax(Int))
-#	weighted_vector(Tfidf, data, model, maxlength=maxlength)
-#end
-
-function vectorize(data, model::Model; maxlength=typemax(Int))
-	weighted_vector(Tfidf, data, model, maxlength=maxlength)
 end

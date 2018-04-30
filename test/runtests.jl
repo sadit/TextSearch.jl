@@ -57,9 +57,8 @@ end
     @test tokenize(text1, config) == String["hello", "world", "!!",  "@user", ";)", "#jello", ".", "world", ":)"]
     vmodel = VectorModel(config)
     TextModel.fit!(vmodel, corpus)
-    @test length(vectorize(text1, vmodel)) == 8
-    @test length(vectorize(text2, vmodel)) == 0
-    @show vectorize_tfidf(text1, vmodel)
+    @test length(vectorize(text1, vmodel |> TfModel)) == 8
+    @test length(vectorize(text2, vmodel |> TfModel)) == 0
 end
 
 
@@ -70,7 +69,7 @@ const sentiment_text = "lol, esto me encanta"
     config = TextConfig()
     config.nlist = [1]
     dmodel = DistModel(config, 2)
-    TextModel.fit!(dmodel, labeled_corpus)
+    TextModel.fit!(dmodel, [x for (x,y) in labeled_corpus], [y for (x,y) in labeled_corpus])
     dmap = id2token(dmodel)
     @show sentiment_text
     @show dmodel
@@ -83,7 +82,9 @@ end
     config = TextConfig()
     config.nlist = [1]
     dmodel = DistModel(config, 2)
-    TextModel.fit!(dmodel, labeled_corpus, normalize=minimum)
+    X = [x[1] for x in labeled_corpus]
+    y = [x[2] for x in labeled_corpus]
+    TextModel.fit!(dmodel, X, y, normalizeby=minimum)
     dmap = id2token(dmodel)
     @show sentiment_text
     @show dmodel
@@ -97,7 +98,9 @@ end
     config = TextConfig()
     config.nlist = [1]
     dmodel = DistModel(config, 2)
-    feed!(dmodel, labeled_corpus)
+    X = [x[1] for x in labeled_corpus]
+    y = [x[2] for x in labeled_corpus]
+    feed!(dmodel, X, y)
     emodel = EntModel(dmodel, 0)
     @show emodel
     emap = id2token(emodel)
@@ -167,7 +170,8 @@ end
     @show _corpus
     @show vmodel.token2id
     tokenmap = id2token(vmodel)
-    X = [vectorize(x, vmodel) for x in _corpus]
+    model = FreqModel(vmodel)
+    X = [vectorize(x, model) for x in _corpus]
     dX = dtranspose(X)
     for (keyid, tokens) in dX
         info("word $keyid - $(tokenmap[keyid]): ", [(a.id, a.weight) for a in tokens])

@@ -11,11 +11,11 @@ function EntModel(model::DistModel, initial)
     tokenID = 0
     maxent = log2(nclasses)
 
+    
     for (token, tokendist) in model.tokens
         e = 0.0
         pop = initial * nclasses + sum(tokendist.dist)
 
-        # @show tokendist, initial, nclasses, sum(tokendist.dist)
         for j in 1:nclasses
             pj = (tokendist.dist[j] + initial) / pop
 
@@ -39,19 +39,15 @@ function id2token(model::EntModel)
     m
 end
 
-function vectorize(text::String, model::EntModel; corrector::Function=identity)
-    bow = compute_bow(text, model.config)
+function vectorize(data, model::EntModel)
+    bow = compute_bow(data, model.config)
     vec = Vector{WeightedToken}()
     sizehint!(vec, length(bow))
 
     for (token, freq) in bow
-        term = try
-            token = corrector(token)
-            model.tokens[token]
-        catch err
-            continue
+        if haskey(model.tokens, token)
+            push!(vec, model.tokens[token])
         end
-        push!(vec, term)
     end
 
     sort!(vec, by=(x) -> x.id)

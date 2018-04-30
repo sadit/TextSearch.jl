@@ -189,6 +189,15 @@ function tokenize(text::String, config::TextConfig)
     tokenize(t, config)
 end
 
+function tokenize(arr::Vector, config::TextConfig)
+    L = []
+    for text in arr
+        t = normalize_text(text, config)
+        append!(L, tokenize(t, config))
+    end
+    L
+end
+
 function tokenize(text::Vector{Char}, config::TextConfig)
     n = length(text)
     L = String[]

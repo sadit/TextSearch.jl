@@ -18,21 +18,20 @@ function DistModel(config::TextConfig, nclasses)
     DistModel(Dict{String,TokenDist}(), config, zeros(Int, nclasses))
 end
 
-function feed!(model::DistModel, corpus; get_text_klass::Function=identity)
-    nclasses = length(model.sizes)
-    Z = zeros(Int32, nclasses)
+function DistModel(config::TextConfig, corpus, y; nclasses=0, normalizeby=minimum)
+    if nclasses == 0
+        nclasses = y |> unique |> length
+    end
+    
+    model = DistModel(config, nclasses)
     n = 0
-    for item in corpus
-        text, klass = get_text_klass(item)
-
-        for (token, freq) in compute_bow(text, model.config)
-            idtoken = get(model.tokens, token, 0)
-            if idtoken == 0
-                idtoken = length(model.tokens)
-                model.tokens[token] = TokenDist(idtoken, nclasses)
+    for (klass, text) in zip(y, corpus)
+        for token in tokenize(text, config)
+            if !haskey(model.tokens, token)
+                model.tokens[token] = TokenDist(length(model.tokens), nclasses)
             end
 
-            model.tokens[token].dist[klass] += freq
+            model.tokens[token].dist[klass] += 1
         end
 
         model.sizes[klass] += 1
@@ -41,21 +40,31 @@ function feed!(model::DistModel, corpus; get_text_klass::Function=identity)
             info("DistModel: ", sum(model.sizes), " processed items")
         end
     end
-
+    
+    normalize!(model, normalizeby)
+    fix!(model)
     model
 end
 
-function id2token(model::DistModel)
+function feed!(model::DistModel, corpus, y)
+    config = model.config
     nclasses = length(model.sizes)
-    H = Dict{UInt64,String}()
-    for (token, d) in model.tokens
-        b = d.id * nclasses
-        for i in 1:nclasses
-            H[b + i] = string(token,'<',i,'>')
+    n = 0
+    for (text, klass) in zip(corpus, y)
+        for token in tokenize(text, config)
+            if !haskey(model.tokens, token)
+                model.tokens[token] = TokenDist(length(model.tokens), nclasses)
+            end
+
+            model.tokens[token].dist[klass] += 1
+        end
+
+        model.sizes[klass] += 1
+        n += 1
+        if n % 10000 == 1
+            info("DistModel: ", sum(model.sizes), " processed items")
         end
     end
-
-    H
 end
 
 function normalize!(model::DistModel, by=minimum)
@@ -84,31 +93,40 @@ function fix!(model::DistModel)
     model
 end
 
-function fit!(model::DistModel, corpus; get_text_klass::Function=identity, normalize=nothing)
-    feed!(model, corpus, get_text_klass=get_text_klass)
-    if normalize != nothing
-        normalize!(model, normalize)
+function fit!(model::DistModel, corpus, y; normalizeby=nothing)
+    feed!(model, corpus, y)
+    if normalizeby != nothing
+        normalize!(model, normalizeby)
     end
     fix!(model)
 end
 
-function vectorize(text::String, model::DistModel; corrector::Function=identity)
+function id2token(model::DistModel)
+    nclasses = length(model.sizes)
+    H = Dict{UInt64,String}()
+    for (token, d) in model.tokens
+        b = d.id * nclasses
+        for i in 1:nclasses
+            H[b + i] = string(token,'<',i,'>')
+        end
+    end
+
+    H
+end
+
+function vectorize(text, model::DistModel)
     nclasses = length(model.sizes)
     bow = compute_bow(text, model.config)
     vec = WeightedToken[]
     sizehint!(vec, length(bow) * nclasses)
 
     for (token, freq) in bow
-        tokendist = try
-            token = corrector(token)
-            model.tokens[token]
-        catch err
-            continue
-        end
-
-        b = tokendist.id * nclasses
-        for i in 1:nclasses
-            push!(vec, WeightedToken(b+i, tokendist.dist[i]))
+        if haskey(model.tokens, token)
+            tokendist = model.tokens[token]
+            b = tokendist.id * nclasses
+            for i in 1:nclasses
+                push!(vec, WeightedToken(b+i, tokendist.dist[i]))
+            end
         end
     end
 
