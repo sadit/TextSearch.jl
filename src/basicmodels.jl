@@ -4,8 +4,9 @@ export TextModel, VectorModel, fit!, inverse_vbow,
 abstract type Model end
 	
 mutable struct VectorModel <: Model
-    token2id::Dict{String,Int}
-    weights::Dict{Int,Float64}
+    W::Dict{String,WeightedToken}
+    #W::Dict{String,Int}
+    #weights::Dict{Int,Float64}
     size::Int64
     filter_low::Int
     filter_high::Float64
@@ -30,8 +31,8 @@ end
 
 function id2token(model::VectorModel)
     m = Dict{Int,String}()
-    for (t, id) in model.token2id
-        m[id] = t
+    for (t, wtoken) in model.W
+        m[wtoken.id] = t
     end
 
     m
@@ -43,7 +44,7 @@ function inverse_vbow(vec, vocmap)
     [(vocmap[token.id], token.weight) for token in s]
 end
 
-VectorModel() = VectorModel(Dict{String,Int}(), Dict{Int,Float64}(), 0, 1, 1.0, TextConfig())
+VectorModel() = VectorModel(Dict{String,Float64}(), 0, 1, 1.0, TextConfig())
 
 function VectorModel(config::TextConfig)
     model = VectorModel()
@@ -72,12 +73,9 @@ function fit!(model::VectorModel, corpus)
             continue
         end
 
-        id = length(model.token2id) + 1
-        model.token2id[token] = id
-        model.weights[id] = freq
+        id = length(model.W) + 1
+        model.W[token] = WeightedToken(id, freq)
     end
-
-   # model.weights[0] = model.filter_low + 1  # for unknown tokens
 end
 
 function compute_bow(text::String, config::TextConfig, voc=nothing)
@@ -103,31 +101,6 @@ function compute_bow(arr, config::TextConfig)
 	v
 end
 
-function compute_bow(text::String, model::VectorModel, voc=nothing)
-	if voc == nothing
-		voc = Dict{Int,Int}()
-	end
-	
-    for token in tokenize(text, model.config)
-		i = get(model.token2id, token, 0)
-		if i > 0
-			voc[i] = get(voc, i, 0) + 1
-		end
-    end
-
-    voc
-end
-
-function compute_bow(arr, model::VectorModel)
-	v = Dict{Int,Int}()
-	
-	for text in arr
-		compute_bow(text::String, model, v)
-	end
-	
-	v
-end
-
 function maxfreq(vow)::Int
 	m = 0
 	@inbounds for v in values(vow)
@@ -141,15 +114,22 @@ function maxfreq(vow)::Int
 end
 
 function vectorize(data, model::T)::VBOW where {T <: Union{TfidfModel,TfModel,IdfModel,FreqModel}}
-	raw = compute_bow(data, model.vmodel)
-	bow = VBOW(raw)
-	m = maxfreq(raw)
-	for t in bow.tokens
-        t.weight = _weight(model, t.weight, m, model.vmodel.size, model.vmodel.weights[t.id])
+    bag = compute_bow(data, model.vmodel.config)
+	m = maxfreq(bag)
+    n = model.vmodel.size
+    b = WeightedToken[]
+    sizehint!(b, length(bag))
+	for (token, freq) in bag
+        wtoken = try
+            model.vmodel.W[token]
+        catch KeyError
+            continue
+        end
+        w = _weight(model, freq, m, n, wtoken.weight)
+        push!(b, WeightedToken(wtoken.id, w))
     end
-	
-	bow.invnorm = -1.0
-	bow
+    
+	VBOW(b)
 end
 
 function _weight(model::TfidfModel, freq, maxfreq, N, freqToken)::Float64

@@ -168,7 +168,6 @@ end
     vmodel = VectorModel(config)
     TextModel.fit!(vmodel, _corpus)
     @show _corpus
-    @show vmodel.token2id
     tokenmap = id2token(vmodel)
     model = FreqModel(vmodel)
     X = [vectorize(x, model) for x in _corpus]
