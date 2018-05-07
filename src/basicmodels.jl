@@ -133,7 +133,7 @@ function vectorize(data, model::T)::VBOW where {T <: Union{TfidfModel,TfModel,Id
 end
 
 function _weight(model::TfidfModel, freq, maxfreq, N, freqToken)::Float64
-    (freq / maxfreq) * log(N / freqToken)
+    (freq / maxfreq) * log(1 + N / freqToken)
 end
 
 function _weight(model::TfModel, freq, maxfreq, N, freqToken)::Float64
