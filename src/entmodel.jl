@@ -50,6 +50,5 @@ function vectorize(data, model::EntModel)
         end
     end
 
-    sort!(vec, by=(x) -> x.id)
     VBOW(vec)
 end

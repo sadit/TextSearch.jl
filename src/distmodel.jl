@@ -130,6 +130,5 @@ function vectorize(text, model::DistModel)
         end
     end
 
-    sort!(vec, by=(x) -> x.id)
     VBOW(vec)
 end

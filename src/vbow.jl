@@ -14,7 +14,7 @@
 
 import Base: +, *, ==, dot, length
 
-export VBOW, cosine_distance, angle_distance, cosine, dtranspose
+export VBOW, WeightedToken, cosine_distance, angle_distance, cosine, dtranspose
 
 mutable struct WeightedToken
     id::UInt64
@@ -26,7 +26,10 @@ mutable struct VBOW
     invnorm::Float64
 end
 
-function VBOW(tokens::Vector{WeightedToken})
+function VBOW(tokens::Vector{WeightedToken}; sorted=false)
+    if !sorted
+        sort!(tokens, by=x->x.id)
+    end
     VBOW(tokens, -1.0)  # valid invnorm values are greater or equal to zero
 end
 
@@ -62,7 +65,6 @@ function VBOW(bow::AbstractVector{Tuple{I, F}}) where {I <: Any, F <: Real}
         end
     end
 
-    sort!(M, by=(x)->x.id)
     VBOW(M)
 end
 
@@ -81,7 +83,6 @@ function VBOW(bow::Dict{I, F}) where {I <: Any, F <: Real}
         end
     end
 
-    sort!(M, by=(x)->x.id)
     VBOW(M)
 end
 

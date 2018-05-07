@@ -5,8 +5,6 @@ abstract type Model end
 	
 mutable struct VectorModel <: Model
     W::Dict{String,WeightedToken}
-    #W::Dict{String,Int}
-    #weights::Dict{Int,Float64}
     size::Int64
     filter_low::Int
     filter_high::Float64
@@ -79,9 +77,7 @@ function fit!(model::VectorModel, corpus)
 end
 
 function compute_bow(text::String, config::TextConfig, voc=nothing)
-	if voc == nothing
-		voc = Dict{String,Int}()
-	end
+    voc::Dict{String,Int} = voc == nothing ? Dict{String,Int}() : voc
 	
     for token in tokenize(text, config)
         freq = get(voc, token, 0) + 1
@@ -107,29 +103,33 @@ function maxfreq(vow)::Int
 		if v > m
 			m = v
 		end
-		# m = max(m, v)
 	end
 	
 	m
 end
 
+const unknown_token = WeightedToken(0, -1.0)
+
 function vectorize(data, model::T)::VBOW where {T <: Union{TfidfModel,TfModel,IdfModel,FreqModel}}
     bag = compute_bow(data, model.vmodel.config)
 	m = maxfreq(bag)
     n = model.vmodel.size
-    b = WeightedToken[]
-    sizehint!(b, length(bag))
-	for (token, freq) in bag
-        wtoken = try
-            model.vmodel.W[token]
-        catch KeyError
+    b = Vector{WeightedToken}(length(bag))
+    
+    i = 0
+    
+    for (token, freq) in bag
+        wtoken = get(model.vmodel.W, token, unknown_token)
+        if wtoken == unknown_token
             continue
         end
         w = _weight(model, freq, m, n, wtoken.weight)
-        push!(b, WeightedToken(wtoken.id, w))
+        i += 1
+        b[i] = WeightedToken(wtoken.id, w)
+        #b[i] = WeightedToken(wtoken.id, freq / m)
     end
-    
-	VBOW(b)
+    resize!(b, i)
+    VBOW(b)
 end
 
 function _weight(model::TfidfModel, freq, maxfreq, N, freqToken)::Float64
