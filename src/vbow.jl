@@ -21,7 +21,7 @@ mutable struct WeightedToken
     weight::Float64
 end
 
-mutable struct VBOW
+struct VBOW
     tokens::Vector{WeightedToken}
     invnorm::Float64
 end
@@ -30,24 +30,16 @@ function VBOW(tokens::Vector{WeightedToken}; sorted=false)
     if !sorted
         sort!(tokens, by=x->x.id)
     end
-    VBOW(tokens, -1.0)  # valid invnorm values are greater or equal to zero
-end
-
-function invnorm(bow::VBOW)
-    if bow.invnorm < 0.0
-        xnorm::Float64 = 0.0
-        @inbounds @simd for i = 1:length(bow.tokens)
-            xnorm += bow.tokens[i].weight ^ 2
-        end
-
-        if length(bow.tokens) > 0
-            bow.invnorm = 1/sqrt(xnorm)
-        else
-            bow.invnorm = 0.0
-        end
+    
+    xnorm::Float64 = 0.0
+    @inbounds @simd for i = 1:length(tokens)
+        xnorm += tokens[i].weight ^ 2
     end
 
-    bow.invnorm
+    (xnorm <= eps(Float64)) && error("A valid VBOW object cannot have a zero norm $xnorm -- tokens: $tokens")
+    xnorm = 1.0/sqrt(xnorm)
+
+    VBOW(tokens, xnorm)  # valid invnorm values are greater or equal to zero
 end
 
 function VBOW(bow::AbstractVector{Tuple{I, F}}) where {I <: Any, F <: Real}
@@ -128,7 +120,7 @@ function dot(a::VBOW, b::VBOW)::Float64
 end
 
 function cosine(a::VBOW, b::VBOW)::Float64
-    return dot(a, b) * invnorm(a) * invnorm(b)
+    return dot(a, b) * a.invnorm * b.invnorm
 end
 
 
