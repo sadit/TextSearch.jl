@@ -1,0 +1,12 @@
+name = "TextModel"
+uuid = "7f6f6c8a-3b03-11e9-223d-e7d88259bd6c"
+authors = ["Eric S. Tellez <donsadit@gmail.com>"]
+version = "0.2.0"
+
+[deps]
+GZip = "92fee26a-97fe-5a0c-ad85-20a5f3185b63"
+JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+SimilaritySearch = "7eee491e-8ade-11e8-359b-2102e3160632"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+Unicode = "4ec0a83e-493e-50e2-b9ac-8f72acf5a8f5"

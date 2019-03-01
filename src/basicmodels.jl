@@ -1,36 +1,31 @@
-export TextModel, VectorModel, fit!, inverse_vbow,
-    compute_bow, vectorize, id2token, TfidfModel, TfModel, IdfModel, FreqModel
+export TextModel, VectorModel, fit, inverse_vbow,
+    compute_bow, vectorize, id2token, IdFreq, TfidfModel, TfModel, IdfModel, FreqModel
 
 abstract type Model end
-	
+
+mutable struct IdFreq
+    id::Int32
+    freq::Int32
+    IdFreq() = new(0, 0)
+    IdFreq(a, b) = new(a, b)
+end
+
 mutable struct VectorModel <: Model
-    W::Dict{String,WeightedToken}
-    size::Int64
-    filter_low::Int
-    filter_high::Float64
     config::TextConfig
+    vocab::Dict{String,IdFreq}
+    maxfreq::Int32
+    n::Int32
 end
 
-struct TfidfModel <: Model
-    vmodel::VectorModel
-end
-
-struct TfModel <: Model
-    vmodel::VectorModel
-end
-
-struct IdfModel <: Model
-    vmodel::VectorModel
-end
-
-struct FreqModel <: Model
-    vmodel::VectorModel
-end
+abstract type TfidfModel end
+abstract type TfModel end
+abstract type IdfModel end
+abstract type FreqModel end
 
 function id2token(model::VectorModel)
     m = Dict{Int,String}()
-    for (t, wtoken) in model.W
-        m[wtoken.id] = t
+    for (t, f) in model.vocab
+        m[f.id] = t
     end
 
     m
@@ -42,108 +37,116 @@ function inverse_vbow(vec, vocmap)
     [(vocmap[token.id], token.weight) for token in s]
 end
 
-VectorModel() = VectorModel(Dict{String,Float64}(), 0, 1, 1.0, TextConfig())
-
-function VectorModel(config::TextConfig)
-    model = VectorModel()
-    model.config = config
-    model
+function maximum_(vocab::Dict{String,IdFreq})
+    m = 0
+    for (token, f) in vocab
+        m = max(m, f.freq)
+    end
+    
+    m
 end
 
-function fit!(model::VectorModel, corpus)
-    V = Dict{String,Int}()
-    for data in corpus
-        voc = compute_bow(data, model.config)
-        for (token, freq) in voc
-            V[token] = get(V, token, 0) + freq
-        end
-        
-        model.size += 1
-        if model.size % 10000 == 1
-            info("advance VectorModel: $(model.size) processed items")
-        end
-    end
-
-    info("finished VectorModel: $(model.size) processed items")
-
-    for (token, freq) in V
-        if freq < model.filter_low || freq > model.filter_high * model.size
+function filter_vocab(vocab, low, high=0)
+    X = Dict{String,IdFreq}()
+    maxfreq = maximum_(vocab)
+    for (t, w) in vocab
+        if w.freq < low || w.freq > maxfreq - high
             continue
         end
 
-        id = length(model.W) + 1
-        model.W[token] = WeightedToken(id, freq)
+        X[t] = w
     end
+
+    X, maxfreq
 end
 
-function compute_bow(text::String, config::TextConfig, voc=nothing)
-    voc::Dict{String,Int} = voc == nothing ? Dict{String,Int}() : voc
-	
-    for token in tokenize(text, config)
-        freq = get(voc, token, 0) + 1
-        voc[token] = freq
+function fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector; low=0, high=0) where {T <: Union{TfidfModel,TfModel,IdfModel,FreqModel}}
+    voc = Dict{String,IdFreq}()
+    n = 1
+ 
+    for data in corpus
+        compute_bow(config, data, voc)
+        n += 1
+        if n % 10000 == 1
+            @info "advance VectorModel: $n processed items"
+        end
+    end
+
+    @info "finished VectorModel: $n processed items"
+    if low != 0 || high != 0
+        voc, maxfreq = filter_vocab(voc, low, high)
+    else
+        maxfreq = maximum_(voc)
+    end
+
+    VectorModel(config, voc, maxfreq, n)
+end
+
+const unknown_token = IdFreq(0, 0)
+
+
+function compute_bow(config::TextConfig, text::String)
+    X = compute_bow(config, text, Dict{String,IdFreq}())
+    X = [(token, idfreq.freq) for (token, idfreq) in X]
+    sort!(X, by=x->x[1])
+    X
+end
+
+function compute_bow(config::TextConfig, text::String, voc::Dict{String,IdFreq})
+    for token in tokenize(config, text)
+        h = get(voc, token, unknown_token)
+        if h.freq == 0
+            voc[token] = IdFreq(length(voc), 1)
+        else
+            h.freq += 1
+        end
     end
 
     voc
 end
 
-function compute_bow(arr, config::TextConfig)
-	v = Dict{String,Int}()
-	
+function compute_bow(config::TextConfig, arr::AbstractVector{String}, voc::Dict{String,IdFreq})
 	for text in arr
-		compute_bow(text::String, config, v)
+		compute_bow(config, text, voc)
 	end
 	
-	v
+	voc
 end
 
-function maxfreq(vow)::Int
-	m = 0
-	@inbounds for v in values(vow)
-		if v > m
-			m = v
-		end
-	end
-	
-	m
-end
+function vectorize(model::VectorModel, weighting::Type, data)::VBOW
+    bag = compute_bow(model.config, data, Dict{String,IdFreq}())
+	maxfreq = maximum_(bag)
+    n = model
+    b = Vector{WeightedToken}(undef, length(bag))
 
-const unknown_token = WeightedToken(0, -1.0)
-
-function vectorize(data, model::T)::VBOW where {T <: Union{TfidfModel,TfModel,IdfModel,FreqModel}}
-    bag = compute_bow(data, model.vmodel.config)
-	m = maxfreq(bag)
-    n = model.vmodel.size
-    b = Vector{WeightedToken}(length(bag))
-    
-    i = 0
-    
-    for (token, freq) in bag
-        wtoken = get(model.vmodel.W, token, unknown_token)
-        if wtoken == unknown_token
+    i = 0    
+    for (token, idtoken) in bag
+        global_idtoken = get(model.vocab, token, unknown_token)
+        if global_idtoken.freq == 0
             continue
         end
-        w = _weight(model, freq, m, n, wtoken.weight)
+
+        w = _weight(weighting, idtoken.freq, maxfreq, n, global_idtoken.freq)
         i += 1
-        b[i] = WeightedToken(wtoken.id, w)
-        #b[i] = WeightedToken(wtoken.id, freq / m)
-    end
+        b[i] = WeightedToken(global_idtoken.id, w)
+     end
+
     resize!(b, i)
     VBOW(b)
 end
 
-function _weight(model::TfidfModel, freq, maxfreq, N, freqToken)::Float64
-    (freq / maxfreq) * log(1 + N / freqToken)
+function _weight(::Type{TfidfModel}, freq, maxfreq, n, global_freq)::Float64
+    (freq / maxfreq) * log(2, 1 + n / global_freq)
 end
 
-function _weight(model::TfModel, freq, maxfreq, N, freqToken)::Float64
+function _weight(::Type{TfModel}, freq, maxfreq, n, global_freq)::Float64
     (freq / maxfreq)
 end
 
-function _weight(model::IdfModel, freq, maxfreq, N, freqToken)::Float64
-    log(N / freqToken)
+function _weight(::Type{IdfModel}, freq, maxfreq, n, global_freq)::Float64
+    log(2, n / global_freq)
 end
 
-function _weight(model::FreqModel, freq, maxfreq, N, freqToken)::Float64
+function _weight(::Type{FreqModel}, freq, maxfreq, n, global_freq)::Float64
     freq
 end

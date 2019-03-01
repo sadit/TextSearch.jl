@@ -39,8 +39,8 @@ function id2token(model::EntModel)
     m
 end
 
-function vectorize(data, model::EntModel)
-    bow = compute_bow(data, model.config)
+function vectorize(model::EntModel, data)
+    bow = compute_bow(model.config, data, Dict{String,IdFreq}())
     vec = Vector{WeightedToken}()
     sizehint!(vec, length(bow))
 

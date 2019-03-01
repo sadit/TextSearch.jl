@@ -1,4 +1,5 @@
 export TextConfig, save, load, normalize_text, tokenize, wtokenize
+using Unicode
 #, language!
 # using Languages
 # using SnowballStemmer
@@ -89,23 +90,23 @@ function TextConfig(;del_diac=true,
     )
 end
 
-function normalize_text(text::String, config::TextConfig, findwords=false)::Vector{Char}
+function normalize_text(config::TextConfig, text::String, findwords=false)::Vector{Char}
     if config.lc
         text = lowercase(text)
     end
 
     if config.del_url
-        text = replace(text, RE_URL, s"")
+        text = replace(text, RE_URL => "")
     end
 
     if config.del_usr
-        text = replace(text, RE_USER, s"")
+        text = replace(text, RE_USER => "")
     end
 
     L = Char[BLANK]
     prev = BLANK
 
-    @inbounds for u in normalize_string(text, :NFD)
+    @inbounds for u in Unicode.normalize(text, :NFD)
         if config.del_diac
             o = Int(u)
             0x300 <= o && o <= 0x036F && continue
@@ -134,7 +135,7 @@ function normalize_text(text::String, config::TextConfig, findwords=false)::Vect
     L
 end
 
-function push_word!(output::Vector{String}, token::String, config::TextConfig)
+function push_word!(config::TextConfig, output::Vector{String}, token::String)
     # if config.del_sw && token in config.stopwords
     #     return
     # end
@@ -151,7 +152,7 @@ function push_word!(output::Vector{String}, token::String, config::TextConfig)
     # end
 end
 
-function wtokenize(text::Vector{Char}, config::TextConfig)
+function wtokenize(config::TextConfig, text::Vector{Char})
     n = length(text)
     L = String[]
     W = Char[]
@@ -161,15 +162,15 @@ function wtokenize(text::Vector{Char}, config::TextConfig)
         if c == BLANK
             length(W) == 0 && continue
 
-            push_word!(L, W |> join, config)
+            push_word!(config, L, W |> join)
             W = Char[]
         elseif i > 1
             if text[i-1] in PUNCTUACTION && !(c in PUNCTUACTION)
-                push_word!(L, W |> join, config)
+                push_word!(config, L, W |> join)
                 W = Char[c]
                 continue
             elseif !(text[i-1] in PUNCTUACTION_BLANK) && c in PUNCTUACTION
-                push_word!(L, W |> join, config)
+                push_word!(config, L, W |> join)
                 W = Char[c]
                 continue
             else
@@ -180,25 +181,25 @@ function wtokenize(text::Vector{Char}, config::TextConfig)
         end
     end
 
-    length(W) > 0 && push_word!(L, W |> join, config)
+    length(W) > 0 && push_word!(config, L, W |> join)
     return L
 end
 
-function tokenize(text::String, config::TextConfig)
-    t = normalize_text(text, config)
-    tokenize(t, config)
+function tokenize(config::TextConfig, text::String)
+    t = normalize_text(config, text)
+    tokenize(config, t)
 end
 
-function tokenize(arr::Vector, config::TextConfig)
+function tokenize(config::TextConfig, arr::Vector)
     L = []
     for text in arr
-        t = normalize_text(text, config)
-        append!(L, tokenize(t, config))
+        t = normalize_text(config, text)
+        append!(L, tokenize(config, t))
     end
     L
 end
 
-function tokenize(text::Vector{Char}, config::TextConfig)
+function tokenize(config::TextConfig, text::Vector{Char})
     n = length(text)
     L = String[]
 
@@ -210,7 +211,7 @@ function tokenize(text::Vector{Char}, config::TextConfig)
     end
 
     if length(config.nlist) > 0 || length(config.skiplist) > 0
-        ltext = wtokenize(text, config)
+        ltext = wtokenize(config, text)
         n = length(ltext)
 
         @inbounds for q in config.nlist

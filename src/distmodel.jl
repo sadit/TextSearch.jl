@@ -1,5 +1,5 @@
-import Base: normalize!
-export DistModel, feed!, fix!, fit!, vectorize, id2token
+import SimilaritySearch: normalize!
+export DistModel, feed!, fix!, fit!, vectorize, id2token, normalize!
 
 mutable struct TokenDist
     id::UInt64
@@ -37,7 +37,7 @@ function DistModel(config::TextConfig, corpus, y; nclasses=0, normalizeby=minimu
         model.sizes[klass] += 1
         n += 1
         if n % 10000 == 1
-            info("DistModel: ", sum(model.sizes), " processed items")
+            @info "DistModel: $(sum(model.sizes)) processed items"
         end
     end
     
@@ -51,7 +51,7 @@ function feed!(model::DistModel, corpus, y)
     nclasses = length(model.sizes)
     n = 0
     for (text, klass) in zip(corpus, y)
-        for token in tokenize(text, config)
+        for token in tokenize(config, text)
             if !haskey(model.tokens, token)
                 model.tokens[token] = TokenDist(length(model.tokens), nclasses)
             end
@@ -62,7 +62,7 @@ function feed!(model::DistModel, corpus, y)
         model.sizes[klass] += 1
         n += 1
         if n % 10000 == 1
-            info("DistModel: ", sum(model.sizes), " processed items")
+            @info "DistModel: $(sum(model.sizes)) processed items"
         end
     end
 end
@@ -114,9 +114,9 @@ function id2token(model::DistModel)
     H
 end
 
-function vectorize(text, model::DistModel)
+function vectorize(model::DistModel, text)
     nclasses = length(model.sizes)
-    bow = compute_bow(text, model.config)
+    bow = compute_bow(model.config, text, Dict{String,IdFreq}())
     vec = WeightedToken[]
     sizehint!(vec, length(bow) * nclasses)
 
