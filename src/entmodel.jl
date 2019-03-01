@@ -1,4 +1,4 @@
-export EntModel, vectorize, id2token
+export EntModel, id2token
 
 mutable struct EntModel <: Model
     tokens::Dict{String,WeightedToken}

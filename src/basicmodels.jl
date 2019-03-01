@@ -1,3 +1,4 @@
+import SimilaritySearch: fit
 export TextModel, VectorModel, fit, inverse_vbow,
     compute_bow, vectorize, id2token, IdFreq, TfidfModel, TfModel, IdfModel, FreqModel
 
@@ -116,7 +117,6 @@ end
 function vectorize(model::VectorModel, weighting::Type, data)::VBOW
     bag = compute_bow(model.config, data, Dict{String,IdFreq}())
 	maxfreq = maximum_(bag)
-    n = model
     b = Vector{WeightedToken}(undef, length(bag))
 
     i = 0    
@@ -126,7 +126,7 @@ function vectorize(model::VectorModel, weighting::Type, data)::VBOW
             continue
         end
 
-        w = _weight(weighting, idtoken.freq, maxfreq, n, global_idtoken.freq)
+        w = _weight(weighting, idtoken.freq, maxfreq, model.n, global_idtoken.freq)
         i += 1
         b[i] = WeightedToken(global_idtoken.id, w)
      end
@@ -135,18 +135,18 @@ function vectorize(model::VectorModel, weighting::Type, data)::VBOW
     VBOW(b)
 end
 
-function _weight(::Type{TfidfModel}, freq, maxfreq, n, global_freq)::Float64
+function _weight(::Type{TfidfModel}, freq::Integer, maxfreq::Integer, n::Integer, global_freq::Integer)::Float64
     (freq / maxfreq) * log(2, 1 + n / global_freq)
 end
 
-function _weight(::Type{TfModel}, freq, maxfreq, n, global_freq)::Float64
+function _weight(::Type{TfModel}, freq::Integer, maxfreq::Integer, n::Integer, global_freq::Integer)::Float64
     (freq / maxfreq)
 end
 
-function _weight(::Type{IdfModel}, freq, maxfreq, n, global_freq)::Float64
+function _weight(::Type{IdfModel}, freq::Integer, maxfreq::Integer, n::Integer, global_freq::Integer)::Float64
     log(2, n / global_freq)
 end
 
-function _weight(::Type{FreqModel}, freq, maxfreq, n, global_freq)::Float64
+function _weight(::Type{FreqModel}, freq::Integer, maxfreq::Integer, n::Integer, global_freq::Integer)::Float64
     freq
 end

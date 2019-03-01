@@ -1,5 +1,4 @@
-import SimilaritySearch: normalize!
-export DistModel, feed!, fix!, fit!, vectorize, id2token, normalize!
+export DistModel, feed!, fix!, id2token
 
 mutable struct TokenDist
     id::UInt64
@@ -14,16 +13,13 @@ mutable struct DistModel <: Model
     sizes::Vector{Int}
 end
 
-function DistModel(config::TextConfig, nclasses)
-    DistModel(Dict{String,TokenDist}(), config, zeros(Int, nclasses))
-end
-
-function DistModel(config::TextConfig, corpus, y; nclasses=0, normalizeby=minimum)
+function fit(::Type{DistModel}, config::TextConfig, corpus, y; nclasses=0, norm_by=minimum)
     if nclasses == 0
         nclasses = y |> unique |> length
     end
     
-    model = DistModel(config, nclasses)
+    model = DistModel(Dict{String,TokenDist}(), config, zeros(Int, nclasses))
+ 
     n = 0
     for (klass, text) in zip(y, corpus)
         for token in tokenize(text, config)
@@ -41,7 +37,7 @@ function DistModel(config::TextConfig, corpus, y; nclasses=0, normalizeby=minimu
         end
     end
     
-    normalize!(model, normalizeby)
+    normalize!(model, norm_by)
     fix!(model)
     model
 end
@@ -93,10 +89,10 @@ function fix!(model::DistModel)
     model
 end
 
-function fit!(model::DistModel, corpus, y; normalizeby=nothing)
+function fit(model::DistModel, corpus, y; norm_by=nothing)
     feed!(model, corpus, y)
-    if normalizeby != nothing
-        normalize!(model, normalizeby)
+    if norm_by != nothing
+        normalize!(model, norm_by)
     end
     fix!(model)
 end
