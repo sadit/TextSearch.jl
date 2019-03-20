@@ -1,4 +1,4 @@
-export TextConfig, save, load, normalize_text, tokenize, wtokenize
+export TextConfig, save, load, normalize_text, tokenize
 using Unicode
 #, language!
 # using Languages
@@ -152,7 +152,7 @@ function push_word!(config::TextConfig, output::Vector{String}, token::String)
     # end
 end
 
-function wtokenize(config::TextConfig, text::Vector{Char})
+function tokenize_words(config::TextConfig, text::Vector{Char})
     n = length(text)
     L = String[]
     W = Char[]
@@ -185,39 +185,40 @@ function wtokenize(config::TextConfig, text::Vector{Char})
     return L
 end
 
-function tokenize(config::TextConfig, text::String)
-    t = normalize_text(config, text)
-    tokenize(config, t)
-end
-
 function tokenize(config::TextConfig, arr::Vector)
-    L = []
+    L = Symbol[]
+
     for text in arr
         t = normalize_text(config, text)
-        append!(L, tokenize(config, t))
+        tokenize(config, t, L)
     end
+
     L
 end
 
-function tokenize(config::TextConfig, text::Vector{Char})
+function tokenize(config::TextConfig, text::String)
+    t = normalize_text(config, text)
+    tokenize(config, t, Symbol[])
+end
+
+function tokenize(config::TextConfig, text::Vector{Char}, L::Vector{Symbol})
     n = length(text)
-    L = String[]
 
     @inbounds for q in config.qlist
         for i in 1:(n - q + 1)
             w = text[i:i+q-1] |> join
-            push!(L, w)
+            push!(L, Symbol(w))
         end
     end
 
     if length(config.nlist) > 0 || length(config.skiplist) > 0
-        ltext = wtokenize(config, text)
+        ltext = tokenize_words(config, text)
         n = length(ltext)
 
         @inbounds for q in config.nlist
             for i in 1:(n - q + 1)
                 wl = ltext[i:i+q-1]
-                push!(L, join(wl, BLANK))
+                push!(L, Symbol(join(wl, BLANK)))
             end
         end
 
@@ -228,7 +229,7 @@ function tokenize(config::TextConfig, text::Vector{Char})
                 else
                     t = join([ltext[start + i * (1+skip)] for i in 0:(qsize-1)], BLANK)
                 end
-                push!(L, t)
+                push!(L, Symbol(t))
             end
         end
     end

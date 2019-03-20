@@ -1,18 +1,18 @@
 export EntModel, id2token
 
 mutable struct EntModel <: Model
-    tokens::Dict{String,WeightedToken}
+    tokens::Dict{Symbol,WeightedToken}
     config::TextConfig
 end
 
-function EntModel(model::DistModel, initial)
-    tokens = Dict{String,WeightedToken}()
+function fit(::Type{EntModel}, model::DistModel, initial)
+    tokens = Dict{Symbol,WeightedToken}()
     nclasses = length(model.sizes)
     tokenID = 0
     maxent = log2(nclasses)
 
     
-    for (token, tokendist) in model.tokens
+    @inbounds for (token, tokendist) in model.tokens
         e = 0.0
         pop = initial * nclasses + sum(tokendist.dist)
 
@@ -31,7 +31,7 @@ function EntModel(model::DistModel, initial)
 end
 
 function id2token(model::EntModel)
-    m = Dict{UInt64,String}()
+    m = Dict{UInt64,Symbol}()
     for (token, term) in model.tokens
         m[term.id] = token
     end
@@ -40,7 +40,7 @@ function id2token(model::EntModel)
 end
 
 function vectorize(model::EntModel, data)
-    bow = compute_bow(model.config, data, Dict{String,IdFreq}())
+    bow = compute_bow(model.config, data, Dict{Symbol,IdFreq}())
     vec = Vector{WeightedToken}()
     sizehint!(vec, length(bow))
 

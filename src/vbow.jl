@@ -70,25 +70,25 @@ function normalize!(tokens::Vector{WeightedToken})
     tokens
 end
 
-function VBOW(bow::AbstractVector{Tuple{I, F}}; sort=true) where {I <: Any, F <: Real}
+function VBOW(bow::AbstractVector{Tuple{I, F}}; sort=true) where I where F <: Real
     M = Vector{WeightedToken}(undef, length(bow))
     i = 1
     if I <: Integer
         for (key, value) in bow
             M[i] = WeightedToken(convert(UInt64, key), convert(Float64, value))
-            i+=1
+            i += 1
         end
     else
         for (key, value) in bow
             M[i] = WeightedToken(hash(key), convert(Float64, value))
-            i+=1
+            i += 1
         end
     end
 
     VBOW(M, sort=sort)
 end
 
-function VBOW(bow::Dict{I, F}) where {I <: Any, F <: Real}
+function VBOW(bow::Dict{I, F}) where I where F <: Real
     M = Vector{WeightedToken}(undef, length(bow))
     i = 1
     if I <: Integer

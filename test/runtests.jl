@@ -20,7 +20,7 @@ end
     config.nlist = []
     config.qlist = [3]
     config.skiplist = []
-    @test compute_bow(config, text0) == [(" #j", 1), (" @u", 1), ("#je", 1), (") #", 1), (".wo", 1), (";) ", 1), ("@us", 1), ("ell", 1), ("er;", 1), ("jel", 1), ("ld ", 1), ("llo", 1), ("lo.", 1), ("o.w", 1), ("orl", 1), ("r;)", 1), ("rld", 1), ("ser", 1), ("use", 1), ("wor", 1)]
+    @test compute_bow(config, text0) == [(Symbol(" #j"), 1), (Symbol(" @u"), 1), (Symbol("#je"), 1), (Symbol(") #"), 1), (Symbol(".wo"), 1), (Symbol(";) "), 1), (Symbol("@us"), 1), (:ell, 1), (Symbol("er;"), 1), (:jel, 1), (Symbol("ld "), 1), (:llo, 1), (Symbol("lo."), 1), (Symbol("o.w"), 1), (:orl, 1), (Symbol("r;)"), 1), (:rld, 1), (:ser, 1), (:use, 1), (:wor, 1)]
 end
 
 @testset "Word n-grams" begin
@@ -29,9 +29,9 @@ end
     config.nlist = [1, 2]
     config.qlist = []
     config.skiplist = []
-    @test compute_bow(config, text0) == [("#jello", 1), ("#jello .", 1), (".", 1), (". world", 1), (";)", 1), (";) #jello", 1), ("@user", 1), ("@user ;)", 1), ("world", 1)]
-    a = VBOW(Dict("hola" => 1, "mundo" => 1, "!" => 8)) |> normalize!
-    b = VBOW([("hola", 1), ("mundo", 1), ("!", 8)]) |> normalize!
+    @test compute_bow(config, text0) == [(Symbol("#jello"), 1), (Symbol("#jello ."), 1), (:., 1), (Symbol(". world"), 1), (Symbol(";)"), 1), (Symbol(";) #jello"), 1), (Symbol("@user"), 1), (Symbol("@user ;)"), 1), (:world, 1)]
+    a = VBOW(Dict(:hola => 1, :mundo => 1, Symbol("!") => 8)) |> normalize!
+    b = VBOW([(:hola, 1), (:mundo, 1), (Symbol("!"), 8)]) |> normalize!
     @test a == b
     @test dot(a, b) ≈ 1.0
  end
@@ -43,7 +43,7 @@ end
     config.skiplist = [(2,1), (2, 2), (3, 1), (3, 2)]
     #L = collect(compute_bow(text2, config))
     #sort!(L)
-    @test compute_bow(config, text2) == [("a c", 1), ("a c e", 1), ("a d", 1), ("a d g", 1), ("b d", 1), ("b d f", 1), ("b e", 1), ("b e h", 1), ("c e", 1), ("c e g", 1), ("c f", 1), ("c f i", 1), ("d f", 1), ("d f h", 1), ("d g", 1), ("d g j", 1), ("e g", 1), ("e g i", 1), ("e h", 1), ("e h k", 1), ("f h", 1), ("f h j", 1), ("f i", 1), ("f i l", 1), ("g i", 1), ("g i k", 1), ("g j", 1), ("g j m", 1), ("h j", 1), ("h j l", 1), ("h k", 1), ("h k n", 1), ("i k", 1), ("i k m", 1), ("i l", 1), ("i l o", 1), ("j l", 1), ("j l n", 1), ("j m", 1), ("j m p", 1), ("k m", 1), ("k m o", 1), ("k n", 1), ("k n q", 1), ("l n", 1), ("l n p", 1), ("l o", 1), ("m o", 1), ("m o q", 1), ("m p", 1), ("n p", 1), ("n q", 1), ("o q", 1)]
+    @test compute_bow(config, text2) == [(Symbol("a c"), 1), (Symbol("a c e"), 1), (Symbol("a d"), 1), (Symbol("a d g"), 1), (Symbol("b d"), 1), (Symbol("b d f"), 1), (Symbol("b e"), 1), (Symbol("b e h"), 1), (Symbol("c e"), 1), (Symbol("c e g"), 1), (Symbol("c f"), 1), (Symbol("c f i"), 1), (Symbol("d f"), 1), (Symbol("d f h"), 1), (Symbol("d g"), 1), (Symbol("d g j"), 1), (Symbol("e g"), 1), (Symbol("e g i"), 1), (Symbol("e h"), 1), (Symbol("e h k"), 1), (Symbol("f h"), 1), (Symbol("f h j"), 1), (Symbol("f i"), 1), (Symbol("f i l"), 1), (Symbol("g i"), 1), (Symbol("g i k"), 1), (Symbol("g j"), 1), (Symbol("g j m"), 1), (Symbol("h j"), 1), (Symbol("h j l"), 1), (Symbol("h k"), 1), (Symbol("h k n"), 1), (Symbol("i k"), 1), (Symbol("i k m"), 1), (Symbol("i l"), 1), (Symbol("i l o"), 1), (Symbol("j l"), 1), (Symbol("j l n"), 1), (Symbol("j m"), 1), (Symbol("j m p"), 1), (Symbol("k m"), 1), (Symbol("k m o"), 1), (Symbol("k n"), 1), (Symbol("k n q"), 1), (Symbol("l n"), 1), (Symbol("l n p"), 1), (Symbol("l o"), 1), (Symbol("m o"), 1), (Symbol("m o q"), 1), (Symbol("m p"), 1), (Symbol("n p"), 1), (Symbol("n q"), 1), (Symbol("o q"), 1)]
 end
 
 @testset "Tokenizer, BOW, and vectorize" begin # test_vmodel
@@ -53,7 +53,7 @@ end
     config.skiplist = []
     config.del_usr = false
 
-    @test tokenize(config, text1) == String["hello", "world", "!!",  "@user", ";)", "#jello", ".", "world", ":)"]
+    @test tokenize(config, text1) == [Symbol(h) for h in ["hello", "world", "!!",  "@user", ";)", "#jello", ".", "world", ":)"]]
     model = fit(VectorModel, config, corpus)
     @test length(vectorize(model, TfModel, text1)) == 8
     @test length(vectorize(model, TfModel, text2)) == 0
@@ -66,43 +66,46 @@ const sentiment_text = "lol, esto me encanta"
 @testset "DistModel tests" begin
     config = TextConfig()
     config.nlist = [1]
-    dmodel = DistModel(config, 2)
-    TextModel.fit!(dmodel, [x for (x,y) in labeled_corpus], [y for (x,y) in labeled_corpus])
+    dmodel = fit(DistModel, config, [x[1] for x in labeled_corpus], [x[2] for x in labeled_corpus])
     dmap = id2token(dmodel)
     @show sentiment_text
     @show dmodel
     #TextModel.hist(dmodel)
-    @test [(dmap[t.id], t.weight) for t in vectorize(dmodel, sentiment_text).tokens] == [("me<1>",1.0),("me<2>",0.0),("encanta<1>",1.0),("encanta<2>",0.0),("esto<1>",0.5),("esto<2>",0.5),("lol<1>",1.0),("lol<2>",0.0)]
+    a = [(dmap[t.id], t.weight) for t in vectorize(dmodel, sentiment_text).tokens]
+    b = [(:me1,1.0),(:me2,0.0),(:encanta1,1.0),(:encanta2,0.0),(:esto1,0.4),(:esto2,0.6),(:lol1,1.0),(:lol2,0.0)]
+    @test string(a) == string(b)
 
 end
 
 @testset "DistModel-normalize! tests" begin
     config = TextConfig()
     config.nlist = [1]
-    dmodel = DistModel(config, 2)
     X = [x[1] for x in labeled_corpus]
     y = [x[2] for x in labeled_corpus]
-    TextModel.fit!(dmodel, X, y, normalizeby=minimum)
+    dmodel = fit(DistModel, config, X, y, norm_by=minimum)
     dmap = id2token(dmodel)
     @show sentiment_text
     @show dmodel
     #TextModel.hist(dmodel)
     d1 = [(dmap[t.id], t.weight) for t in vectorize(dmodel, sentiment_text).tokens]
-    d2 = [("me<1>", 1.0), ("me<2>", 0.0), ("encanta<1>", 1.0), ("encanta<2>", 0.0), ("esto<1>", 0.4), ("esto<2>", 0.6), ("lol<1>", 1.0), ("lol<2>", 0.0)]
+    d2 = [(:me1, 1.0), (:me2, 0.0), (:encanta1, 1.0), (:encanta2, 0.0), (:esto1, 0.4), (:esto2, 0.6), (:lol1, 1.0), (:lol2, 0.0)]
     @test string(d1) == string(d2)
 end
 
 @testset "EntModel tests" begin
     config = TextConfig()
     config.nlist = [1]
-    dmodel = DistModel(config, 2)
     X = [x[1] for x in labeled_corpus]
     y = [x[2] for x in labeled_corpus]
-    feed!(dmodel, X, y)
-    emodel = EntModel(dmodel, 0)
+    dmodel = fit(DistModel, config, X, y)
+    emodel = fit(EntModel, dmodel, 0)
     @show emodel
     emap = id2token(emodel)
-    @test [(emap[t.id], t.weight) for t in vectorize(emodel, sentiment_text).tokens] == [("esto",0.0),("encanta",1.0),("me",1.0),("lol",1.0)]
+    a = [(emap[t.id], t.weight) for t in vectorize(emodel, sentiment_text).tokens]
+    b = [(:esto,0.0290494),(:encanta,1.0),(:me,1.0),(:lol,1.0)]
+    sort!(a)
+    sort!(b)
+    @test string(a) == string(b)
 
     # @show [(maptoken[term.id], term.id, term.weight) for term in vectorize(sentiment_text, emodel).terms]
     # @show vectorize(text4, vmodel)

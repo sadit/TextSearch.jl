@@ -3,12 +3,12 @@ export DistModel, feed!, fix!, id2token
 mutable struct TokenDist
     id::UInt64
     dist::Vector{Float64}
+
+    TokenDist(id, nclasses::Int) = new(id, zeros(Float64, nclasses))
 end
 
-TokenDist(id, nclasses::Int) = TokenDist(id, zeros(Float64, nclasses))
-
 mutable struct DistModel <: Model
-    tokens::Dict{String,TokenDist}
+    tokens::Dict{Symbol,TokenDist}
     config::TextConfig
     sizes::Vector{Int}
 end
@@ -18,11 +18,12 @@ function fit(::Type{DistModel}, config::TextConfig, corpus, y; nclasses=0, norm_
         nclasses = y |> unique |> length
     end
     
-    model = DistModel(Dict{String,TokenDist}(), config, zeros(Int, nclasses))
+    model = DistModel(Dict{Symbol,TokenDist}(), config, zeros(Int, nclasses))
  
     n = 0
     for (klass, text) in zip(y, corpus)
-        for token in tokenize(text, config)
+        @show text
+        for token in tokenize(config, text)
             if !haskey(model.tokens, token)
                 model.tokens[token] = TokenDist(length(model.tokens), nclasses)
             end
@@ -99,11 +100,11 @@ end
 
 function id2token(model::DistModel)
     nclasses = length(model.sizes)
-    H = Dict{UInt64,String}()
+    H = Dict{UInt64,Symbol}()
     for (token, d) in model.tokens
         b = d.id * nclasses
         for i in 1:nclasses
-            H[b + i] = string(token,'<',i,'>')
+            H[b + i] = Symbol(token, i)
         end
     end
 
@@ -112,7 +113,7 @@ end
 
 function vectorize(model::DistModel, text)
     nclasses = length(model.sizes)
-    bow = compute_bow(model.config, text, Dict{String,IdFreq}())
+    bow = compute_bow(model.config, text, Dict{Symbol,IdFreq}())
     vec = WeightedToken[]
     sizehint!(vec, length(bow) * nclasses)
 

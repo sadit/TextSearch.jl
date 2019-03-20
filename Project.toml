@@ -1,7 +1,7 @@
 name = "TextModel"
 uuid = "7f6f6c8a-3b03-11e9-223d-e7d88259bd6c"
 authors = ["Eric S. Tellez <donsadit@gmail.com>"]
-version = "0.2.1"
+version = "0.2.2"
 
 [deps]
 GZip = "92fee26a-97fe-5a0c-ad85-20a5f3185b63"

@@ -13,7 +13,7 @@ end
 
 mutable struct VectorModel <: Model
     config::TextConfig
-    vocab::Dict{String,IdFreq}
+    vocab::Dict{Symbol,IdFreq}
     maxfreq::Int32
     n::Int32
 end
@@ -24,7 +24,7 @@ abstract type IdfModel end
 abstract type FreqModel end
 
 function id2token(model::VectorModel)
-    m = Dict{Int,String}()
+    m = Dict{Int,Symbol}()
     for (t, f) in model.vocab
         m[f.id] = t
     end
@@ -38,7 +38,7 @@ function inverse_vbow(vec, vocmap)
     [(vocmap[token.id], token.weight) for token in s]
 end
 
-function maximum_(vocab::Dict{String,IdFreq})
+function maximum_(vocab::Dict{Symbol,IdFreq})
     m = 0
     for (token, f) in vocab
         m = max(m, f.freq)
@@ -62,7 +62,7 @@ function filter_vocab(vocab, low, high=0)
 end
 
 function fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector; low=0, high=0) where {T <: Union{TfidfModel,TfModel,IdfModel,FreqModel}}
-    voc = Dict{String,IdFreq}()
+    voc = Dict{Symbol,IdFreq}()
     n = 1
  
     for data in corpus
@@ -87,13 +87,13 @@ const unknown_token = IdFreq(0, 0)
 
 
 function compute_bow(config::TextConfig, text::String)
-    X = compute_bow(config, text, Dict{String,IdFreq}())
-    X = [(token, idfreq.freq) for (token, idfreq) in X]
+    X = compute_bow(config, text, Dict{Symbol,IdFreq}())
+    X = [(Symbol(token), idfreq.freq) for (token, idfreq) in X]
     sort!(X, by=x->x[1])
     X
 end
 
-function compute_bow(config::TextConfig, text::String, voc::Dict{String,IdFreq})
+function compute_bow(config::TextConfig, text::String, voc::Dict{Symbol,IdFreq})
     for token in tokenize(config, text)
         h = get(voc, token, unknown_token)
         if h.freq == 0
@@ -115,7 +115,7 @@ function compute_bow(config::TextConfig, arr::AbstractVector{String}, voc::Dict{
 end
 
 function vectorize(model::VectorModel, weighting::Type, data)::VBOW
-    bag = compute_bow(model.config, data, Dict{String,IdFreq}())
+    bag = compute_bow(model.config, data, Dict{Symbol,IdFreq}())
 	maxfreq = maximum_(bag)
     b = Vector{WeightedToken}(undef, length(bag))
 
