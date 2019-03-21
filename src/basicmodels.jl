@@ -49,7 +49,7 @@ function maximum_(vocab::Dict{Symbol,Int})
 end
 
 function filter_vocab(vocab, low, high=0)
-    X = Dict{String,TokenData}()
+    X = Dict{Symbol,TokenData}()
     maxfreq = maximum_(vocab)
     for (t, w) in vocab
         if w.freq < low || w.freq > maxfreq - high
