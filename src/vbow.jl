@@ -15,52 +15,65 @@
 import Base: +, *, ==, length, transpose
 import LinearAlgebra: dot
 import SimilaritySearch: normalize!, cosine_distance, angle_distance
-export VBOW, WeightedToken, dot, cosine_distance, angle_distance, normalize!
+export SparseVector, SparseVectorEntry, dot, cosine_distance, angle_distance, normalize!
 
-mutable struct WeightedToken
+mutable struct SparseVectorEntry
     id::UInt64
     weight::Float64
 end
 
-struct VBOW
-    tokens::Vector{WeightedToken}
+struct SparseVector
+    tokens::Vector{SparseVectorEntry}
     # invnorm::Float64
 
-    function VBOW(tokens::Vector{WeightedToken}; sort=true)
-        if sort
-            sort!(tokens, by=x->x.id)
-        end
-
+    function SparseVector(tokens::Vector{SparseVectorEntry}; sort=true)
+        sort && sort!(tokens, by=x->x.id)
         new(tokens)
     end
 end
 
-# function VBOW(tokens::Vector{WeightedToken}; sort=true)
-#     if sort
-#         sort!(tokens, by=x->x.id)
-#     end
-# 
-#     VBOW(tokens)
-# end
+function SparseVector(bow::Dict{I, F}) where I <: Integer where F <: Real
+    M = Vector{SparseVectorEntry}(undef, length(bow))
+    i = 1
 
-function normalize!(matrix::AbstractVector{VBOW})
+    for p in bow
+        M[i] = SparseVectorEntry(convert(UInt64, p.first), convert(Float64, p.second))
+        i+=1
+    end
+
+    SparseVector(M, sort=true)
+end
+
+function SparseVector(bow::Dict{Symbol, F}) where I <: Integer where F <: Real
+    M = Vector{SparseVectorEntry}(undef, length(bow))
+    i = 1
+
+    for p in bow
+        M[i] = SparseVectorEntry(hash(p.first), convert(Float64, p.second))
+        i+=1
+    end
+
+    SparseVector(M, sort=true)
+end
+
+function normalize!(matrix::AbstractVector{SparseVector})
     for bow in matrix
         normalize!(bow)
     end
 end
 
-function normalize!(bow::VBOW)
+function normalize!(bow::SparseVector)
     normalize!(bow.tokens)
     bow
 end
 
-function normalize!(tokens::Vector{WeightedToken})
+function normalize!(tokens::Vector{SparseVectorEntry})
     xnorm::Float64 = 0.0
     @inbounds @simd for i in 1:length(tokens)
         xnorm += tokens[i].weight ^ 2
     end
 
-    (xnorm <= eps(Float64)) && error("A valid VBOW object cannot have a zero norm $xnorm -- tokens: $tokens")
+    (xnorm <= eps(Float64)) && error("A valid SparseVector object cannot have a zero norm $xnorm -- tokens: $tokens")
     xnorm = 1.0/sqrt(xnorm)
 
     @inbounds @simd for i in 1:length(tokens)
@@ -70,57 +83,21 @@ function normalize!(tokens::Vector{WeightedToken})
     tokens
 end
 
-function VBOW(bow::AbstractVector{Tuple{I, F}}; sort=true) where I where F <: Real
-    M = Vector{WeightedToken}(undef, length(bow))
-    i = 1
-    if I <: Integer
-        for (key, value) in bow
-            M[i] = WeightedToken(convert(UInt64, key), convert(Float64, value))
-            i += 1
-        end
-    else
-        for (key, value) in bow
-            M[i] = WeightedToken(hash(key), convert(Float64, value))
-            i += 1
-        end
-    end
-
-    VBOW(M, sort=sort)
-end
-
-function VBOW(bow::Dict{I, F}) where I where F <: Real
-    M = Vector{WeightedToken}(undef, length(bow))
-    i = 1
-    if I <: Integer
-        for (key, value) in bow
-            M[i] = WeightedToken(convert(UInt64, key), convert(Float64, value))
-            i+=1
-        end
-    else
-        for (key, value) in bow
-            M[i] = WeightedToken(hash(key), convert(Float64, value))
-            i+=1
-        end
-    end
-
-    VBOW(M, sort=true)
-end
-
 """
 Number of items different of zero
 """
-length(a::VBOW) = length(a.tokens)
+length(a::SparseVector) = length(a.tokens)
 
 
 """
 cosine_distance
 
-Computes the cosine_distance between two VBOW objects (sparse vectors)
+Computes the cosine_distance between two SparseVector objects (sparse vectors)
 
 It supposes that all vectors are normalized (see `normalize!` function)
 
 """
-function cosine_distance(a::VBOW, b::VBOW)::Float64
+function cosine_distance(a::SparseVector, b::SparseVector)::Float64
     return 1.0 - dot(a, b)  #
 end
 
@@ -128,12 +105,12 @@ const π_2 = π / 2
 """
 angle_distance
 
-Computes the angle  between two VBOW objects (sparse vectors).
+Computes the angle  between two SparseVector objects (sparse vectors).
 
 It supposes that all vectors are normalized (see `normalize!` function)
 
 """
-function angle_distance(a::VBOW, b::VBOW)
+function angle_distance(a::SparseVector, b::SparseVector)
     d = dot(a, b)
 
     if d <= -1.0
@@ -147,7 +124,7 @@ function angle_distance(a::VBOW, b::VBOW)
     end
 end
 
-function dot(a::VBOW, b::VBOW)::Float64
+function dot(a::SparseVector, b::SparseVector)::Float64
     n1 = length(a.tokens)
     n2 = length(b.tokens)
     # (n1 == 0 || n2 == 0) && return 0.0
@@ -172,17 +149,17 @@ function dot(a::VBOW, b::VBOW)::Float64
     s
 end
 
-function cosine(a::VBOW, b::VBOW)::Float64
+function cosine(a::SparseVector, b::SparseVector)::Float64
     return dot(a, b) # * a.invnorm * b.invnorm # it is already normalized
 end
 
 """
    vbow1 + vbow2
 
-   Computes the sum of two VBOW vectors
+   Computes the sum of two SparseVector vectors
 """
-function +(a::VBOW, b::VBOW)
-    vec = Vector{WeightedToken}()
+function +(a::SparseVector, b::SparseVector)
+    vec = Vector{SparseVectorEntry}()
     n1 = length(a.tokens)
     n2 = length(b.tokens)
     sizehint!(vec, max(n1, n2))
@@ -193,40 +170,40 @@ function +(a::VBOW, b::VBOW)
     @inbounds while i <= n1 && j <= n2
         c = cmp(a.tokens[i].id, b.tokens[j].id)
         if c == 0
-            push!(vec, WeightedToken(a.tokens[i].id, a.tokens[i].weight + b.tokens[j].weight))
+            push!(vec, SparseVectorEntry(a.tokens[i].id, a.tokens[i].weight + b.tokens[j].weight))
             i += 1
             j += 1
         elseif c < 0
-            push!(vec, WeightedToken(a.tokens[i].id, a.tokens[i].weight))
+            push!(vec, SparseVectorEntry(a.tokens[i].id, a.tokens[i].weight))
             i += 1
         else
-            push!(vec, WeightedToken(b.tokens[j].id, b.tokens[j].weight))
+            push!(vec, SparseVectorEntry(b.tokens[j].id, b.tokens[j].weight))
             j += 1
         end    
     end
 
     @inbounds while i <= n1
-        push!(vec, WeightedToken(a.tokens[i].id, a.tokens[i].weight))
+        push!(vec, SparseVectorEntry(a.tokens[i].id, a.tokens[i].weight))
         i += 1
     end
 
     @inbounds while j <= n2
-        push!(vec, WeightedToken(b.tokens[j].id, b.tokens[j].weight))
+        push!(vec, SparseVectorEntry(b.tokens[j].id, b.tokens[j].weight))
         j += 1
     end
 
-    VBOW(vec)
+    SparseVector(vec)
 end
 
-#Base::+(a::VBOW, b::VBOW) = sum_vbow
+#Base::+(a::SparseVector, b::SparseVector) = sum_vbow
 
 """
    vbow1 * vbow2
 
    Point to point product
 """
-function *(a::VBOW, b::VBOW)
-    vec = Vector{WeightedToken}()
+function *(a::SparseVector, b::SparseVector)
+    vec = Vector{SparseVectorEntry}()
     n1 = length(a.tokens)
     n2 = length(b.tokens)
     sizehint!(vec, min(n1, n2))
@@ -236,7 +213,7 @@ function *(a::VBOW, b::VBOW)
     @inbounds while i <= n1 && j <= n2
         c = cmp(a.tokens[i].id, b.tokens[j].id)
         if c == 0
-            push!(vec, WeightedToken(a.tokens[i].id, a.tokens[i].weight * b.tokens[j].weight))
+            push!(vec, SparseVectorEntry(a.tokens[i].id, a.tokens[i].weight * b.tokens[j].weight))
             i += 1
             j += 1
         elseif c < 0
@@ -246,14 +223,14 @@ function *(a::VBOW, b::VBOW)
         end
     end
 
-    VBOW(vec)
+    SparseVector(vec)
 end
 
-function ==(a::WeightedToken, b::WeightedToken)
+function ==(a::SparseVectorEntry, b::SparseVectorEntry)
     a.id == b.id && a.weight == b.weight
 end
 
-function ==(a::VBOW, b::VBOW)
+function ==(a::SparseVector, b::SparseVector)
     if length(a.tokens) == length(b.tokens)
         for i in 1:length(a.tokens)
             if a.tokens[i] != b.tokens[i]
@@ -267,29 +244,29 @@ function ==(a::VBOW, b::VBOW)
     end
 end
 
-function *(a::VBOW, b::F) where {F <: Real}
-    vec = Vector{WeightedToken}()
+function *(a::SparseVector, b::F) where {F <: Real}
+    vec = Vector{SparseVectorEntry}()
     n=length(a.tokens)
     sizehint!(vec, n)
     i = 1
     @inbounds while i <= n
-        push!(vec, WeightedToken(a.tokens[i].id, a.tokens[i].weight*b))
+        push!(vec, SparseVectorEntry(a.tokens[i].id, a.tokens[i].weight*b))
         i += 1
     end
 
-    return VBOW(vec)
+    return SparseVector(vec)
 end
 
-function *(b::F, a::VBOW) where {F <: Real}
+function *(b::F, a::SparseVector) where {F <: Real}
     return a * b
 end
 
-function transpose(matrix::AbstractVector{VBOW})
-    M = Dict{UInt, Vector{WeightedToken}}()
+function transpose(matrix::AbstractVector{SparseVector})
+    M = Dict{UInt, Vector{SparseVectorEntry}}()
 
     for (objID, vector) in enumerate(matrix)
         for token in vector.tokens
-            wt = WeightedToken(objID, token.weight)
+            wt = SparseVectorEntry(objID, token.weight)
             if haskey(M, token.id)
                 push!(M[token.id], wt)
             else

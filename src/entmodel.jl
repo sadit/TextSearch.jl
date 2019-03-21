@@ -1,12 +1,12 @@
 export EntModel, id2token
 
 mutable struct EntModel <: Model
-    tokens::Dict{Symbol,WeightedToken}
+    tokens::Dict{Symbol,SparseVectorEntry}
     config::TextConfig
 end
 
 function fit(::Type{EntModel}, model::DistModel, initial)
-    tokens = Dict{Symbol,WeightedToken}()
+    tokens = Dict{Symbol,SparseVectorEntry}()
     nclasses = length(model.sizes)
     tokenID = 0
     maxent = log2(nclasses)
@@ -24,7 +24,7 @@ function fit(::Type{EntModel}, model::DistModel, initial)
             end
         end
         tokenID += 1
-        tokens[token] = WeightedToken(tokenID, maxent - e)
+        tokens[token] = SparseVectorEntry(tokenID, maxent - e)
     end
 
     EntModel(tokens, model.config)
@@ -40,8 +40,8 @@ function id2token(model::EntModel)
 end
 
 function vectorize(model::EntModel, data)
-    bow = compute_bow(model.config, data, Dict{Symbol,IdFreq}())
-    vec = Vector{WeightedToken}()
+    bow = compute_dict_bow(model.config, data, Dict{Symbol,TokenData}())
+    vec = Vector{SparseVectorEntry}()
     sizehint!(vec, length(bow))
 
     for (token, freq) in bow
@@ -50,5 +50,5 @@ function vectorize(model::EntModel, data)
         end
     end
 
-    VBOW(vec)
+    SparseVector(vec)
 end

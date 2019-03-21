@@ -113,8 +113,8 @@ end
 
 function vectorize(model::DistModel, text)
     nclasses = length(model.sizes)
-    bow = compute_bow(model.config, text, Dict{Symbol,IdFreq}())
-    vec = WeightedToken[]
+    bow = compute_dict_bow(model.config, text, Dict{Symbol,TokenData}())
+    vec = SparseVectorEntry[]
     sizehint!(vec, length(bow) * nclasses)
 
     for (token, freq) in bow
@@ -122,10 +122,10 @@ function vectorize(model::DistModel, text)
             tokendist = model.tokens[token]
             b = tokendist.id * nclasses
             for i in 1:nclasses
-                push!(vec, WeightedToken(b+i, tokendist.dist[i]))
+                push!(vec, SparseVectorEntry(b+i, tokendist.dist[i]))
             end
         end
     end
 
-    VBOW(vec)
+    SparseVector(vec)
 end

@@ -185,7 +185,7 @@ function tokenize_words(config::TextConfig, text::Vector{Char})
     return L
 end
 
-function tokenize(config::TextConfig, arr::Vector)
+function tokenize(config::TextConfig, arr::Vector)::Vector{Symbol}
     L = Symbol[]
 
     for text in arr
@@ -196,7 +196,7 @@ function tokenize(config::TextConfig, arr::Vector)
     L
 end
 
-function tokenize(config::TextConfig, text::String)
+function tokenize(config::TextConfig, text::String)::Vector{Symbol}
     t = normalize_text(config, text)
     tokenize(config, t, Symbol[])
 end
