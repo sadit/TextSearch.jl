@@ -1,6 +1,7 @@
 # using Languages
 using TextModel
 using Test
+using SimilaritySearch
 
 const text0 = "@user;) #jello.world"
 const text1 = "hello world!! @user;) #jello.world :)"
@@ -13,7 +14,7 @@ const corpus = ["hello world :)", "@user;) excellent!!", "#jello world."]
     config.nlist = []
     config.qlist = [3]
     config.skiplist = []
-    a = [(p.first, p.second.freq) for p in compute_dict_bow(config, text0)]
+    a = [(p.first, p.second) for p in compute_bow(config, text0)]
     b = [(:rld, 1), (Symbol("@us"), 1), (:orl, 1), (:wor, 1), (Symbol("lo."), 1), (:use, 1), (:ser, 1), (Symbol("o.w"), 1), (:llo, 1), (Symbol("r;)"), 1), (:jel, 1), (Symbol(" #j"), 1), (Symbol("er;"), 1), (Symbol("ld "), 1), (Symbol(";) "), 1), (Symbol(" @u"), 1), (:ell, 1), (Symbol(") #"), 1), (Symbol(".wo"), 1), (Symbol("#je"), 1)]
     @test sort(a) == sort(b)
     #b = Set(Dict(:rld=>TokenData(18, 1),Symbol("@us")=>TokenData(1, 1),:orl=>TokenData(17, 1),:wor=>TokenData(16, 1),Symbol("lo.")=>TokenData(13, 1),:use=>TokenData(2, 1),:ser=>TokenData(3, 1),Symbol("o.w")=>TokenData(14, 1),:llo=>TokenData(12, 1),Symbol("r;)")=>TokenData(5, 1),:jel=>TokenData(10, 1),Symbol(" #j")=>TokenData(8, 1),Symbol("er;")=>TokenData(4, 1),Symbol("ld ")=>TokenData(19, 1),Symbol(";) ")=>TokenData(6, 1),Symbol(" @u")=>TokenData(0, 1),:ell=>TokenData(11, 1),Symbol(") #")=>TokenData(7, 1),Symbol(".wo")=>TokenData(15, 1),Symbol("#je")=>TokenData(9, 1)))
@@ -26,7 +27,7 @@ end
     config.nlist = [1, 2]
     config.qlist = []
     config.skiplist = []
-    a = [(p.first, p.second.freq) for p in compute_dict_bow(config, text0)]
+    a = [(p.first, p.second) for p in compute_bow(config, text0)]
     b = [(Symbol("#jello"), 1), (Symbol("#jello ."), 1), (:., 1), (Symbol(". world"), 1), (Symbol(";)"), 1), (Symbol(";) #jello"), 1), (Symbol("@user"), 1), (Symbol("@user ;)"), 1), (:world, 1)]
     @test sort(a) == sort(b)
  end
@@ -37,9 +38,9 @@ end
     config.qlist = []
     config.del_punc = true
     config.skiplist = [(2,1), (2, 2), (3, 1), (3, 2)]
-    #L = collect(compute_dict_bow(text2, config))
+    #L = collect(compute_bow(text2, config))
     #sort!(L)
-    a = [(p.first, p.second.freq) for p in compute_dict_bow(config, text2)]
+    a = [(p.first, p.second) for p in compute_bow(config, text2)]
     b = [(Symbol("a c"), 1), (Symbol("a c e"), 1), (Symbol("a d"), 1), (Symbol("a d g"), 1), (Symbol("b d"), 1), (Symbol("b d f"), 1), (Symbol("b e"), 1), (Symbol("b e h"), 1), (Symbol("c e"), 1), (Symbol("c e g"), 1), (Symbol("c f"), 1), (Symbol("c f i"), 1), (Symbol("d f"), 1), (Symbol("d f h"), 1), (Symbol("d g"), 1), (Symbol("d g j"), 1), (Symbol("e g"), 1), (Symbol("e g i"), 1), (Symbol("e h"), 1), (Symbol("e h k"), 1), (Symbol("f h"), 1), (Symbol("f h j"), 1), (Symbol("f i"), 1), (Symbol("f i l"), 1), (Symbol("g i"), 1), (Symbol("g i k"), 1), (Symbol("g j"), 1), (Symbol("g j m"), 1), (Symbol("h j"), 1), (Symbol("h j l"), 1), (Symbol("h k"), 1), (Symbol("h k n"), 1), (Symbol("i k"), 1), (Symbol("i k m"), 1), (Symbol("i l"), 1), (Symbol("i l o"), 1), (Symbol("j l"), 1), (Symbol("j l n"), 1), (Symbol("j m"), 1), (Symbol("j m p"), 1), (Symbol("k m"), 1), (Symbol("k m o"), 1), (Symbol("k n"), 1), (Symbol("k n q"), 1), (Symbol("l n"), 1), (Symbol("l n p"), 1), (Symbol("l o"), 1), (Symbol("m o"), 1), (Symbol("m o q"), 1), (Symbol("m p"), 1), (Symbol("n p"), 1), (Symbol("n q"), 1), (Symbol("o q"), 1)]
     @test sort(a) == sort(b)
 end
@@ -149,20 +150,21 @@ end
     end
 end
 
+_corpus = [
+    "la casa roja",
+    "la casa verde",
+    "la casa azul",
+    "la manzana roja",
+    "la pera verde esta rica",
+    "la manzana verde esta rica",
+    "la hoja verde",
+]
+
 @testset "transpose vbow" begin
     config = TextConfig()
     config.nlist = [1]
     config.qlist = []
     config.skiplist = []
-    _corpus = [
-        "la casa roja",
-        "la casa verde",
-        "la casa azul",
-        "la manzana roja",
-        "la pera verde esta rica",
-        "la manzana verde esta rica",
-        "la hoja verde",
-    ]
     model = fit(VectorModel, config, _corpus)
     @show _corpus
     tokenmap = id2token(model)
@@ -171,4 +173,28 @@ end
     for (keyid, tokens) in dX
         @show "word $keyid - $(tokenmap[keyid]): ", [(a.id, a.weight) for a in tokens]
     end
+end
+
+
+@testset "invindex" begin
+    config = TextConfig()
+    config.qlist = [3, 4]
+    config.nlist = [1, 2, 3]
+
+    model = fit(VectorModel, config, _corpus)
+    invindex = InvIndex()
+    for c in _corpus
+        push!(invindex, weighted_bow(model, TfidfModel, c, norm=true))
+    end
+
+    q = weighted_bow(model, TfidfModel, "la casa roja", norm=true)
+    res = search(invindex, q, KnnResult(4))
+    ires = [r.objID for r in res]
+    @show res, _corpus[ires]
+    @test ires == [1, 2, 4, 3]
+    shortindex = prune(invindex, 3)
+    res = search(shortindex, q, KnnResult(4))
+    ires = [r.objID for r in res]
+    @show res, _corpus[ires]
+    @test ires == [1, 2, 4, 3]
 end

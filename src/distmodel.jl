@@ -111,9 +111,9 @@ function id2token(model::DistModel)
     H
 end
 
-function vectorize(model::DistModel, text)
+function vectorize(model::DistModel, data)
     nclasses = length(model.sizes)
-    bow = compute_dict_bow(model.config, text, Dict{Symbol,TokenData}())
+    bow = compute_bow(model.config, data)
     vec = SparseVectorEntry[]
     sizehint!(vec, length(bow) * nclasses)
 

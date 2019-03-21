@@ -40,15 +40,34 @@ function id2token(model::EntModel)
 end
 
 function vectorize(model::EntModel, data)
-    bow = compute_dict_bow(model.config, data, Dict{Symbol,TokenData}())
-    vec = Vector{SparseVectorEntry}()
-    sizehint!(vec, length(bow))
+    bow = compute_bow(model.config, data)
+    vec = Vector{SparseVectorEntry}(undef, length(bow))
 
+    i = 0
     for (token, freq) in bow
         if haskey(model.tokens, token)
-            push!(vec, model.tokens[token])
+            i += 1
+            vec[i] = model.tokens[token]
         end
     end
 
+    resize!(vec, i)
     SparseVector(vec)
+end
+
+function weighted_bow(model::EntModel, data)
+    W = Dict{Symbol, Float64}()
+    bow = compute_bow(model.config, data)
+    
+    s = 0.0
+    for p in bow
+        if haskey(model.tokens, p.first)
+            i += 1
+            w = models.tokens[p.first].weight
+            W[p.first] = w
+            s += w * w
+        end
+    end
+
+    W, sqrt(s)
 end

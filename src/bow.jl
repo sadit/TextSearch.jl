@@ -1,4 +1,4 @@
-export TokenData, compute_dict_bow
+export TokenData, compute_bow
 
 mutable struct TokenData
     id::Int32
@@ -9,27 +9,10 @@ end
 
 const UNKNOWN_TOKEN = TokenData(0, 0)
 
-## function compute_bow(config::TextConfig, text::String)
-##     voc = Dict{Symbol,TokenData}()
-##     voc = compute_bow(config, text, voc)
-##     X = [(Symbol(token), idfreq.freq) for (token, idfreq) in voc]
-##     sort!(X, by=x->x[1])
-##     X
-## end
-## 
-## function compute_bow(config::TextConfig, arr::AbstractVector{String})
-##     voc = Dict{Symbol,TokenData}()
-## 
-## 	for text in arr
-## 		compute_bow(config, text, voc)
-##     end
-##     
-## 	X = [(Symbol(token), idfreq.freq) for (token, idfreq) in voc]
-##     sort!(X, by=x->x[1])
-## 	voc
-## end
-
-function compute_dict_bow(config::TextConfig, text::String, voc::Dict{Symbol,TokenData})
+"""
+Computes the vocabulary of a single text
+"""
+function compute_vocabulary(config::TextConfig, text::String, voc::Dict{Symbol,TokenData})
     for token in tokenize(config, text)
         sym = Symbol(token)
         h = get(voc, sym, UNKNOWN_TOKEN)
@@ -43,12 +26,32 @@ function compute_dict_bow(config::TextConfig, text::String, voc::Dict{Symbol,Tok
     voc
 end
 
-compute_dict_bow(config::TextConfig, text::String) = compute_dict_bow(config, text, Dict{Symbol,TokenData}())
-
-function compute_dict_bow(config::TextConfig, arr::AbstractVector{String})
-    D = Dict{Symbol,TokenData}()
+function compute_vocabulary(config::TextConfig, arr::AbstractVector{String}, voc::Dict{Symbol,TokenData})
     for text in arr
-       compute_dict_bow(config, text, D)
+       compute_vocabulary(config, text, voc)
+    end
+
+    voc
+end
+
+"""
+Computes a BOW
+"""
+function compute_bow(config::TextConfig, text::String, voc::Dict{Symbol,Int})
+    for token in tokenize(config, text)
+        sym = Symbol(token)
+        voc[sym] = get(voc, sym, 0) + 1
+    end
+
+    voc
+end
+
+compute_bow(config::TextConfig, text::String) = compute_bow(config, text, Dict{Symbol,Int}())
+
+function compute_bow(config::TextConfig, arr::AbstractVector{String})
+    D = Dict{Symbol,Int}()
+    for text in arr
+       compute_bow(config, text, D)
     end
 
     D

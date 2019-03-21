@@ -1,5 +1,5 @@
 import SimilaritySearch: fit
-export TextModel, VectorModel, fit, inverse_vbow, vectorize, id2token, TfidfModel, TfModel, IdfModel, FreqModel
+export TextModel, VectorModel, fit, inverse_vbow, vectorize, weighted_bow, id2token, TfidfModel, TfModel, IdfModel, FreqModel
 
 abstract type Model end
 
@@ -32,8 +32,17 @@ end
 
 function maximum_(vocab::Dict{Symbol,TokenData})
     m = 0
-    for (token, f) in vocab
-        m = max(m, f.freq)
+    for p in vocab
+        m = max(m, p.second.freq)
+    end
+    
+    m
+end
+
+function maximum_(vocab::Dict{Symbol,Int})
+    m = 0
+    for p in vocab
+        m = max(m, p.second)
     end
     
     m
@@ -58,7 +67,7 @@ function fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector; lo
     n = 1
  
     for data in corpus
-        compute_dict_bow(config, data, voc)
+        compute_vocabulary(config, data, voc)
         n += 1
         if n % 10000 == 1
             @info "advance VectorModel: $n processed items"
@@ -76,18 +85,17 @@ function fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector; lo
 end
 
 function vectorize(model::VectorModel, weighting::Type, data)::SparseVector
-    bag = compute_dict_bow(model.config, data, Dict{Symbol,TokenData}())
+    bag = compute_bow(model.config, data)
 	maxfreq = maximum_(bag)
     b = Vector{SparseVectorEntry}(undef, length(bag))
-
-    i = 0    
-    for (token, tokendata) in bag
+    i = 0
+    for (token, freq) in bag
         global_tokendata = get(model.vocab, token, UNKNOWN_TOKEN)
         if global_tokendata.freq == 0
             continue
         end
 
-        w = _weight(weighting, tokendata.freq, maxfreq, model.n, global_tokendata.freq)
+        w = _weight(weighting, freq, maxfreq, model.n, global_tokendata.freq)
         i += 1
         b[i] = SparseVectorEntry(global_tokendata.id, w)
      end
@@ -96,24 +104,28 @@ function vectorize(model::VectorModel, weighting::Type, data)::SparseVector
     SparseVector(b)
 end
 
-function weighted_bow(model::VectorModel, weithing::Type, data)
-    bag = compute_dict_bow(model.config, data, Dict{Symbol,TokenData}())
+function weighted_bow(model::VectorModel, weighting::Type, data; norm=true)::Dict{Symbol, Float64}
+    W = Dict{Symbol, Float64}()
+    bag = compute_bow(model.config, data)
 	maxfreq = maximum_(bag)
-    L = Vector{NamedTuple{(:token, weight), Tuple{Symbol,Float64}}}(undef, length(bag))
-    i = 0    
-    for (token, idtoken) in bag
-        global_idtoken = get(model.vocab, token, UNKNOWN_TOKEN)
-        if global_idtoken.freq == 0
+    s = 0.0
+    for (token, freq) in bag
+        global_tokendata = get(model.vocab, token, UNKNOWN_TOKEN)
+        if global_tokendata.freq == 0
             continue
         end
 
-        w = _weight(weighting, idtoken.freq, maxfreq, model.n, global_idtoken.freq)
-        i += 1
-        b[i] = SparseVectorEntry(global_idtoken.id, w)
-     end
-
-    resize!(b, i)
-    SparseVector(b)
+        w = _weight(weighting, freq, maxfreq, model.n, global_tokendata.freq)
+        W[token] = w
+        s += w * w
+    end
+    
+    if norm
+        s = 1.0 / sqrt(s)
+        Dict(t => w * s for (t, w) in W)
+    else
+        W
+    end
 end
 
 function _weight(::Type{TfidfModel}, freq::Integer, maxfreq::Integer, n::Integer, global_freq::Integer)::Float64

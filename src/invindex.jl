@@ -1,25 +1,29 @@
+import Base: push!
+import SimilaritySearch: search
+using SimilaritySearch
+export InvIndex, prune, search
 
 mutable struct InvIndex
-    lists::Dict{Int, Vector{SparseVectorEntry}}
+    lists::Dict{Symbol, Vector{SparseVectorEntry}}
     n::Int
-    InvIndex() = new(Dict{Int, Vector{SparseVectorEntry}}(), 0)
+    InvIndex() = new(Dict{Symbol, Vector{SparseVectorEntry}}(), 0)
 end
 
-function push!(index::InvIndex, bow::SparseVector)
+function push!(index::InvIndex, bow::Dict{Symbol,Float64})
     index.n += 1
     objID = index.n
-    for t in bow
-        if hashkey(invindex, t.id)
-            push!(index.lists[t.id], SparseVectorEntry(objID, t.weight))
+    for (sym, weight) in bow
+        if haskey(index.lists, sym)
+            push!(index.lists[sym], SparseVectorEntry(objID, weight))
         else
-            index.lists[t.id] = [SparseVectorEntry(objID, t.weight)]
+            index.lists[sym] = [SparseVectorEntry(objID, weight)]
         end
     end
 end
 
-function prune_lists(invindex::InvIndex, k)
+function prune(invindex::InvIndex, k)
     I = InvIndex()
-    I.n = invidex.n
+    I.n = invindex.n
     for (t, list) in invindex.lists
         I.lists[t] = l = copy(list)
         sort!(l, by=x -> x.weight)
@@ -53,17 +57,17 @@ function prune_lists(invindex::InvIndex, k)
     I
 end
 
-function search(invindex::InvIndex, q::SparseVector, res::KnnResult)
+function search(invindex::InvIndex, q::Dict{Symbol, R}, res::KnnResult) where R <: Real
     D = Dict{Int, Float64}()
     # normalize!(q) # we expect a normalized q 
-    for p in q.tokens
-        invindex.lists[p.id]
-            D[p.id] = get(D, p.id, 0.0) + p.weight
+    for (sym, weight) in q
+        for e in invindex.lists[sym]
+            D[e.id] = get(D, e.id, 0.0) + weight * e.weight
         end
     end
 
     for (id, weight) in D
-        push!(res, id, weight)
+        push!(res, id, 1.0 - weight)
     end
 
     res
