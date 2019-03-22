@@ -3,12 +3,23 @@ import SimilaritySearch: search
 using SimilaritySearch
 export InvIndex, prune, search
 
+"""
+Inverted index search structure
+
+"""
 mutable struct InvIndex
     lists::Dict{Symbol, Vector{SparseVectorEntry}}
     n::Int
     InvIndex() = new(Dict{Symbol, Vector{SparseVectorEntry}}(), 0)
 end
 
+"""
+    push!(index::InvIndex, bow::Dict{Symbol,Float64})
+
+Inserts a weighted bag of words (BOW) into the index.
+
+See [compute_bow](@ref) to compute a BOW from a text
+"""
 function push!(index::InvIndex, bow::Dict{Symbol,Float64})
     index.n += 1
     objID = index.n
@@ -21,6 +32,14 @@ function push!(index::InvIndex, bow::Dict{Symbol,Float64})
     end
 end
 
+
+"""
+    prune(invindex::InvIndex, k)
+
+Creates a new inverted index using the given `invindex` keeping at most `k`
+entries for each posting list; it keeps those entries with more wight values.
+
+"""
 function prune(invindex::InvIndex, k)
     I = InvIndex()
     I.n = invindex.n
@@ -57,6 +76,13 @@ function prune(invindex::InvIndex, k)
     I
 end
 
+"""
+    search(invindex::InvIndex, q::Dict{Symbol, R}, res::KnnResult) where R <: Real
+
+Seaches for the k-nearest neighbors of `q` inside the index `invindex`. The number of nearest
+neighbors is specified in `res`; it is also used to collect the results. Returns the object `res`.
+
+"""
 function search(invindex::InvIndex, q::Dict{Symbol, R}, res::KnnResult) where R <: Real
     D = Dict{Int, Float64}()
     # normalize!(q) # we expect a normalized q 
