@@ -35,7 +35,7 @@ mutable struct TextConfig
     """
     Initializes a `TextConfig` structure
     """
-    function TextConfig(
+    function TextConfig(;
         del_diac=true,
         del_dup=false,
         del_punc=false,
@@ -45,7 +45,7 @@ mutable struct TextConfig
         lc=true,
         qlist=Int[],
         nlist=Int[1],
-        skiplist=Tuple{Int,Int}[],
+        skiplist=Tuple{Int,Int}[]
     )
         new(del_diac, del_dup, del_punc, del_num, del_url, del_usr, lc,
             qlist, nlist, skiplist)
@@ -213,6 +213,7 @@ function tokenize_(config::TextConfig, text::Vector{Char}, L::Vector{Symbol}, no
                 else
                     t = Symbol(join([ltext[start + i * (1+skip)] for i in 0:(qsize-1)], BLANK))
                 end
+                
                 push!(L, t)
             end
         end
