@@ -13,6 +13,17 @@ mutable struct InvIndex
     InvIndex() = new(Dict{Symbol, Vector{SparseVectorEntry}}(), 0)
 end
 
+function save(f::IO, index::InvIndex)
+    write(f, invindex.n)
+    write(f, length(invindex))
+    for plist in invindex.lists
+        write(f, length(plist))
+        for p in plist
+            write(f, p.id, p.weight)
+        end
+    end
+end
+
 """
     push!(index::InvIndex, bow::Dict{Symbol,Float64})
 
