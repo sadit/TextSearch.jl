@@ -15,7 +15,7 @@ end
 
 function save(f::IO, invindex::InvIndex)
     write(f, invindex.n)
-    write(f, length(invindex))
+    write(f, length(invindex.plist))
     for plist in invindex.lists
         write(f, length(plist))
         for p in plist
