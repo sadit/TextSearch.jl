@@ -13,7 +13,7 @@ mutable struct InvIndex
     InvIndex() = new(Dict{Symbol, Vector{SparseVectorEntry}}(), 0)
 end
 
-function save(f::IO, index::InvIndex)
+function save(f::IO, invindex::InvIndex)
     write(f, invindex.n)
     write(f, length(invindex))
     for plist in invindex.lists
