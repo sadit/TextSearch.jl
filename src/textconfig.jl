@@ -1,5 +1,6 @@
 export TextConfig, save, load, normalize_text, tokenize
 using Unicode
+
 #, language!
 # using Languages
 # using SnowballStemmer
@@ -102,17 +103,18 @@ end
 
 
 """
-    push_word!(config::TextConfig, output::Vector{Symbol}, token::String, normalize::Function)
+    push_word!(config::TextConfig, output::Vector{String}, token::String, normalize::Function)
 
 Pushes a word into token list after applying the `normalize` function; it discards empty strings.
 """
-function push_word!(config::TextConfig, output::Vector{Symbol}, token::String, normalize::Function)
-    token = normalize(token)::String
-
+function push_word!(config::TextConfig, output::Vector{Symbol}, token::Vector{UInt8}, normalize::Function)
     if length(token) > 0
-        push!(output, Symbol(token))
-    end
+        t = normalize(String(token))::String
 
+        if length(t) > 0
+            push!(output, Symbol(t))
+        end
+    end
 end
 
 """
@@ -120,36 +122,33 @@ end
 
 Performs the word tokenization
 """
-function tokenize_words(config::TextConfig, text::Vector{Char}, normalize::Function)
+function tokenize_words(config::TextConfig, text::Vector{Char}, normalize::Function, buff::IOBuffer)
     n = length(text)
     L = Symbol[]
-    W = Char[]
     @inbounds for i in 1:n
         c = text[i]
 
         if c == BLANK
-            length(W) == 0 && continue
-
-            push_word!(config, L, W |> join, normalize)
-            W = Char[]
+            push_word!(config, L, take!(buff), normalize)
         elseif i > 1
             if text[i-1] in PUNCTUACTION && !(c in PUNCTUACTION)
-                push_word!(config, L, W |> join, normalize)
-                W = Char[c]
+                push_word!(config, L, take!(buff), normalize)
+                write(buff, c)
                 continue
             elseif !(text[i-1] in PUNCTUACTION_BLANK) && c in PUNCTUACTION
-                push_word!(config, L, W |> join, normalize)
-                W = Char[c]
+                push_word!(config, L, take!(buff), normalize)
+                write(buff, c)
                 continue
             else
-                push!(W, c)
+                write(buff, c)
             end
         else
-            push!(W, c)
+            write(buff, c)
         end
     end
 
-    length(W) > 0 && push_word!(config, L, W |> join, normalize)
+    push_word!(config, L, take!(buff), normalize)
+
     L
 end
 
@@ -160,7 +159,7 @@ Tokenizes an array of strings
 """
 function tokenize(config::TextConfig, arr::AbstractVector, normalize::Function=identity)::Vector{Symbol}
     L = Symbol[]
-
+    sizehint!(L, (length(config.nlist) + length(config.skiplist)) * (div(n, 2) + 1) + length(config.qlist) * n)
     for text in arr
         t = normalize_text(config, text)
         tokenize_(config, t, L, normalize)
@@ -176,8 +175,12 @@ Tokenizes a string
 """
 function tokenize(config::TextConfig, text::String, normalize::Function=identity)::Vector{Symbol}
     t = normalize_text(config, text)
-    tokenize_(config, t, Symbol[], normalize)
+    n = length(text)
+    L = Symbol[]
+    sizehint!(L, (length(config.nlist) + length(config.skiplist)) * (div(n, 2) + 1) + length(config.qlist) * n)
+    tokenize_(config, t, L, normalize)
 end
+
 
 """
     tokenize_(config::TextConfig, text::Vector{Char}, L::Vector{Symbol})::Vector{Symbol}
@@ -186,23 +189,35 @@ Tokenizes a vector of characters (internal method)
 """
 function tokenize_(config::TextConfig, text::Vector{Char}, L::Vector{Symbol}, normalize::Function)::Vector{Symbol}
     n = length(text)
-
+    buff = IOBuffer(Vector{UInt8}(undef, 64), write=true)
     @inbounds for q in config.qlist
         for i in 1:(n - q + 1)
-            w = @view text[i:i+q-1]
-            push!(L, Symbol(join(w)))
+            last = i + q - 1
+            for j in i:last
+                # for w in @view text[i:]
+                write(buff, text[j])
+            end
+
+            push!(L, Symbol(take!(buff)))
         end
     end
 
     if length(config.nlist) > 0 || length(config.skiplist) > 0
-        ltext = tokenize_words(config, text, normalize)
+        ltext = tokenize_words(config, text, normalize, buff)
         n = length(ltext)
 
         @inbounds for q in config.nlist
             for i in 1:(n - q + 1)
-                v = @view ltext[i:i+q-1]
-                w = join(v, BLANK)
-                push!(L, Symbol(w))
+                last = i + q - 1
+                for j in i:last-1
+                    # for w in @view ltext[i:i+q-1]
+                    write(buff, ltext[j])
+                    write(buff, BLANK)
+                end
+                write(buff, ltext[last])
+                # w = join(v, BLANK)
+                # push!(L, Symbol(w))
+                push!(L, Symbol(take!(buff)))
             end
         end
 

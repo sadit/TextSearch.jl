@@ -11,17 +11,40 @@ mutable struct InvIndex
     lists::Dict{Symbol, Vector{SparseVectorEntry}}
     n::Int
     InvIndex() = new(Dict{Symbol, Vector{SparseVectorEntry}}(), 0)
+    InvIndex(lists, n) = new(lists, n)
 end
 
 function save(f::IO, invindex::InvIndex)
     write(f, invindex.n)
     write(f, length(invindex.lists))
-    for plist in invindex.lists
-        write(f, length(plist))
-        for p in plist
+    # @info "INVINDEX" invindex.n length(invindex.lists)
+    for (sym, lst) in invindex.lists
+        println(f, string(sym))
+        write(f, length(lst))
+        for p in lst
             write(f, p.id, p.weight)
+            # write(f, p)
         end
     end
+end
+
+function load(f::IO, ::Type{InvIndex})
+    invindex = InvIndex()
+    n = read(f, Int)
+    m = read(f, Int)
+    for i in 1:m
+        sym = Symbol(readline(f))
+        l = read(f, Int)
+        lst = Vector{SparseVectorEntry}(undef, l)
+        invindex.lists[sym] = lst
+        for j in 1:l
+            id = read(f, Int)
+            weight = read(f, Float64)
+            lst[j] = SparseVectorEntry(id, weight)
+        end
+    end
+
+    invindex
 end
 
 """
