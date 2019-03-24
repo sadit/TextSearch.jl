@@ -184,7 +184,7 @@ end
     model = fit(VectorModel, config, _corpus)
     invindex = InvIndex()
     for c in _corpus
-        push!(invindex, weighted_bow(model, TfidfModel, c, norm=true))
+        push!(invindex, invindex.n + 1, weighted_bow(model, TfidfModel, c, norm=true))
     end
 
     q = weighted_bow(model, TfidfModel, "la casa roja", norm=true)

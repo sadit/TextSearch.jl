@@ -122,7 +122,10 @@ function weighted_bow(model::VectorModel, weighting::Type, data; norm=true)::Dic
     
     if norm
         s = 1.0 / sqrt(s)
-        Dict(t => w * s for (t, w) in W)
+        for (k, v) in W
+            W[k] = v * s
+        end
+        W
     else
         W
     end

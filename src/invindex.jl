@@ -14,23 +14,39 @@ mutable struct InvIndex
     InvIndex(lists, n) = new(lists, n)
 end
 
+"""
+    update!(a::InvIndex, b::InvIndex)
+
+Updates inverted index `a` with `b`.
+"""
+function update!(a::InvIndex, b::InvIndex)
+    for (sym, list) in b.lists
+        if haskey(a.lists, sym)
+            append!(a.lists[sym], list)
+        else
+            a.lists[sym] = list
+        end
+    end
+
+    a.n += b.n
+    a
+end
+
 function save(f::IO, invindex::InvIndex)
     write(f, invindex.n)
     write(f, length(invindex.lists))
-    # @info "INVINDEX" invindex.n length(invindex.lists)
     for (sym, lst) in invindex.lists
         println(f, string(sym))
         write(f, length(lst))
         for p in lst
             write(f, p.id, p.weight)
-            # write(f, p)
         end
     end
 end
 
 function load(f::IO, ::Type{InvIndex})
     invindex = InvIndex()
-    n = read(f, Int)
+    invindex.n = read(f, Int)
     m = read(f, Int)
     for i in 1:m
         sym = Symbol(readline(f))
@@ -48,15 +64,14 @@ function load(f::IO, ::Type{InvIndex})
 end
 
 """
-    push!(index::InvIndex, bow::Dict{Symbol,Float64})
+    push!(index::InvIndex, objID::UInt64, bow::Dict{Symbol,Float64})
 
 Inserts a weighted bag of words (BOW) into the index.
 
 See [compute_bow](@ref) to compute a BOW from a text
 """
-function push!(index::InvIndex, bow::Dict{Symbol,Float64})
+function push!(index::InvIndex, objID::Integer, bow::Dict{Symbol,Float64})
     index.n += 1
-    objID = index.n
     for (sym, weight) in bow
         if haskey(index.lists, sym)
             push!(index.lists[sym], SparseVectorEntry(objID, weight))
