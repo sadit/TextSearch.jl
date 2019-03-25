@@ -196,5 +196,5 @@ end
     res = search(shortindex, q, KnnResult(4))
     ires = [r.objID for r in res]
     @show res, _corpus[ires]
-    @test ires == [1, 2, 4, 3]
+    @test sort(ires) == [1, 2, 3, 4]
 end
