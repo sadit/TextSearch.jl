@@ -10,6 +10,29 @@ mutable struct VectorModel <: Model
     n::Int32
 end
 
+"""
+    update!(a::VectorModel, b::VectorModel)
+
+Updates `a` with `b` inplace; returns `a`. TokenData's id is solved
+consistently, but can destroy any previous info.
+"""
+function update!(a::VectorModel, b::VectorModel)
+    i = 0
+    for (k, v) in b.vocab
+        i += 1
+        t = get(a, k, v)
+        if v == t
+            a[k] = v
+        else
+            a[k] = TokenData(i, t.freq + v.freq)
+        end
+    end
+
+    a.maxfreq = max(a.maxfreq, b.maxfreq)
+    a.n += b.n
+    a
+end
+
 abstract type TfidfModel end
 abstract type TfModel end
 abstract type IdfModel end
@@ -98,7 +121,7 @@ function vectorize(model::VectorModel, weighting::Type, data)::SparseVector
         w = _weight(weighting, freq, maxfreq, model.n, global_tokendata.freq)
         i += 1
         b[i] = SparseVectorEntry(global_tokendata.id, w)
-     end
+    end
 
     resize!(b, i)
     SparseVector(b)

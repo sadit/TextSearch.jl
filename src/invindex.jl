@@ -101,19 +101,15 @@ function prune(invindex::InvIndex, k)
     end
 
     # normalizing prunned vectors
-    D = zeros(Float64, I.n)
+    D = Dict{Int,Float64}()
     for (t, list) in I.lists
-        @inbounds for p in list
-            D[p.id] += p.weight * p.weight
+        for p in list
+            D[p.id] = get(D, p.id, 0.0) + p.weight * p.weight
         end
     end
 
-    for i in 1:length(D)
-        if D[i] == 0.0
-            D[i] = 1.0
-        else
-            D[i] = 1.0 / D[i]
-        end
+    for i in keys(D)
+        D[i] = 1.0 / sqrt(D[i])
     end
 
     for (t, list) in I.lists
