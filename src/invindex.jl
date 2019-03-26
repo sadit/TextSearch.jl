@@ -94,7 +94,7 @@ function prune(invindex::InvIndex, k)
     I.n = invindex.n
     for (t, list) in invindex.lists
         I.lists[t] = l = copy(list)
-        sort!(l, by=x -> x.weight)
+        sort!(l, by=x -> -x.weight)
         if length(list) > k
             resize!(l, k)
         end
