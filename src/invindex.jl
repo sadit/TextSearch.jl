@@ -32,6 +32,11 @@ function update!(a::InvIndex, b::InvIndex)
     a
 end
 
+"""
+    save(f::IO, invindex::InvIndex)
+
+Writes `invindex` to the given stream
+"""
 function save(f::IO, invindex::InvIndex)
     write(f, invindex.n)
     write(f, length(invindex.lists))
@@ -44,6 +49,11 @@ function save(f::IO, invindex::InvIndex)
     end
 end
 
+"""
+    load(f::IO, ::Type{InvIndex})
+
+Reads an inverted index from the given file
+"""
 function load(f::IO, ::Type{InvIndex})
     invindex = InvIndex()
     invindex.n = read(f, Int)
@@ -81,13 +91,11 @@ function push!(index::InvIndex, objID::Integer, bow::Dict{Symbol,Float64})
     end
 end
 
-
 """
     prune(invindex::InvIndex, k)
 
-Creates a new inverted index using the given `invindex` keeping at most `k`
-entries for each posting list; it keeps those entries with more wight values.
-
+Creates a new inverted index using the given `invindex` discarding many entries with low weight.
+It keeps at most `k` entries for each posting list; it keeps those entries with more wight values.
 """
 function prune(invindex::InvIndex, k)
     I = InvIndex()

@@ -40,7 +40,7 @@ function id2token(model::EntModel)
 end
 
 function vectorize(model::EntModel, data)
-    bow = compute_bow(model.config, data)
+    bow, maxfreq = compute_bow(model.config, data)
     vec = Vector{SparseVectorEntry}(undef, length(bow))
 
     i = 0
@@ -57,7 +57,7 @@ end
 
 function weighted_bow(model::EntModel, data)
     W = Dict{Symbol, Float64}()
-    bow = compute_bow(model.config, data)
+    bow, maxfreq = compute_bow(model.config, data)
     
     s = 0.0
     for p in bow

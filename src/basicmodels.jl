@@ -1,7 +1,13 @@
 import SimilaritySearch: fit
 export TextModel, VectorModel, fit, inverse_vbow, vectorize, weighted_bow, id2token, TfidfModel, TfModel, IdfModel, FreqModel
 
+"""
+    abstract type Model
+
+An abstract type that represents a weighting model
+"""
 abstract type Model end
+
 
 mutable struct VectorModel <: Model
     config::TextConfig
@@ -53,44 +59,64 @@ function inverse_vbow(vec, vocmap)
     [(vocmap[token.id], token.weight) for token in s]
 end
 
-function maximum_(vocab::Dict{Symbol,TokenData})
-    m = 0
-    for p in vocab
-        m = max(m, p.second.freq)
-    end
-    
-    m
-end
 
-function maximum_(vocab::Dict{Symbol,Int})
-    m = 0
-    for p in vocab
-        m = max(m, p.second)
-    end
-    
-    m
-end
+### """
+###     maximum_(vocab::Dict{Symbol,TokenData})
+### 
+### Returns the highest frequency in the given vocabulary
+### """
+### function xmaximum_(vocab::Dict{Symbol,TokenData})
+###     m = 0
+###     for p in vocab
+###         m = max(m, p.second.freq)
+###     end
+###     
+###     m
+### end
+### 
+### """
+###     maximum_(vocab::Dict{Symbol,Int})
+### 
+### Returns the highest value
+### """
+### function xmaximum_(vocab::Dict{Symbol,Int})
+###     m = 0
+###     for p in vocab
+###         m = max(m, p.second)
+###     end
+###     
+###     m
+### end
 
-function filter_vocab(vocab, low, high=0)
+"""
+    filter_vocab(vocab, maxfreq, lower, higher=1.0)
+
+Drops terms in the vocabulary with less than `low` and and higher than `high` frequences.
+- `lower` is specified as an integer, and must be read as the lower accepted frequency (lower frequencies will be dropped)
+- `higher` is specified as a float, 0 < higher <= 1.0; it is readed as the higher frequency that is preserved (it a proportion of the maximum frequency)
+
+"""
+function filter_vocab(vocab, maxfreq, lower::Int, higher::Float64=1.0)
     X = Dict{Symbol,TokenData}()
-    maxfreq = maximum_(vocab)
+    # maxfreq = maximum_(vocab)
     for (t, w) in vocab
-        if w.freq < low || w.freq > maxfreq - high
+        if w.freq < lower || w.freq > maxfreq * higher
             continue
         end
 
         X[t] = w
     end
 
-    X, maxfreq
+    X, floor(Int, maxfreq * higher)
 end
 
-function fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector; low=0, high=0) where {T <: Union{TfidfModel,TfModel,IdfModel,FreqModel}}
+function fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector; lower=0, higher=0) where {T <: Union{TfidfModel,TfModel,IdfModel,FreqModel}}
     voc = Dict{Symbol,TokenData}()
     n = 1
- 
+    maxfreq = 0
+
     for data in corpus
-        compute_vocabulary(config, data, voc)
+        _, maxfreq = compute_vocabulary(config, data, voc)
         n += 1
         if n % 10000 == 1
             @info "advance VectorModel: $n processed items"
@@ -98,18 +124,15 @@ function fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector; lo
     end
 
     @info "finished VectorModel: $n processed items"
-    if low != 0 || high != 0
-        voc, maxfreq = filter_vocab(voc, low, high)
-    else
-        maxfreq = maximum_(voc)
+    if lower != 0 || higher != 0
+        voc, maxfreq = filter_vocab(voc, maxfreq, lower, higher)
     end
 
     VectorModel(config, voc, maxfreq, n)
 end
 
 function vectorize(model::VectorModel, weighting::Type, data)::SparseVector
-    bag = compute_bow(model.config, data)
-	maxfreq = maximum_(bag)
+    bag, maxfreq = compute_bow(model.config, data)
     b = Vector{SparseVectorEntry}(undef, length(bag))
     i = 0
     for (token, freq) in bag
@@ -129,8 +152,7 @@ end
 
 function weighted_bow(model::VectorModel, weighting::Type, data; norm=true)::Dict{Symbol, Float64}
     W = Dict{Symbol, Float64}()
-    bag = compute_bow(model.config, data)
-	maxfreq = maximum_(bag)
+    bag, maxfreq = compute_bow(model.config, data)
     s = 0.0
     for (token, freq) in bag
         global_tokendata = get(model.vocab, token, UNKNOWN_TOKEN)

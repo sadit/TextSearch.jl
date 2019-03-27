@@ -113,7 +113,7 @@ end
 
 function vectorize(model::DistModel, data)
     nclasses = length(model.sizes)
-    bow = compute_bow(model.config, data)
+    bow, maxfreq = compute_bow(model.config, data)
     vec = SparseVectorEntry[]
     sizehint!(vec, length(bow) * nclasses)
 
