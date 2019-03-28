@@ -89,7 +89,7 @@ end
 ### end
 
 """
-    filter_vocab(vocab, maxfreq, lower, higher=1.0)
+    filter_vocab(vocab, maxfreq, lower::int, higher::Float64=1.0)
 
 Drops terms in the vocabulary with less than `low` and and higher than `high` frequences.
 - `lower` is specified as an integer, and must be read as the lower accepted frequency (lower frequencies will be dropped)
@@ -110,7 +110,7 @@ function filter_vocab(vocab, maxfreq, lower::Int, higher::Float64=1.0)
     X, floor(Int, maxfreq * higher)
 end
 
-function fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector; lower=0, higher=0) where {T <: Union{TfidfModel,TfModel,IdfModel,FreqModel}}
+function fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector; lower=0, higher=1.0) where {T <: Union{TfidfModel,TfModel,IdfModel,FreqModel}}
     voc = Dict{Symbol,TokenData}()
     n = 1
     maxfreq = 0
@@ -124,7 +124,7 @@ function fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector; lo
     end
 
     @info "finished VectorModel: $n processed items"
-    if lower != 0 || higher != 0
+    if lower != 0 || higher != 1.0
         voc, maxfreq = filter_vocab(voc, maxfreq, lower, higher)
     end
 
