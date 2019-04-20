@@ -1,5 +1,5 @@
 # using Languages
-using TextModel
+using TextSearch
 using Test
 using SimilaritySearch
 
@@ -69,7 +69,6 @@ const sentiment_text = "lol, esto me encanta"
     dmap = id2token(dmodel)
     @show sentiment_text
     @show dmodel
-    #TextModel.hist(dmodel)
     a = [(dmap[t.id], t.weight) for t in vectorize(dmodel, sentiment_text).tokens]
     b = [(:me1,1.0),(:me2,0.0),(:encanta1,1.0),(:encanta2,0.0),(:esto1,0.4),(:esto2,0.6),(:lol1,1.0),(:lol2,0.0)]
     @test string(a) == string(b)
@@ -85,7 +84,6 @@ end
     dmap = id2token(dmodel)
     @show sentiment_text
     @show dmodel
-    #TextModel.hist(dmodel)
     d1 = [(dmap[t.id], t.weight) for t in vectorize(dmodel, sentiment_text).tokens]
     d2 = [(:me1, 1.0), (:me2, 0.0), (:encanta1, 1.0), (:encanta2, 0.0), (:esto1, 0.4), (:esto2, 0.6), (:lol1, 1.0), (:lol2, 0.0)]
     @test string(d1) == string(d2)

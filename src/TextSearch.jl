@@ -1,4 +1,4 @@
-module TextModel
+module TextSearch
     include("textconfig.jl")
     include("bow.jl")
     include("svec.jl")
