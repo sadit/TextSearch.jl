@@ -112,12 +112,12 @@ end
 
 function fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector; lower=0, higher=1.0) where {T <: Union{TfidfModel,TfModel,IdfModel,FreqModel}}
     voc = Dict{Symbol,TokenData}()
-    n = 1
+    n = 0
     maxfreq = 0
 
     for data in corpus
-        _, maxfreq = compute_vocabulary(config, data, voc)
         n += 1
+        _, maxfreq = compute_vocabulary(config, data, voc)
         if n % 10000 == 1
             @info "advance VectorModel: $n processed items"
         end
@@ -131,10 +131,11 @@ function fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector; lo
     VectorModel(config, voc, maxfreq, n)
 end
 
-function vectorize(model::VectorModel, weighting::Type, data)::SparseVector
+function vectorize(model::VectorModel, weighting::Type, data, modify_bow!::Function=identity)::SparseVector
     bag, maxfreq = compute_bow(model.config, data)
     b = Vector{SparseVectorEntry}(undef, length(bag))
     i = 0
+    bag = modify_bow!(bag)
     for (token, freq) in bag
         global_tokendata = get(model.vocab, token, UNKNOWN_TOKEN)
         if global_tokendata.freq == 0
@@ -150,10 +151,11 @@ function vectorize(model::VectorModel, weighting::Type, data)::SparseVector
     SparseVector(b)
 end
 
-function weighted_bow(model::VectorModel, weighting::Type, data; norm=true)::Dict{Symbol, Float64}
+function weighted_bow(model::VectorModel, weighting::Type, data, modify_bow!::Function=identity; norm=true)::Dict{Symbol, Float64}
     W = Dict{Symbol, Float64}()
     bag, maxfreq = compute_bow(model.config, data)
     s = 0.0
+    bag = modify_bow!(bag)
     for (token, freq) in bag
         global_tokendata = get(model.vocab, token, UNKNOWN_TOKEN)
         if global_tokendata.freq == 0

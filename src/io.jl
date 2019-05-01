@@ -2,7 +2,7 @@
 #Pkg.add("Glob")
 #Pkg.add("JSON")
 
-export iterlines, itertweets, loadpath, savepath
+export iterlines, itertweets, loadtweets
 import GZip
 import JSON
 
@@ -92,15 +92,15 @@ function itertweets(fun, file; maxlines=typemax(Int))
     end
 end
 
-function getkeypath(dict, key)
-    if contains(key, ".")
-        v = dict
-        for k in split(key, '.')
-            v = v[k]
-        end
+"""
+    loadtweets(f; maxlines=typemax(Int))
 
-        return v
-    else
-        return dict[key]
+loads a list of tweets from a file using `itertweets`
+"""
+function loadtweets(f; maxlines=typemax(Int))
+    L = Dict[]
+    itertweets(f, maxlines=maxlines) do t
+        push!(L, t)
     end
+    L
 end
