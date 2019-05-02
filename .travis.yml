@@ -5,6 +5,7 @@ os:
   - linux
   # - osx
 julia:
+  - 0.7
   - 1.0
   - 1.1
 
@@ -21,10 +22,14 @@ notifications:
     on_failure: always  # options: [always|never|change] default: always
     on_start: never     # options: [always|never|change] default: alway
 
+env:
+  global:
+    - DISABLE_AMEND_COVERAGE_FROM_SRC=yes
+
 # uncomment the following lines to override the default test script
-script:
+# script:
 #  - if [[ -a .git/shallow ]]; then git fetch --unshallow; fi
-  - julia -e 'using Pkg; pkg"add https://github.com/sadit/SimilaritySearch.jl"'
+#  - julia -e 'using Pkg; pkg"add https://github.com/sadit/TextSeach.jl"'
 after_success:
   # push coverage results to Coveralls
   # - julia -e 'cd(Pkg.dir("TextSearch")); Pkg.add("Coverage"); using Coverage; Coveralls.submit(Coveralls.process_folder())'
