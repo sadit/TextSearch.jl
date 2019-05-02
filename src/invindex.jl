@@ -1,5 +1,6 @@
 import Base: push!
-import SimilaritySearch: search
+import SimilaritySearch:
+    search
 using SimilaritySearch
 export InvIndex, prune, search
 

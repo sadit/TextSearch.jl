@@ -1,7 +1,7 @@
 # using Languages
-using TextSearch
 using Test
 using SimilaritySearch
+using TextSearch
 
 const text0 = "@user;) #jello.world"
 const text1 = "hello world!! @user;) #jello.world :)"

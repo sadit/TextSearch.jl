@@ -15,7 +15,6 @@ It supports a number of simple text preprocessing functions, and three different
 
 # Installing SimilaritySearch
 
-
 You may install the package as follows
 ```bash
 julia -e 'using Pkg; pkg"add https://github.com/sadit/TextSearch.jl"'

@@ -1,6 +1,5 @@
 export TokenData, compute_bow
 
-
 """
     mutable struct TokenData
 

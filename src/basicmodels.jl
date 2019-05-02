@@ -8,7 +8,11 @@ An abstract type that represents a weighting model
 """
 abstract type Model end
 
+"""
+    mutable struct VectorModel
 
+Models a text through a vector space
+"""
 mutable struct VectorModel <: Model
     config::TextConfig
     vocab::Dict{Symbol,TokenData}
@@ -59,35 +63,6 @@ function inverse_vbow(vec, vocmap)
     [(vocmap[token.id], token.weight) for token in s]
 end
 
-
-### """
-###     maximum_(vocab::Dict{Symbol,TokenData})
-### 
-### Returns the highest frequency in the given vocabulary
-### """
-### function xmaximum_(vocab::Dict{Symbol,TokenData})
-###     m = 0
-###     for p in vocab
-###         m = max(m, p.second.freq)
-###     end
-###     
-###     m
-### end
-### 
-### """
-###     maximum_(vocab::Dict{Symbol,Int})
-### 
-### Returns the highest value
-### """
-### function xmaximum_(vocab::Dict{Symbol,Int})
-###     m = 0
-###     for p in vocab
-###         m = max(m, p.second)
-###     end
-###     
-###     m
-### end
-
 """
     filter_vocab(vocab, maxfreq, lower::int, higher::Float64=1.0)
 
@@ -110,7 +85,14 @@ function filter_vocab(vocab, maxfreq, lower::Int, higher::Float64=1.0)
     X, floor(Int, maxfreq * higher)
 end
 
-function fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector; lower=0, higher=1.0) where {T <: Union{TfidfModel,TfModel,IdfModel,FreqModel}}
+"""
+    fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector; lower=0, higher=1.0)
+
+Trains a vector model using the text preprocessing configuration `config` and the input corpus. It also allows for filtering
+tokens with low and high number of occurrences. `lower` is specified as an integer and `higher` as a proportion between
+the frequency of the current token and the maximum frequency of the model.
+"""
+function fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector; lower=0, higher=1.0)
     voc = Dict{Symbol,TokenData}()
     n = 0
     maxfreq = 0
@@ -151,6 +133,15 @@ function vectorize(model::VectorModel, weighting::Type, data, modify_bow!::Funct
     SparseVector(b)
 end
 
+"""
+    weighted_bow(model::VectorModel, weighting::Type, data, modify_bow!::Function=identity; norm=true)::Dict{Symbol, Float64}
+
+Computes `data`'s weighted bag of words using the given model and weighting scheme.
+It takes a function `modify_bow!` (that defaults to `identity`) to modify the bag
+before applying the weighting scheme. If `norm=true` (default value) then the weighted bow will be
+normalized.
+
+"""
 function weighted_bow(model::VectorModel, weighting::Type, data, modify_bow!::Function=identity; norm=true)::Dict{Symbol, Float64}
     W = Dict{Symbol, Float64}()
     bag, maxfreq = compute_bow(model.config, data)
@@ -178,6 +169,11 @@ function weighted_bow(model::VectorModel, weighting::Type, data, modify_bow!::Fu
     end
 end
 
+"""
+    _weight(::Type{T}, freq::Integer, maxfreq::Integer, n::Integer, global_freq::Integer)::Float64
+
+Computes a weight for the given stats using scheme T
+"""
 function _weight(::Type{TfidfModel}, freq::Integer, maxfreq::Integer, n::Integer, global_freq::Integer)::Float64
     (freq / maxfreq) * log(2, 1 + n / global_freq)
 end

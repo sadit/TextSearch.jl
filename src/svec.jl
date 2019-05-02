@@ -44,7 +44,7 @@ function SparseVector(bow::Dict{I, F}) where I <: Integer where F <: Real
     SparseVector(M, sort=true)
 end
 
-function SparseVector(bow::Dict{Symbol, F}) where I <: Integer where F <: Real
+function SparseVector(bow::Dict{Symbol, F}) where F <: Real
     M = Vector{SparseVectorEntry}(undef, length(bow))
     i = 1
 
