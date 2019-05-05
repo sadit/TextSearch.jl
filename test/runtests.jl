@@ -166,7 +166,7 @@ _corpus = [
     model = fit(VectorModel, config, _corpus)
     @show _corpus
     tokenmap = id2token(model)
-    X = [vectorize(model, FreqModel, x) for x in _corpus]
+    X = [vectorize(model, FreqModel, x) |> normalize! for x in _corpus]
     dX = transpose(X)
     for (keyid, tokens) in dX
         @show "word $keyid - $(tokenmap[keyid]): ", [(a.id, a.weight) for a in tokens]
@@ -182,10 +182,10 @@ end
     model = fit(VectorModel, config, _corpus)
     invindex = InvIndex()
     for c in _corpus
-        push!(invindex, invindex.n + 1, weighted_bow(model, TfidfModel, c, norm=true))
+        push!(invindex, invindex.n + 1, weighted_bow(model, TfidfModel, c) |> normalize!)
     end
 
-    q = weighted_bow(model, TfidfModel, "la casa roja", norm=true)
+    q = weighted_bow(model, TfidfModel, "la casa roja") |> normalize!
     res = search(invindex, q, KnnResult(4))
     ires = [r.objID for r in res]
     @show res, _corpus[ires]
