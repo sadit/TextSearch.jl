@@ -92,7 +92,7 @@ julia> invindex = fit(InvIndex, db)
 ```
 
 
-now, the code to use SimilaritySearch methods
+now, the code to use SimilaritySearch methods along with a brief comparison with inverted indexes
 ```julia
 julia> using SimilaritySearch.Graph, SimilaritySearch.SimilarReferences
 julia> perf = Performance(db, cosine_distance)
