@@ -1,4 +1,5 @@
-import SimilaritySearch: fit
+import SimilaritySearch:
+    fit
 export VectorModel, fit, inverse_vbow, vectorize, weighted_bow, id2token, TfidfModel, TfModel, IdfModel, FreqModel
 
 """
@@ -134,18 +135,15 @@ function vectorize(model::VectorModel, weighting::Type, data, modify_bow!::Funct
 end
 
 """
-    weighted_bow(model::VectorModel, weighting::Type, data, modify_bow!::Function=identity; norm=true)::Dict{Symbol, Float64}
+    weighted_bow(model::VectorModel, weighting::Type, data, modify_bow!::Function=identity)::Dict{Symbol, Float64}
 
 Computes `data`'s weighted bag of words using the given model and weighting scheme.
 It takes a function `modify_bow!` (that defaults to `identity`) to modify the bag
-before applying the weighting scheme. If `norm=true` (default value) then the weighted bow will be
-normalized.
-
+before applying the weighting scheme.
 """
-function weighted_bow(model::VectorModel, weighting::Type, data, modify_bow!::Function=identity; norm=true)::Dict{Symbol, Float64}
+function weighted_bow(model::VectorModel, weighting::Type, data, modify_bow!::Function=identity)::Dict{Symbol, Float64}
     W = Dict{Symbol, Float64}()
     bag, maxfreq = compute_bow(model.config, data)
-    s = 0.0
     bag = modify_bow!(bag)
     for (token, freq) in bag
         global_tokendata = get(model.vocab, token, UNKNOWN_TOKEN)
@@ -155,18 +153,9 @@ function weighted_bow(model::VectorModel, weighting::Type, data, modify_bow!::Fu
 
         w = _weight(weighting, freq, maxfreq, model.n, global_tokendata.freq)
         W[token] = w
-        s += w * w
     end
-    
-    if norm
-        s = 1.0 / sqrt(s)
-        for (k, v) in W
-            W[k] = v * s
-        end
-        W
-    else
-        W
-    end
+  
+    W
 end
 
 """

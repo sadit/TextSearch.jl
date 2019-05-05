@@ -75,9 +75,9 @@ uuid = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
 
 [[SimilaritySearch]]
 deps = ["Dates", "JSON", "Random", "Statistics", "Test"]
-git-tree-sha1 = "b1817159355acf218bb68b41cfb24df5aa21a780"
+git-tree-sha1 = "0f379327a7f0fd5318335ef75d97d5de17bd62ad"
 uuid = "053f045d-5466-53fd-b400-a066f88fe02a"
-version = "0.3.5"
+version = "0.3.6"
 
 [[Sockets]]
 uuid = "6462fe0b-24de-5631-8697-dd941f90decc"

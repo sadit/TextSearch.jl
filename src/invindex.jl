@@ -8,7 +8,7 @@ export InvIndex, prune, search
 Inverted index search structure
 
 """
-mutable struct InvIndex
+mutable struct InvIndex <: Index
     lists::Dict{Symbol, Vector{SparseVectorEntry}}
     n::Int
     InvIndex() = new(Dict{Symbol, Vector{SparseVectorEntry}}(), 0)
@@ -92,6 +92,15 @@ function push!(index::InvIndex, objID::Integer, bow::Dict{Symbol,Float64})
     end
 end
 
+function fit(::Type{InvIndex}, db::AbstractVector{Dict{Symbol,Float64}})
+    invindex = InvIndex()
+    for (i, bow) in enumerate(db)
+        push!(invindex, i, bow)
+    end
+
+    invindex
+end
+
 """
     prune(invindex::InvIndex, k)
 
@@ -101,8 +110,10 @@ It keeps at most `k` entries for each posting list; it keeps those entries with 
 function prune(invindex::InvIndex, k)
     I = InvIndex()
     I.n = invindex.n
+    sizehint!(I.lists, length(invindex.lists))
+
     for (t, list) in invindex.lists
-        I.lists[t] = l = copy(list)
+        I.lists[t] = l = deepcopy(list)
         sort!(l, by=x -> -x.weight)
         if length(list) > k
             resize!(l, k)
@@ -110,7 +121,12 @@ function prune(invindex::InvIndex, k)
     end
 
     # normalizing prunned vectors
+    _norm_pruned!(I)
+end
+
+function _norm_pruned!(I::InvIndex)
     D = Dict{Int,Float64}()
+    
     for (t, list) in I.lists
         for p in list
             D[p.id] = get(D, p.id, 0.0) + p.weight * p.weight
@@ -132,9 +148,11 @@ end
 
 """
     search(invindex::InvIndex, q::Dict{Symbol, R}, res::KnnResult) where R <: Real
+    search(invindex::InvIndex, dist::Function, q::Dict{Symbol, R}, res::KnnResult) where R <: Real
 
 Seaches for the k-nearest neighbors of `q` inside the index `invindex`. The number of nearest
 neighbors is specified in `res`; it is also used to collect the results. Returns the object `res`.
+The `dist` argument is ignored and it is there for compatibility with SimilaritySearch methods.
 
 """
 function search(invindex::InvIndex, q::Dict{Symbol, R}, res::KnnResult) where R <: Real
@@ -146,9 +164,13 @@ function search(invindex::InvIndex, q::Dict{Symbol, R}, res::KnnResult) where R 
         end
     end
 
-    for (id, weight) in D
-        push!(res, id, 1.0 - weight)
+    for (i, w) in D
+        push!(res, i, 1.0 - w)
     end
 
     res
+end
+
+function search(invindex::InvIndex, dist::Function, q::Dict{Symbol, R}, res::KnnResult) where R <: Real
+    search(invindex, q, res)
 end
