@@ -139,4 +139,4 @@ julia> M
 
 As you may see, prunning an inverted index improves the search speed significantly with
 a small impact in the recall. The sum of distances is also barely impacted. The `SearchGraph` and
-`Knr` indexes perform relatively good, yet inverted indexes are much better, this is way we need specialized methods like those provided in `TextSearch`.
+`Knr` indexes perform relatively good, yet inverted indexes are much better, this is way we need specialized methods like those provided in `TextSearch.jl` package.
