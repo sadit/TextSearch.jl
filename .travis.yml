@@ -1,5 +1,6 @@
 # Documentation: http://docs.travis-ci.com/user/languages/julia/
 coveralls: true
+codecov: true
 language: julia
 os:
   - linux
@@ -30,8 +31,5 @@ env:
 #  - if [[ -a .git/shallow ]]; then git fetch --unshallow; fi
 #  - julia -e 'using Pkg; pkg"add https://github.com/sadit/TextSeach.jl"'
 after_success:
-  # push coverage results to Coveralls
-  # - julia -e 'cd(Pkg.dir("TextSearch")); Pkg.add("Coverage"); using Coverage; Coveralls.submit(Coveralls.process_folder())'
-  # push coverage results to Codecov
-  # - julia -e 'cd(Pkg.dir("TextSearch")); Pkg.add("Coverage"); using Coverage; Codecov.submit(process_folder())'
   - julia -e 'cd(Pkg.dir("TextSearch")); Pkg.add("Coverage"); using Coverage; Coveralls.submit(Coveralls.process_folder())'
+  - julia -e 'cd(Pkg.dir("TextSearch")); Pkg.add("Coverage"); using Coverage; Codecov.submit(Codecov.process_folder())'

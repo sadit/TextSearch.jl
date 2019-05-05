@@ -77,7 +77,7 @@ end
 ```
 
 
-TextSearch can also be used with SimilaritySearch methods. The iniial code is identical to using that using the inverted index
+TextSearch can also be used with SimilaritySearch methods. The initial code is identical to that needed by the inverted index
 ```julia
 julia> using SimilaritySearch, TextSearch
 julia> url = "http://ingeotec.mx/~sadit/emospace50k.json.gz"

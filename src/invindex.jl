@@ -133,8 +133,8 @@ function _norm_pruned!(I::InvIndex)
         end
     end
 
-    for i in keys(D)
-        D[i] = 1.0 / sqrt(D[i])
+    for (k, v) in D
+        D[k] = 1.0 / sqrt(v)
     end
 
     for (t, list) in I.lists
