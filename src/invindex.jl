@@ -15,6 +15,9 @@ mutable struct InvIndex <: Index
     InvIndex(lists, n) = new(lists, n)
 end
 
+# useful constant for searching
+const EMPTY_SPARSE_VECTOR = SparseVectorEntry[]
+
 """
     update!(a::InvIndex, b::InvIndex)
 
@@ -159,8 +162,11 @@ function search(invindex::InvIndex, q::Dict{Symbol, R}, res::KnnResult) where R 
     D = Dict{Int, Float64}()
     # normalize!(q) # we expect a normalized q 
     for (sym, weight) in q
-        for e in invindex.lists[sym]
-            D[e.id] = get(D, e.id, 0.0) + weight * e.weight
+        lst = get(invindex.lists, sym, EMPTY_SPARSE_VECTOR)
+        if length(lst) > 0
+            for e in lst
+                D[e.id] = get(D, e.id, 0.0) + weight * e.weight
+            end
         end
     end
 
