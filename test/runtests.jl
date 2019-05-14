@@ -94,7 +94,7 @@ end
     X = [x[1] for x in labeled_corpus]
     y = [x[2] for x in labeled_corpus]
     dmodel = fit(DistModel, config, X, y)
-    emodel = fit(EntModel, dmodel, 0)
+    emodel = fit(EntModel, dmodel)
     @show emodel
     @show weighted_bow(emodel, TfModel, sentiment_text)
     # a = [(emap[t.id], t.weight) for t in .tokens]

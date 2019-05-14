@@ -5,17 +5,27 @@ mutable struct EntModel <: Model
     config::TextConfig
 end
 
-function fit(::Type{EntModel}, model::DistModel, b)
+function fit(::Type{EntModel}, model::DistModel, b::Float64=-1.0)
     tokens = Dict{Symbol,Float64}()
     nclasses = length(model.sizes)
     maxent = log2(nclasses)
 
     @inbounds for (token, dist) in model.tokens
+        if b == -1
+            sumdist = sum(dist)
+            if sumdist < nclasses
+                bb = sumdist * 0.5 / nclasses
+            else
+                bb = 0
+            end
+        else
+            bb = b
+        end
         e = 0.0
-        pop = b * nclasses + sum(dist)
+        pop = bb * nclasses + sum(dist)
 
         for j in 1:nclasses
-            pj = (dist[j] + b) / pop
+            pj = (dist[j] + bb) / pop
 
             if pj > 0
                 e -= pj * log2(pj)
