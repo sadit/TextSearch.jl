@@ -1,6 +1,6 @@
 export TokenData, compute_bow
 
-import Base: +, *, ==, length, transpose
+import Base: +, *, /, ==, length, transpose
 import LinearAlgebra: dot
 import SimilaritySearch: normalize!, cosine_distance, angle_distance
 
@@ -169,6 +169,42 @@ function *(a::Dict{Symbol, Float64}, b::Dict{Symbol, Float64})
     end
 
     c
+end
+
+function *(a::Dict{Symbol, Float64}, b::F) where F <: Real
+    c = copy(a)
+    for (k, v) in a
+        c[k] = v * b
+    end
+
+    c
+end
+
+function *(b::F, a::Dict{Symbol, Float64}) where F <: Real
+    a * b
+end
+
+function /(a::Dict{Symbol, Float64}, b::F) where F <: Real
+    c = copy(a)
+    for (k, v) in a
+        c[k] = v / b
+    end
+
+    c
+end
+
+
+function +(a::Dict{Symbol, Float64}, b::F) where F <: Real
+    c = copy(a)
+    for (k, v) in a
+        c[k] = v + b
+    end
+
+    c
+end
+
+function +(b::F, a::Dict{Symbol, Float64}) where F <: Real
+    a + b
 end
 
 """

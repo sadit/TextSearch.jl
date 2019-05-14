@@ -1,73 +1,47 @@
 export EntModel, id2token
 
 mutable struct EntModel <: Model
-    tokens::Dict{Symbol,SparseVectorEntry}
+    tokens::Dict{Symbol,Float64}
     config::TextConfig
 end
 
-function fit(::Type{EntModel}, model::DistModel, initial)
-    tokens = Dict{Symbol,SparseVectorEntry}()
+function fit(::Type{EntModel}, model::DistModel, b)
+    tokens = Dict{Symbol,Float64}()
     nclasses = length(model.sizes)
-    tokenID = 0
     maxent = log2(nclasses)
 
-    
-    @inbounds for (token, tokendist) in model.tokens
+    @inbounds for (token, dist) in model.tokens
         e = 0.0
-        pop = initial * nclasses + sum(tokendist.dist)
+        pop = b * nclasses + sum(dist)
 
         for j in 1:nclasses
-            pj = (tokendist.dist[j] + initial) / pop
+            pj = (dist[j] + b) / pop
 
             if pj > 0
                 e -= pj * log2(pj)
             end
         end
-        tokenID += 1
-        tokens[token] = SparseVectorEntry(tokenID, maxent - e)
+
+        tokens[token] = 1.0 - e / maxent
     end
 
     EntModel(tokens, model.config)
 end
 
-function id2token(model::EntModel)
-    m = Dict{UInt64,Symbol}()
-    for (token, term) in model.tokens
-        m[term.id] = token
-    end
-
-    m
-end
-
-function vectorize(model::EntModel, data)
-    bow, maxfreq = compute_bow(model.config, data)
-    vec = Vector{SparseVectorEntry}(undef, length(bow))
-
-    i = 0
-    for (token, freq) in bow
-        if haskey(model.tokens, token)
-            i += 1
-            vec[i] = model.tokens[token]
-        end
-    end
-
-    resize!(vec, i)
-    SparseVector(vec)
-end
-
-function weighted_bow(model::EntModel, data)
+function weighted_bow(model::EntModel, weighting::Type, data, modify_bow!::Function=identity)::Dict{Symbol, Float64}
     W = Dict{Symbol, Float64}()
-    bow, maxfreq = compute_bow(model.config, data)
-    
-    s = 0.0
-    for p in bow
-        if haskey(model.tokens, p.first)
-            i += 1
-            w = models.tokens[p.first].weight
-            W[p.first] = w
-            s += w * w
+    bag, maxfreq = compute_bow(model.config, data)
+    bag = modify_bow!(bag)
+    for (token, freq) in bag
+        # get(model.vocab, token, UNKNOWN_TOKEN)
+        # global_tokendata.freq == 0 && continue
+        w = get(model.tokens, token, 0.0)
+        if w > 0
+            W[token] = w
         end
+        # w = _weight(weighting, freq, maxfreq, model.n, global_tokendata.freq)
+        # W[token] = w
     end
-
-    W, sqrt(s)
+  
+    W
 end

@@ -150,15 +150,14 @@ function _norm_pruned!(I::InvIndex)
 end
 
 """
-    search(invindex::InvIndex, q::Dict{Symbol, R}, res::KnnResult) where R <: Real
     search(invindex::InvIndex, dist::Function, q::Dict{Symbol, R}, res::KnnResult) where R <: Real
 
 Seaches for the k-nearest neighbors of `q` inside the index `invindex`. The number of nearest
 neighbors is specified in `res`; it is also used to collect the results. Returns the object `res`.
-The `dist` argument is ignored and it is there for compatibility with SimilaritySearch methods.
-
+If `dist` is set to `angle_distance` then the angle is reported; otherwise the
+`cosine_distance` (i.e., 1 - cos) is computed.
 """
-function search(invindex::InvIndex, q::Dict{Symbol, R}, res::KnnResult) where R <: Real
+function search(invindex::InvIndex, dist::Function, q::Dict{Symbol, R}, res::KnnResult) where R <: Real
     D = Dict{Int, Float64}()
     # normalize!(q) # we expect a normalized q 
     for (sym, weight) in q
@@ -171,12 +170,15 @@ function search(invindex::InvIndex, q::Dict{Symbol, R}, res::KnnResult) where R 
     end
 
     for (i, w) in D
-        push!(res, i, 1.0 - w)
+        if dist == angle_distance
+            w = max(-1.0, w)
+            w = min(1.0, w)
+            w = acos(w)
+            push!(res, i, w)
+        else
+            push!(res, i, 1.0 - w)  # cosine distance
+        end
     end
 
     res
-end
-
-function search(invindex::InvIndex, dist::Function, q::Dict{Symbol, R}, res::KnnResult) where R <: Real
-    search(invindex, q, res)
 end

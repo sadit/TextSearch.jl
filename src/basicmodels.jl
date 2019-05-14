@@ -114,26 +114,6 @@ function fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector; lo
     VectorModel(config, voc, maxfreq, n)
 end
 
-function vectorize(model::VectorModel, weighting::Type, data, modify_bow!::Function=identity)::SparseVector
-    bag, maxfreq = compute_bow(model.config, data)
-    b = Vector{SparseVectorEntry}(undef, length(bag))
-    i = 0
-    bag = modify_bow!(bag)
-    for (token, freq) in bag
-        global_tokendata = get(model.vocab, token, UNKNOWN_TOKEN)
-        if global_tokendata.freq == 0
-            continue
-        end
-
-        w = _weight(weighting, freq, maxfreq, model.n, global_tokendata.freq)
-        i += 1
-        b[i] = SparseVectorEntry(global_tokendata.id, w)
-    end
-
-    resize!(b, i)
-    SparseVector(b)
-end
-
 """
     weighted_bow(model::VectorModel, weighting::Type, data, modify_bow!::Function=identity)::Dict{Symbol, Float64}
 

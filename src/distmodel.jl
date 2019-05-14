@@ -1,42 +1,20 @@
 export DistModel, feed!, fix!, id2token
 
-mutable struct TokenDist
-    id::UInt64
-    dist::Vector{Float64}
-
-    TokenDist(id, nclasses::Int) = new(id, zeros(Float64, nclasses))
-end
-
 mutable struct DistModel <: Model
-    tokens::Dict{Symbol,TokenDist}
+    tokens::Dict{Symbol,Vector{Float64}}
     config::TextConfig
     sizes::Vector{Int}
 end
 
+const EMPTY_TOKEN_DIST = Int[]
+
 function fit(::Type{DistModel}, config::TextConfig, corpus, y; nclasses=0, norm_by=minimum)
     if nclasses == 0
-        nclasses = y |> unique |> length
+        nclasses = unique(y) |> length
     end
     
-    model = DistModel(Dict{Symbol,TokenDist}(), config, zeros(Int, nclasses))
- 
-    n = 0
-    for (klass, text) in zip(y, corpus)
-        for token in tokenize(config, text)
-            if !haskey(model.tokens, token)
-                model.tokens[token] = TokenDist(length(model.tokens), nclasses)
-            end
-
-            model.tokens[token].dist[klass] += 1
-        end
-
-        model.sizes[klass] += 1
-        n += 1
-        if n % 10000 == 1
-            @info "DistModel: $(sum(model.sizes)) processed items"
-        end
-    end
-    
+    model = DistModel(Dict{Symbol,Vector{Float64}}(), config, zeros(Int, nclasses))
+    feed!(model, corpus, y)
     normalize!(model, norm_by)
     fix!(model)
     model
@@ -46,30 +24,32 @@ function feed!(model::DistModel, corpus, y)
     config = model.config
     nclasses = length(model.sizes)
     n = 0
-    for (text, klass) in zip(corpus, y)
+    for (klass, text) in zip(y, corpus)
         for token in tokenize(config, text)
-            if !haskey(model.tokens, token)
-                model.tokens[token] = TokenDist(length(model.tokens), nclasses)
+            token_dist = get(model.tokens, token, EMPTY_TOKEN_DIST)
+            if length(token_dist) == 0
+                token_dist = zeros(Float64, nclasses)
+                model.tokens[token] = token_dist
             end
-
-            model.tokens[token].dist[klass] += 1
+            token_dist[klass] += 1
         end
-
         model.sizes[klass] += 1
         n += 1
-        if n % 10000 == 1
-            @info "DistModel: $(sum(model.sizes)) processed items"
-        end
+        n == 1 && print("*")
+        n % 1000 == 1 && print("*")
+        n % 10000 == 1 && println(" dist: $(model.sizes), adv.: $n")
     end
+
+    model
 end
 
 function normalize!(model::DistModel, by=minimum)
     nclasses = length(model.sizes)
     val = by(model.sizes)
 
-    for (token, tokendist) in model.tokens
+    for (token, hist) in model.tokens
         for i in 1:nclasses
-            tokendist.dist[i] *= val / model.sizes[i]
+            hist[i] *= val / model.sizes[i]
         end
     end
 end
@@ -78,10 +58,10 @@ function fix!(model::DistModel)
     nclasses = length(model.sizes)
     nterms = length(model.tokens)
 
-    for (token, tokendist) in model.tokens
-        s = sum(tokendist.dist)
+    for (token, dist) in model.tokens
+        s = sum(dist)
         for i in 1:nclasses
-            tokendist.dist[i] /= s
+            dist[i] /= s
         end
 
     end
@@ -95,36 +75,4 @@ function fit(model::DistModel, corpus, y; norm_by=nothing)
         normalize!(model, norm_by)
     end
     fix!(model)
-end
-
-function id2token(model::DistModel)
-    nclasses = length(model.sizes)
-    H = Dict{UInt64,Symbol}()
-    for (token, d) in model.tokens
-        b = d.id * nclasses
-        for i in 1:nclasses
-            H[b + i] = Symbol(token, i)
-        end
-    end
-
-    H
-end
-
-function vectorize(model::DistModel, data)
-    nclasses = length(model.sizes)
-    bow, maxfreq = compute_bow(model.config, data)
-    vec = SparseVectorEntry[]
-    sizehint!(vec, length(bow) * nclasses)
-
-    for (token, freq) in bow
-        if haskey(model.tokens, token)
-            tokendist = model.tokens[token]
-            b = tokendist.id * nclasses
-            for i in 1:nclasses
-                push!(vec, SparseVectorEntry(b+i, tokendist.dist[i]))
-            end
-        end
-    end
-
-    SparseVector(vec)
 end
