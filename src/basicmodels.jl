@@ -1,6 +1,6 @@
 import SimilaritySearch:
     fit
-export VectorModel, fit, inverse_vbow, vectorize, weighted_bow, id2token, TfidfModel, TfModel, IdfModel, FreqModel
+export VectorModel, fit, inverse_vbow, weighted_bow, TfidfModel, TfModel, IdfModel, FreqModel
 
 """
     abstract type Model

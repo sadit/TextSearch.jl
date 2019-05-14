@@ -1,4 +1,4 @@
-export EntModel, id2token
+export EntModel
 
 mutable struct EntModel <: Model
     tokens::Dict{Symbol,Float64}
@@ -39,7 +39,7 @@ function weighted_bow(model::EntModel, weighting::Type, data, modify_bow!::Funct
         if w > 0
             W[token] = w
         end
-        # w = _weight(weighting, freq, maxfreq, model.n, global_tokendata.freq)
+        # ww = _weight(weighting, freq, maxfreq, model.n, global_tokendata.freq)
         # W[token] = w
     end
   
