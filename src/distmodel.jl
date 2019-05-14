@@ -35,11 +35,10 @@ function feed!(model::DistModel, corpus, y)
         end
         model.sizes[klass] += 1
         n += 1
-        n == 1 && print("*")
-        n % 1000 == 1 && print("*")
-        n % 10000 == 1 && println(" dist: $(model.sizes), adv.: $n")
+        n % 1000 == 0 && print("*")
+        n % 100000 == 0 && println(" dist: $(model.sizes), adv: $n")
     end
-
+    
     model
 end
 
