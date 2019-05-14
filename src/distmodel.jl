@@ -22,7 +22,6 @@ function fit(::Type{DistModel}, config::TextConfig, corpus, y; nclasses=0, norm_
  
     n = 0
     for (klass, text) in zip(y, corpus)
-        @show text
         for token in tokenize(config, text)
             if !haskey(model.tokens, token)
                 model.tokens[token] = TokenDist(length(model.tokens), nclasses)
