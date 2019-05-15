@@ -3,66 +3,22 @@ export TokenData, compute_bow
 import Base: +, *, /, ==, length, transpose
 import LinearAlgebra: dot
 import SimilaritySearch: normalize!, cosine_distance, angle_distance
+export IBOW, BOW, compute_bow
 
 """
     mutable struct TokenData
 
 Stores an identifier and its frequency
 """
-mutable struct TokenData
-    id::Int32
-    freq::Int32
-    TokenData() = new(0, 0)
-    TokenData(a, b) = new(a, b)
-end
-
-const UNKNOWN_TOKEN = TokenData(0, 0)
+const IBOW = Dict{Symbol,Int}
+const BOW = Dict{Symbol,Float64}
 
 """
-    compute_vocabulary(config::TextConfig, text::String, voc::Dict{Symbol,TokenData})
-
-Computes the vocabulary and the maximum term's frequency of a single text
-"""
-function compute_vocabulary(config::TextConfig, text::String, voc::Dict{Symbol,TokenData})
-    maxfreq = 1
-    for token in tokenize(config, text)
-        sym = Symbol(token)
-        h = get(voc, sym, UNKNOWN_TOKEN)
-        if h.freq == 0
-            m = 1
-            voc[sym] = TokenData(length(voc), 1)
-        else
-            h.freq += 1
-            m = h.freq
-        end
-
-        maxfreq = max(m, maxfreq)
-    end
-
-    voc, maxfreq
-end
-
-"""
-
-    compute_vocabulary(config::TextConfig, arr::AbstractVector{String}, voc::Dict{Symbol,TokenData})
-
-Computes the vocabulary of an item and the maximum term's frequency; an item item is represented as an array of texts
-"""
-function compute_vocabulary(config::TextConfig, arr::AbstractVector{String}, voc::Dict{Symbol,TokenData})
-    maxfreq = 0
-    for text in arr
-       _, maxfreq = compute_vocabulary(config, text, voc)
-    end
-
-    voc, maxfreq
-end
-
-"""
-    compute_bow(config::TextConfig, text::String, voc::Dict{Symbol,Int})
+    compute_bow(config::TextConfig, text::String, voc::IBOW)
 
 Computes a bag of words and the maximum frequency of the bag
 """
-function compute_bow(config::TextConfig, text::String, voc::Dict{Symbol,Int})
+function compute_bow(config::TextConfig, text::String, voc::IBOW)
     maxfreq = 0
     for token in tokenize(config, text)
         sym = Symbol(token)
@@ -80,7 +36,7 @@ end
 
 Compute a bag of words and the maximum frequency of the bag
 """
-compute_bow(config::TextConfig, text::String) = compute_bow(config, text, Dict{Symbol,Int}())
+compute_bow(config::TextConfig, text::String) = compute_bow(config, text, IBOW())
 
 """
     compute_bow(config::TextConfig, arr::AbstractVector{String})
@@ -88,7 +44,7 @@ compute_bow(config::TextConfig, text::String) = compute_bow(config, text, Dict{S
 Computes a bag of word and the maximum frequency of the bag; the input is an array of strings that represent a single object
 """
 function compute_bow(config::TextConfig, arr::AbstractVector{String})
-    D = Dict{Symbol,Int}()
+    D = IBOW()
     maxfreq = 0
     for text in arr
        _, maxfreq = compute_bow(config, text, D)
@@ -98,11 +54,11 @@ function compute_bow(config::TextConfig, arr::AbstractVector{String})
 end
 
 """
-    normalize!(bow::Dict{Symbol, Float64})
+    normalize!(bow::BOW)
 
 Inplace normalization of `bow`
 """
-function normalize!(bow::Dict{Symbol, Float64})
+function normalize!(bow::BOW)
     s = 0.0
     for w in values(bow)
         s += w * w
@@ -117,13 +73,13 @@ function normalize!(bow::Dict{Symbol, Float64})
 end
 
 
-function normalize!(matrix::AbstractVector{Dict{Symbol, Float64}})
+function normalize!(matrix::AbstractVector{BOW})
     for bow in matrix
         normalize!(bow)
     end
 end
 
-function dot(a::Dict{Symbol, Float64}, b::Dict{Symbol, Float64})
+function dot(a::BOW, b::BOW)
     if length(b) < length(a)
         a, b = b, a  # a must be the smallest bow
     end
@@ -137,7 +93,7 @@ function dot(a::Dict{Symbol, Float64}, b::Dict{Symbol, Float64})
     s
 end
 
-function +(a::Dict{Symbol, Float64}, b::Dict{Symbol, Float64})
+function +(a::BOW, b::BOW)
     if length(a) < length(b) 
         a, b = b, a  # a must be the largest bow
     end
@@ -153,7 +109,7 @@ function +(a::Dict{Symbol, Float64}, b::Dict{Symbol, Float64})
     c
 end
 
-function *(a::Dict{Symbol, Float64}, b::Dict{Symbol, Float64})
+function *(a::BOW, b::BOW)
     if length(b) < length(a)
         a, b = b, a  # a must be the smallest bow
     end
@@ -171,7 +127,7 @@ function *(a::Dict{Symbol, Float64}, b::Dict{Symbol, Float64})
     c
 end
 
-function *(a::Dict{Symbol, Float64}, b::F) where F <: Real
+function *(a::BOW, b::F) where F <: Real
     c = copy(a)
     for (k, v) in a
         c[k] = v * b
@@ -180,11 +136,11 @@ function *(a::Dict{Symbol, Float64}, b::F) where F <: Real
     c
 end
 
-function *(b::F, a::Dict{Symbol, Float64}) where F <: Real
+function *(b::F, a::BOW) where F <: Real
     a * b
 end
 
-function /(a::Dict{Symbol, Float64}, b::F) where F <: Real
+function /(a::BOW, b::F) where F <: Real
     c = copy(a)
     for (k, v) in a
         c[k] = v / b
@@ -194,7 +150,7 @@ function /(a::Dict{Symbol, Float64}, b::F) where F <: Real
 end
 
 
-function +(a::Dict{Symbol, Float64}, b::F) where F <: Real
+function +(a::BOW, b::F) where F <: Real
     c = copy(a)
     for (k, v) in a
         c[k] = v + b
@@ -203,7 +159,7 @@ function +(a::Dict{Symbol, Float64}, b::F) where F <: Real
     c
 end
 
-function +(b::F, a::Dict{Symbol, Float64}) where F <: Real
+function +(b::F, a::BOW) where F <: Real
     a + b
 end
 
@@ -215,7 +171,7 @@ Computes the cosine_distance between two weighted bags
 It supposes that bags are normalized (see `normalize!` function)
 
 """
-function cosine_distance(a::Dict{Symbol, Float64}, b::Dict{Symbol, Float64})::Float64
+function cosine_distance(a::BOW, b::BOW)::Float64
     return 1.0 - dot(a, b)
 end
 
@@ -227,7 +183,7 @@ Computes the angle  between two weighted bags
 It supposes that all bags are normalized (see `normalize!` function)
 
 """
-function angle_distance(a::Dict{Symbol, Float64}, b::Dict{Symbol, Float64})
+function angle_distance(a::BOW, b::BOW)
     d = dot(a, b)
 
     if d <= -1.0
@@ -241,6 +197,6 @@ function angle_distance(a::Dict{Symbol, Float64}, b::Dict{Symbol, Float64})
     end
 end
 
-function cosine(a::Dict{Symbol, Float64}, b::Dict{Symbol, Float64})::Float64
+function cosine(a::BOW, b::BOW)::Float64
     return dot(a, b) # * a.invnorm * b.invnorm # it is already normalized
 end

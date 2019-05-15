@@ -1,7 +1,7 @@
 export DistModel, feed!, fix!
 
 mutable struct DistModel <: Model
-    tokens::Dict{Symbol,Vector{Float64}}
+    tokens::Dict{Symbol, Vector{Int}}
     config::TextConfig
     sizes::Vector{Int}
 end
@@ -13,10 +13,8 @@ function fit(::Type{DistModel}, config::TextConfig, corpus, y; nclasses=0, norm_
         nclasses = unique(y) |> length
     end
     
-    model = DistModel(Dict{Symbol,Vector{Float64}}(), config, zeros(Int, nclasses))
+    model = DistModel(BOW(), config, zeros(Int, nclasses))
     feed!(model, corpus, y)
-    #normalize!(model, norm_by)
-    #fix!(model)
     model
 end
 
@@ -24,7 +22,7 @@ function feed!(model::DistModel, corpus, y)
     config = model.config
     nclasses = length(model.sizes)
     n = 0
-    println("feeding DistModel with $(length(corpus)) items, classes: $(nclasses)")
+    println(stderr, "feeding DistModel with $(length(corpus)) items, classes: $(nclasses)")
     for (klass, text) in zip(y, corpus)
         for token in tokenize(config, text)
             token_dist = get(model.tokens, token, EMPTY_TOKEN_DIST)
@@ -36,9 +34,10 @@ function feed!(model::DistModel, corpus, y)
         end
         model.sizes[klass] += 1
         n += 1
-        n % 1000 == 0 && print("*")
-        n % 100000 == 0 && println(" dist: $(model.sizes), adv: $n")
+        n % 1000 == 0 && print(stderr, "*")
+        n % 100000 == 0 && println(stderr, " dist: $(model.sizes), adv: $n")
     end
+    println(stderr, "finished DistModel: $n processed items")
 
     model
 end
