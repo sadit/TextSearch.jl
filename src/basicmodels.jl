@@ -15,7 +15,7 @@ Models a text through a vector space
 """
 mutable struct VectorModel <: Model
     config::TextConfig
-    vocab::IBOW
+    vocab::BOW
     maxfreq::Int
     n::Int
 end
@@ -29,7 +29,7 @@ tokens with low and high number of occurrences. `lower` is specified as an integ
 the frequency of the current token and the maximum frequency of the model.
 """
 function fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector; lower=0, higher=1.0)
-    voc = IBOW()
+    voc = BOW()
     n = 0
     maxfreq = 0
     println(stderr, "fitting VectorModel with $(length(corpus)) items")
@@ -57,8 +57,8 @@ Drops terms in the vocabulary with less than `low` and and higher than `high` fr
 - `higher` is specified as a float, 0 < higher <= 1.0; it is readed as the higher frequency that is preserved (it a proportion of the maximum frequency)
 
 """
-function filter_vocab(vocab::IBOW, maxfreq, lower::Int, higher::Float64=1.0)
-    X = IBOW()
+function filter_vocab(vocab::BOW, maxfreq, lower::Int, higher::Float64=1.0)
+    X = BOW()
 
     for (t, freq) in vocab
         if freq < lower || freq > maxfreq * higher
@@ -111,7 +111,7 @@ function weighted_bow(model::VectorModel, weighting::Type, data, modify_bow!::Fu
     bag, maxfreq = compute_bow(model.config, data)
     bag = modify_bow!(bag)
     for (token, freq) in bag
-        global_freq = get(model.vocab, token, 0)
+        global_freq = get(model.vocab, token, 0.0)
         if global_freq > 0
             W[token] = _weight(weighting, freq, maxfreq, model.n, global_freq)
         end
@@ -125,18 +125,18 @@ end
 
 Computes a weight for the given stats using scheme T
 """
-function _weight(::Type{TfidfModel}, freq::Integer, maxfreq::Integer, n::Integer, global_freq::Integer)::Float64
+function _weight(::Type{TfidfModel}, freq::Real, maxfreq::Integer, n::Real, global_freq::Real)::Float64
     (freq / maxfreq) * log(2, 1 + n / global_freq)
 end
 
-function _weight(::Type{TfModel}, freq::Integer, maxfreq::Integer, n::Integer, global_freq::Integer)::Float64
-    (freq / maxfreq)
+function _weight(::Type{TfModel}, freq::Real, maxfreq::Integer, n::Real, global_freq::Real)::Float64
+    freq / maxfreq
 end
 
-function _weight(::Type{IdfModel}, freq::Integer, maxfreq::Integer, n::Integer, global_freq::Integer)::Float64
+function _weight(::Type{IdfModel}, freq::Real, maxfreq::Integer, n::Real, global_freq::Real)::Float64
     log(2, n / global_freq)
 end
 
-function _weight(::Type{FreqModel}, freq::Integer, maxfreq::Integer, n::Integer, global_freq::Integer)::Float64
+function _weight(::Type{FreqModel}, freq::Real, maxfreq::Integer, n::Real, global_freq::Real)::Float64
     freq
 end

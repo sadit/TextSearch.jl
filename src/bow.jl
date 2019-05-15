@@ -3,26 +3,21 @@ export TokenData, compute_bow
 import Base: +, *, /, ==, length, transpose
 import LinearAlgebra: dot
 import SimilaritySearch: normalize!, cosine_distance, angle_distance
-export IBOW, BOW, compute_bow
+export BOW, compute_bow
 
-"""
-    mutable struct TokenData
-
-Stores an identifier and its frequency
-"""
-const IBOW = Dict{Symbol,Int}
+# const BOW = Dict{Symbol,Int}
 const BOW = Dict{Symbol,Float64}
 
 """
-    compute_bow(config::TextConfig, text::String, voc::IBOW)
+    compute_bow(config::TextConfig, text::String, voc::BOW)
 
 Computes a bag of words and the maximum frequency of the bag
 """
-function compute_bow(config::TextConfig, text::String, voc::IBOW)
-    maxfreq = 0
+function compute_bow(config::TextConfig, text::String, voc::BOW)
+    maxfreq::Int = 0
     for token in tokenize(config, text)
         sym = Symbol(token)
-        m = get(voc, sym, 0) + 1
+        m = floor(Int, get(voc, sym, 0.0)) + 1
         voc[sym] = m
         maxfreq = max(m, maxfreq)
     end
@@ -36,7 +31,7 @@ end
 
 Compute a bag of words and the maximum frequency of the bag
 """
-compute_bow(config::TextConfig, text::String) = compute_bow(config, text, IBOW())
+compute_bow(config::TextConfig, text::String) = compute_bow(config, text, BOW())
 
 """
     compute_bow(config::TextConfig, arr::AbstractVector{String})
@@ -44,8 +39,8 @@ compute_bow(config::TextConfig, text::String) = compute_bow(config, text, IBOW()
 Computes a bag of word and the maximum frequency of the bag; the input is an array of strings that represent a single object
 """
 function compute_bow(config::TextConfig, arr::AbstractVector{String})
-    D = IBOW()
-    maxfreq = 0
+    D = BOW()
+    maxfreq::Int = 0
     for text in arr
        _, maxfreq = compute_bow(config, text, D)
     end
