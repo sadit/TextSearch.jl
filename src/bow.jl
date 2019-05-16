@@ -14,10 +14,10 @@ const BOW = Dict{Symbol,Float64}
 Computes a bag of words and the maximum frequency of the bag
 """
 function compute_bow(config::TextConfig, text::String, voc::BOW)
-    maxfreq::Int = 0
+    maxfreq = 0.0
     for token in tokenize(config, text)
         sym = Symbol(token)
-        m = floor(Int, get(voc, sym, 0.0)) + 1
+        m = get(voc, sym, 0.0) + 1.0
         voc[sym] = m
         maxfreq = max(m, maxfreq)
     end
@@ -40,7 +40,7 @@ Computes a bag of word and the maximum frequency of the bag; the input is an arr
 """
 function compute_bow(config::TextConfig, arr::AbstractVector{String})
     D = BOW()
-    maxfreq::Int = 0
+    maxfreq = 0.0
     for text in arr
        _, maxfreq = compute_bow(config, text, D)
     end

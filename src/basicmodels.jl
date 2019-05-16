@@ -31,7 +31,7 @@ the frequency of the current token and the maximum frequency of the model.
 function fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector; lower=0, higher=1.0)
     voc = BOW()
     n = 0
-    maxfreq = 0
+    maxfreq = 0.0
     println(stderr, "fitting VectorModel with $(length(corpus)) items")
 
     for data in corpus
@@ -46,7 +46,7 @@ function fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector; lo
         voc, maxfreq = filter_vocab(voc, maxfreq, lower, higher)
     end
 
-    VectorModel(config, voc, maxfreq, n)
+    VectorModel(config, voc, Int(maxfreq), n)
 end
 
 """
@@ -81,8 +81,8 @@ function update!(a::VectorModel, b::VectorModel)
     i = 0
     for (k, freq1) in b.vocab
         i += 1
-        freq2 = get(a, k, 0)
-        if freq1 == 0
+        freq2 = get(a, k, 0.0)
+        if freq1 == 0.0
             a[k] = freq1
         else
             a[k] = freq1 + freq2
@@ -112,7 +112,7 @@ function weighted_bow(model::VectorModel, weighting::Type, data, modify_bow!::Fu
     bag = modify_bow!(bag)
     for (token, freq) in bag
         global_freq = get(model.vocab, token, 0.0)
-        if global_freq > 0
+        if global_freq > 0.0
             W[token] = _weight(weighting, freq, maxfreq, model.n, global_freq)
         end
     end
@@ -125,18 +125,18 @@ end
 
 Computes a weight for the given stats using scheme T
 """
-function _weight(::Type{TfidfModel}, freq::Real, maxfreq::Integer, n::Real, global_freq::Real)::Float64
+function _weight(::Type{TfidfModel}, freq::Real, maxfreq::Real, n::Real, global_freq::Real)::Float64
     (freq / maxfreq) * log(2, 1 + n / global_freq)
 end
 
-function _weight(::Type{TfModel}, freq::Real, maxfreq::Integer, n::Real, global_freq::Real)::Float64
+function _weight(::Type{TfModel}, freq::Real, maxfreq::Real, n::Real, global_freq::Real)::Float64
     freq / maxfreq
 end
 
-function _weight(::Type{IdfModel}, freq::Real, maxfreq::Integer, n::Real, global_freq::Real)::Float64
+function _weight(::Type{IdfModel}, freq::Real, maxfreq::Real, n::Real, global_freq::Real)::Float64
     log(2, n / global_freq)
 end
 
-function _weight(::Type{FreqModel}, freq::Real, maxfreq::Integer, n::Real, global_freq::Real)::Float64
+function _weight(::Type{FreqModel}, freq::Real, maxfreq::Real, n::Real, global_freq::Real)::Float64
     freq
 end

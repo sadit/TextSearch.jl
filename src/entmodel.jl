@@ -23,7 +23,7 @@ function fit(::Type{EntModel}, model::DistModel, smooth::Function=smooth_factor)
         for j in 1:nclasses
             pj = (dist[j] + b) / pop
 
-            if pj > 0
+            if pj > 0.0
                 e -= pj * log2(pj)
             end
         end
