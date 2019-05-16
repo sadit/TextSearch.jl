@@ -34,7 +34,7 @@ function fit(::Type{EntModel}, model::DistModel, smooth::Function=smooth_factor)
     EntModel(tokens, model.config)
 end
 
-function weighted_bow(model::EntModel, weighting::Type, data, modify_bow!::Function=identity)::BOW
+function weighted_bow(model::EntModel, data, modify_bow!::Function=identity)::BOW
     bow, maxfreq = compute_bow(model.config, data)
     len = 0
     for v in values(bow)
@@ -50,6 +50,6 @@ function weighted_bow(model::EntModel, weighting::Type, data, modify_bow!::Funct
             delete!(bow, token)
         end
     end
-    
+
     bow    
 end
