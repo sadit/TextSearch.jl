@@ -7,4 +7,5 @@ module TextSearch
     include("distmodel.jl")
     include("entmodel.jl")
     include("invindex.jl")
+    include("rocchio.jl")
 end

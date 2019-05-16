@@ -1,5 +1,7 @@
-export Rocchio
+export Rocchio, fit, predict, transform
 import SimilaritySearch: KnnResult
+import Base: broadcastable
+
 
 mutable struct Rocchio
     protos::Vector{BOW}  # prototypes
@@ -29,7 +31,7 @@ end
 function predict(rocchio::Rocchio, x::BOW)
     res = KnnResult(1)
     for i in 1:length(rocchio.protos)
-        d = dot(rocchio.protos[i], x)
+        d = cosine_distance(rocchio.protos[i], x)
         push!(res, i, d)
     end
 
@@ -38,4 +40,8 @@ end
 
 function transform(rocchio::Rocchio, x::BOW)
     [dot(rocchio.protos[i], x) for i in 1:length(rocchio.protos)]
+end
+
+function broadcastable(rocchio::Rocchio)
+    (rocchio,)
 end

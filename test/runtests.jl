@@ -198,3 +198,22 @@ end
     x = sum(X) |> normalize!
     @test 0.999 < dot(x, Dict(:la=>0.736665,:verde=>0.39922,:azul=>0.112482,:pera=>0.087128,:esta=>0.174256,:roja=>0.224964,:hoja=>0.112482,:casa=>0.337445,:rica=>0.174256,:manzana=>0.19961))
 end
+
+
+@testset "rocchio" begin
+    config = TextConfig()
+    config.nlist = [1,2]
+    config.qlist = [3]
+    config.skiplist = []
+    corpus = [x[1] for x in labeled_corpus]
+
+    model = fit(VectorModel, config, corpus)
+    X = [weighted_bow(model, TfidfModel, x) |> normalize! for x in corpus]
+    y = [x[2] for x in labeled_corpus]
+    rocchio = fit(Rocchio, X, y)
+    @show rocchio.protos rocchio.pops
+    @test sum(predict.(rocchio, X) .== y)/length(y) == 1
+    for p in transform.(rocchio, X)
+        println(p)
+    end
+end
