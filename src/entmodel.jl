@@ -10,7 +10,14 @@ function smooth_factor(dist::AbstractVector)::Float64
     s < length(dist) ? 1.0 : 0.0
 end
 
-function fit(::Type{EntModel}, model::DistModel, smooth::Function=smooth_factor, min=0.01)
+"""
+    fit(::Type{EntModel}, model::DistModel, smooth::Function=smooth_factor; lower=0.001)
+
+
+Fits an EntModel using the already fitted DistModel; the `smooth` function is called to compute the smoothing factor
+for a given histogram. It accepts only symbols with a final weight higher or equal than `lower`.
+"""
+function fit(::Type{EntModel}, model::DistModel, smooth::Function=smooth_factor; lower=0.001)
     tokens = BOW()
     nclasses = length(model.sizes)
     maxent = log2(nclasses)
@@ -28,7 +35,7 @@ function fit(::Type{EntModel}, model::DistModel, smooth::Function=smooth_factor,
             end
         end
         e = 1.0 - e / maxent
-        if e >= min
+        if e >= lower
             tokens[token] = e
         end
     end
@@ -36,6 +43,29 @@ function fit(::Type{EntModel}, model::DistModel, smooth::Function=smooth_factor,
     EntModel(tokens, model.config)
 end
 
+"""
+    prune(model::EntModel, lower)
+
+Prunes the model accepting only those symbols with a weight higher than `lower`
+
+"""
+function prune(model::EntModel, lower)
+    tokens = BOW()
+    for (t, ent) in model.tokens
+        if ent >= lower
+            tokens[t] = ent
+        end 
+    end
+    
+    EntModel(tokens, model.config)
+end
+
+"""
+    weighted_bow(model::EntModel, data, modify_bow!::Function=identity)::BOW
+    weighted_bow(model::EntModel, ::Type, data, modify_bow!::Function=identity)::BOW
+
+Computes a weighted bow for a given `data`; the weighting type is ignored when model is an EntModel.
+"""
 function weighted_bow(model::EntModel, data, modify_bow!::Function=identity)::BOW
     bow, maxfreq = compute_bow(model.config, data)
     len = 0

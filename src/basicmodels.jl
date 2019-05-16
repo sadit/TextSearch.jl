@@ -74,8 +74,7 @@ end
 """
     update!(a::VectorModel, b::VectorModel)
 
-Updates `a` with `b` inplace; returns `a`. TokenData's id is solved
-consistently, but can destroy any previous info.
+Updates `a` with `b` inplace; returns `a`.
 """
 function update!(a::VectorModel, b::VectorModel)
     i = 0
@@ -103,8 +102,8 @@ abstract type FreqModel end
     weighted_bow(model::VectorModel, weighting::Type, data, modify_bow!::Function=identity)::Dict{Symbol, Float64}
 
 Computes `data`'s weighted bag of words using the given model and weighting scheme.
-It takes a function `modify_bow!` (that defaults to `identity`) to modify the bag
-before applying the weighting scheme.
+It takes a function `modify_bow!` to modify the bag
+before applying the weighting scheme; `modify_bow!` defaults to `identity`.
 """
 function weighted_bow(model::VectorModel, weighting::Type, data, modify_bow!::Function=identity)::BOW
     W = BOW()

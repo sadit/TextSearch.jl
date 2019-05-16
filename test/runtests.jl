@@ -17,8 +17,6 @@ const corpus = ["hello world :)", "@user;) excellent!!", "#jello world."]
     a = [(p.first, p.second) for p in compute_bow(config, text0)[1]]
     b = [(:rld, 1), (Symbol("@us"), 1), (:orl, 1), (:wor, 1), (Symbol("lo."), 1), (:use, 1), (:ser, 1), (Symbol("o.w"), 1), (:llo, 1), (Symbol("r;)"), 1), (:jel, 1), (Symbol(" #j"), 1), (Symbol("er;"), 1), (Symbol("ld "), 1), (Symbol(";) "), 1), (Symbol(" @u"), 1), (:ell, 1), (Symbol(") #"), 1), (Symbol(".wo"), 1), (Symbol("#je"), 1)]
     @test sort(a) == sort(b)
-    #b = Set(Dict(:rld=>TokenData(18, 1),Symbol("@us")=>TokenData(1, 1),:orl=>TokenData(17, 1),:wor=>TokenData(16, 1),Symbol("lo.")=>TokenData(13, 1),:use=>TokenData(2, 1),:ser=>TokenData(3, 1),Symbol("o.w")=>TokenData(14, 1),:llo=>TokenData(12, 1),Symbol("r;)")=>TokenData(5, 1),:jel=>TokenData(10, 1),Symbol(" #j")=>TokenData(8, 1),Symbol("er;")=>TokenData(4, 1),Symbol("ld ")=>TokenData(19, 1),Symbol(";) ")=>TokenData(6, 1),Symbol(" @u")=>TokenData(0, 1),:ell=>TokenData(11, 1),Symbol(") #")=>TokenData(7, 1),Symbol(".wo")=>TokenData(15, 1),Symbol("#je")=>TokenData(9, 1)))
-    #@show setdiff(a, b)
 end
 
 @testset "Word n-grams" begin
@@ -187,4 +185,15 @@ end
     ires = [r.objID for r in res]
     @show res, _corpus[ires]
     @test sort(ires) == [1, 2, 3, 4]
+end
+
+@testset "centroid computing" begin
+    config = TextConfig()
+    config.nlist = [1]
+    config.qlist = []
+    config.skiplist = []
+    model = fit(VectorModel, config, _corpus)
+    @show _corpus
+    X = [weighted_bow(model, FreqModel, x) |> normalize! for x in _corpus]
+    @show sum(X) |> normalize!
 end

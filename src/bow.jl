@@ -23,6 +23,26 @@ function compute_bow(config::TextConfig, text::String, voc::BOW)
     voc, maxfreq
 end
 
+"""
+    compute_bow(tokenlist::AbstractVector{Symbol}, voc::BOW)::Tuple{BOW,Float64}
+
+Updates a BOW using the given list of tokens
+"""
+function compute_bow(tokenlist::AbstractVector{Symbol}, voc::BOW)
+    maxfreq = 0.0
+    for sym in tokenlist
+        m = get(voc, sym, 0.0) + 1.0
+        voc[sym] = m
+        maxfreq = max(m, maxfreq)
+    end
+
+    voc, maxfreq
+end
+
+# these are needed to call `compute_bow` for symbol's list but also for simplicity of the API
+compute_bow(tokenlist::AbstractVector{Symbol}) = compute_bow(tokenlist, BOW())
+compute_bow(config::TextConfig, tokenlist::AbstractVector{Symbol}, bow::BOW) = compute_bow(tokenlist, bow)
+compute_bow(config::TextConfig, tokenlist::AbstractVector{Symbol}) = compute_bow(tokenlist, BOW())
 
 """
     compute_bow(config::TextConfig, text::String)
