@@ -10,7 +10,7 @@ function smooth_factor(dist::AbstractVector)::Float64
     s < length(dist) ? 1.0 : 0.0
 end
 
-function fit(::Type{EntModel}, model::DistModel, smooth::Function=smooth_factor)
+function fit(::Type{EntModel}, model::DistModel, smooth::Function=smooth_factor, min=0.01)
     tokens = BOW()
     nclasses = length(model.sizes)
     maxent = log2(nclasses)
@@ -27,8 +27,10 @@ function fit(::Type{EntModel}, model::DistModel, smooth::Function=smooth_factor)
                 e -= pj * log2(pj)
             end
         end
-
-        tokens[token] = 1.0 - e / maxent
+        e = 1.0 - e / maxent
+        if e >= min
+            tokens[token] = e
+        end
     end
 
     EntModel(tokens, model.config)
@@ -53,3 +55,5 @@ function weighted_bow(model::EntModel, data, modify_bow!::Function=identity)::BO
 
     bow    
 end
+
+weighted_bow(model::EntModel, ::Type, data, modify_bow!::Function=identity) = weighted_bow(model, data, modify_bow!)

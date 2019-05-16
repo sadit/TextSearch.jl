@@ -1,5 +1,3 @@
-export TokenData, compute_bow
-
 import Base: +, *, /, ==, length, transpose
 import LinearAlgebra: dot
 import SimilaritySearch: normalize!, cosine_distance, angle_distance
@@ -66,7 +64,6 @@ function normalize!(bow::BOW)
 
     bow
 end
-
 
 function normalize!(matrix::AbstractVector{BOW})
     for bow in matrix
