@@ -1,7 +1,7 @@
 import Base: +, *, /, ==, transpose, zero
-import LinearAlgebra: dot
+import LinearAlgebra: dot, norm
 import SimilaritySearch: normalize!, cosine_distance, angle_distance
-export BOW, compute_bow
+export BOW, compute_bow, add!
 
 # const BOW = Dict{Symbol,Int}
 const BOW = Dict{Symbol,Float64}
@@ -72,12 +72,7 @@ end
 Inplace normalization of `bow`
 """
 function normalize!(bow::BOW)
-    s = 0.0
-    for w in values(bow)
-        s += w * w
-    end
-
-    s = 1.0 / sqrt(s)
+    s = 1.0 / norm(bow)
     for (k, v) in bow
         bow[k] = v * s
     end
@@ -105,8 +100,27 @@ function dot(a::BOW, b::BOW)
     s
 end
 
+function norm(a::BOW)::Float64
+    s = 0.0
+    for w in values(a)
+        s += w * w
+    end
+
+    sqrt(s)
+end
+
 function zero(::Type{BOW})
     BOW()
+end
+
+function add!(a::BOW, b::BOW)
+    for (k, w) in b
+        if w != 0.0
+            a[k] = get(a, k, 0.0) + w
+        end
+    end
+
+    a
 end
 
 function +(a::BOW, b::BOW)
@@ -123,7 +137,6 @@ function +(a::BOW, b::BOW)
 
     c
 end
-
 
 function +(a::BOW, b::F) where F <: Real
     c = copy(a)
