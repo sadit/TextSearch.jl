@@ -195,5 +195,6 @@ end
     model = fit(VectorModel, config, _corpus)
     @show _corpus
     X = [weighted_bow(model, FreqModel, x) |> normalize! for x in _corpus]
-    @show sum(X) |> normalize!
+    x = sum(X) |> normalize!
+    @test 0.999 < dot(x, Dict(:la=>0.736665,:verde=>0.39922,:azul=>0.112482,:pera=>0.087128,:esta=>0.174256,:roja=>0.224964,:hoja=>0.112482,:casa=>0.337445,:rica=>0.174256,:manzana=>0.19961))
 end

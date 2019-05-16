@@ -1,4 +1,4 @@
-import Base: +, *, /, ==, length, transpose
+import Base: +, *, /, ==, transpose, zero
 import LinearAlgebra: dot
 import SimilaritySearch: normalize!, cosine_distance, angle_distance
 export BOW, compute_bow
@@ -105,20 +105,37 @@ function dot(a::BOW, b::BOW)
     s
 end
 
+function zero(::Type{BOW})
+    BOW()
+end
+
 function +(a::BOW, b::BOW)
     if length(a) < length(b) 
         a, b = b, a  # a must be the largest bow
     end
     
     c = copy(a)
-    for k in keys(b)
-        w = get(b, k, 0.0)
+    for (k, w) in b
         if w != 0.0
-            c[k] += b[k]
+            c[k] = get(c, k, 0.0) + w 
         end
     end
 
     c
+end
+
+
+function +(a::BOW, b::F) where F <: Real
+    c = copy(a)
+    for (k, v) in a
+        c[k] = v + b
+    end
+
+    c
+end
+
+function +(b::F, a::BOW) where F <: Real
+    a + b
 end
 
 function *(a::BOW, b::BOW)
@@ -159,20 +176,6 @@ function /(a::BOW, b::F) where F <: Real
     end
 
     c
-end
-
-
-function +(a::BOW, b::F) where F <: Real
-    c = copy(a)
-    for (k, v) in a
-        c[k] = v + b
-    end
-
-    c
-end
-
-function +(b::F, a::BOW) where F <: Real
-    a + b
 end
 
 """
