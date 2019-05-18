@@ -15,11 +15,10 @@ Models a text through a vector space
 """
 mutable struct VectorModel <: Model
     config::TextConfig
-    vocab::BOW
+    tokens::BOW
     maxfreq::Int
     n::Int
 end
-
 
 """
     fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector; lower=0, higher=1.0)
@@ -50,17 +49,17 @@ function fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector; lo
 end
 
 """
-    filter_vocab(vocab, maxfreq, lower::int, higher::Float64=1.0)
+    filter_vocab(tokens, maxfreq, lower::int, higher::Float64=1.0)
 
 Drops terms in the vocabulary with less than `low` and and higher than `high` frequences.
 - `lower` is specified as an integer, and must be read as the lower accepted frequency (lower frequencies will be dropped)
 - `higher` is specified as a float, 0 < higher <= 1.0; it is readed as the higher frequency that is preserved (it a proportion of the maximum frequency)
 
 """
-function filter_vocab(vocab::BOW, maxfreq, lower::Int, higher::Float64=1.0)
+function filter_vocab(tokens::BOW, maxfreq, lower::Int, higher::Float64=1.0)
     X = BOW()
 
-    for (t, freq) in vocab
+    for (t, freq) in tokens
         if freq < lower || freq > maxfreq * higher
             continue
         end
@@ -78,7 +77,7 @@ Updates `a` with `b` inplace; returns `a`.
 """
 function update!(a::VectorModel, b::VectorModel)
     i = 0
-    for (k, freq1) in b.vocab
+    for (k, freq1) in b.tokens
         i += 1
         freq2 = get(a, k, 0.0)
         if freq1 == 0.0
@@ -110,7 +109,7 @@ function vectorize(model::VectorModel, weighting::Type, data, modify_bow!::Funct
     bag, maxfreq = compute_bow(model.config, data)
     bag = modify_bow!(bag)
     for (token, freq) in bag
-        global_freq = get(model.vocab, token, 0.0)
+        global_freq = get(model.tokens, token, 0.0)
         if global_freq > 0.0
             W[token] = _weight(weighting, freq, maxfreq, model.n, global_freq)
         end
