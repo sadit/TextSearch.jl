@@ -65,13 +65,16 @@ function prune(model::EntModel, lower)
     EntModel(tokens, model.config)
 end
 
+abstract type EntTfModel end
+abstract type EntTpModel end
+
 """
     vectorize(model::EntModel, data, modify_bow!::Function=identity)::BOW
     vectorize(model::EntModel, ::Type, data, modify_bow!::Function=identity)::BOW
 
-Computes a weighted bow for a given `data`; the weighting type is ignored when model is an EntModel.
+Computes a weighted bow for a given `data`
 """
-function vectorize(model::EntModel, data, modify_bow!::Function=identity)::BOW
+function vectorize(model::EntModel, scheme::Type{T}, data, modify_bow!::Function=identity)::BOW where T <: Union{EntTfModel,EntTpModel,EntModel}
     bow, maxfreq = compute_bow(model.config, data)
     len = 0
     for v in values(bow)
@@ -80,9 +83,9 @@ function vectorize(model::EntModel, data, modify_bow!::Function=identity)::BOW
     bow = modify_bow!(bow)
     for (token, freq) in bow
         w = get(model.tokens, token, 0.0)
-        m = freq / len
+        w = _weight(scheme, w, freq,  len)
         if w > 0.0
-            bow[token] = w * m
+            bow[token] = w
         else
             delete!(bow, token)
         end
@@ -91,7 +94,11 @@ function vectorize(model::EntModel, data, modify_bow!::Function=identity)::BOW
     bow    
 end
 
-vectorize(model::EntModel, ::Type, data, modify_bow!::Function=identity) = vectorize(model, data, modify_bow!)
+vectorize(model::EntModel, data, modify_bow!::Function=identity) = vectorize(model, EntTpModel, data, modify_bow!)
+
+_weight(::Type{EntTpModel}, ent, freq, n) = ent * freq / n
+_weight(::Type{EntTfModel}, ent, freq, n) = ent * freq
+_weight(::Type{EntModel}, ent, freq, n) = ent
 
 function broadcastable(model::EntModel)
     (model,)

@@ -21,13 +21,11 @@ mutable struct VectorModel <: Model
 end
 
 """
-    fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector; lower=0, higher=1.0)
+    fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector)
 
-Trains a vector model using the text preprocessing configuration `config` and the input corpus. It also allows for filtering
-tokens with low and high number of occurrences. `lower` is specified as an integer and `higher` as a proportion between
-the frequency of the current token and the maximum frequency of the model.
+Trains a vector model using the text preprocessing configuration `config` and the input corpus. 
 """
-function fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector; lower=0, higher=1.0)
+function fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector)
     voc = BOW()
     n = 0
     maxfreq = 0.0
@@ -41,33 +39,26 @@ function fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector; lo
     end
 
     println(stderr, "finished VectorModel: $n processed items")
-    if lower != 0 || higher != 1.0
-        voc, maxfreq = filter_vocab(voc, maxfreq, lower, higher)
-    end
-
     VectorModel(config, voc, Int(maxfreq), n)
 end
 
 """
-    filter_vocab(tokens, maxfreq, lower::int, higher::Float64=1.0)
+    prune(model::VectorModel, minfreq, rank=1.0)
 
-Drops terms in the vocabulary with less than `low` and and higher than `high` frequences.
-- `lower` is specified as an integer, and must be read as the lower accepted frequency (lower frequencies will be dropped)
-- `higher` is specified as a float, 0 < higher <= 1.0; it is readed as the higher frequency that is preserved (it a proportion of the maximum frequency)
-
+Cuts the vocabulary by frequency using lower and higher filter;
+All tokens with frequency below `freq` are ignored; also, all tokens
+with rank lesser than `rank` (top frequencies) are ignored. 
 """
-function filter_vocab(tokens::BOW, maxfreq, lower::Int, higher::Float64=1.0)
-    X = BOW()
-
-    for (t, freq) in tokens
-        if freq < lower || freq > maxfreq * higher
-            continue
-        end
-
-        X[t] = freq
+function prune(model::VectorModel, freq::Int, rank::Int)
+    # _weight(IdfModel, )
+    W = [token => f for (token, f) in model.tokens if f >= freq]
+    sort!(W, by=x->x[2])
+    M = BOW()
+    for i in 1:length(W)-rank+1
+        w = W[i]
+        M[w[1]] = w[2]
     end
-
-    X, floor(Int, maxfreq * higher)
+    VectorModel(model.config, M, model.maxfreq, model.n)
 end
 
 """
