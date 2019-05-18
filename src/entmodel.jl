@@ -43,6 +43,11 @@ function fit(::Type{EntModel}, model::DistModel, smooth::Function=smooth_factor;
     EntModel(tokens, model.config)
 end
 
+function fit(::Type{EntModel}, config::TextConfig, corpus, y; nclasses=0, norm_by=minimum, smooth=smooth_factor, lower=0.001)
+    dmodel = fit(DistModel, config, corpus, y, nclasses=nclasses, norm_by=minimum)
+    fit(EntModel, dmodel, smooth, lower=lower)
+end
+
 """
     prune(model::EntModel, lower)
 
@@ -54,19 +59,19 @@ function prune(model::EntModel, lower)
     for (t, ent) in model.tokens
         if ent >= lower
             tokens[t] = ent
-        end 
+        end
     end
     
     EntModel(tokens, model.config)
 end
 
 """
-    weighted_bow(model::EntModel, data, modify_bow!::Function=identity)::BOW
-    weighted_bow(model::EntModel, ::Type, data, modify_bow!::Function=identity)::BOW
+    vectorize(model::EntModel, data, modify_bow!::Function=identity)::BOW
+    vectorize(model::EntModel, ::Type, data, modify_bow!::Function=identity)::BOW
 
 Computes a weighted bow for a given `data`; the weighting type is ignored when model is an EntModel.
 """
-function weighted_bow(model::EntModel, data, modify_bow!::Function=identity)::BOW
+function vectorize(model::EntModel, data, modify_bow!::Function=identity)::BOW
     bow, maxfreq = compute_bow(model.config, data)
     len = 0
     for v in values(bow)
@@ -86,4 +91,8 @@ function weighted_bow(model::EntModel, data, modify_bow!::Function=identity)::BO
     bow    
 end
 
-weighted_bow(model::EntModel, ::Type, data, modify_bow!::Function=identity) = weighted_bow(model, data, modify_bow!)
+vectorize(model::EntModel, ::Type, data, modify_bow!::Function=identity) = vectorize(model, data, modify_bow!)
+
+function broadcastable(model::EntModel)
+    (model,)
+end

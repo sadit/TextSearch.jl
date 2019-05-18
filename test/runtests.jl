@@ -2,6 +2,7 @@
 using Test
 using SimilaritySearch
 using TextSearch
+using LinearAlgebra
 
 const text0 = "@user;) #jello.world"
 const text1 = "hello world!! @user;) #jello.world :)"
@@ -52,8 +53,8 @@ end
 
     @test tokenize(config, text1) == [Symbol(h) for h in ["hello", "world", "!!",  "@user", ";)", "#jello", ".", "world", ":)"]]
     model = fit(VectorModel, config, corpus)
-    @test length(weighted_bow(model, TfModel, text1)) == 8
-    @test length(weighted_bow(model, TfModel, text2)) == 0
+    @test length(vectorize(model, TfModel, text1)) == 8
+    @test length(vectorize(model, TfModel, text2)) == 0
 end
 
 
@@ -66,7 +67,7 @@ const sentiment_text = "lol, esto me encanta"
     dmodel = fit(DistModel, config, [x[1] for x in labeled_corpus], [x[2] for x in labeled_corpus])
     @show sentiment_text
     @show dmodel
-    #a = weighted_bow(dmodel, TfIdf, sentiment_text)
+    #a = vectorize(dmodel, TfIdf, sentiment_text)
     #b = [(:me1,1.0),(:me2,0.0),(:encanta1,1.0),(:encanta2,0.0),(:esto1,0.4),(:esto2,0.6),(:lol1,1.0),(:lol2,0.0)]
     #@test string(a) == string(b)
 
@@ -93,8 +94,11 @@ end
     y = [x[2] for x in labeled_corpus]
     dmodel = fit(DistModel, config, X, y)
     emodel = fit(EntModel, dmodel)
-    @show emodel
-    @show weighted_bow(emodel, TfModel, sentiment_text)
+    emodel_ = fit(EntModel, config, X, y)
+    a = normalize!(vectorize(emodel, X))
+    b = normalize!(vectorize(emodel_, X))
+    @test 0.999 < dot(a, b)
+ 
     # a = [(emap[t.id], t.weight) for t in .tokens]
     # b = [(:esto,0.0290494),(:encanta,1.0),(:me,1.0),(:lol,1.0)]
     # sort!(a)
@@ -159,7 +163,7 @@ _corpus = [
     config.skiplist = []
     model = fit(VectorModel, config, _corpus)
     @show _corpus
-    X = [weighted_bow(model, FreqModel, x) |> normalize! for x in _corpus]
+    X = [vectorize(model, FreqModel, x) |> normalize! for x in _corpus]
     dX = transpose(X)
 end
 
@@ -172,10 +176,10 @@ end
     model = fit(VectorModel, config, _corpus)
     invindex = InvIndex()
     for c in _corpus
-        push!(invindex, invindex.n + 1, weighted_bow(model, TfidfModel, c) |> normalize!)
+        push!(invindex, invindex.n + 1, vectorize(model, TfidfModel, c) |> normalize!)
     end
 
-    q = weighted_bow(model, TfidfModel, "la casa roja") |> normalize!
+    q = vectorize(model, TfidfModel, "la casa roja") |> normalize!
     res = search(invindex, cosine_distance, q, KnnResult(4))
     ires = [r.objID for r in res]
     @show res, _corpus[ires]
@@ -194,7 +198,7 @@ end
     config.skiplist = []
     model = fit(VectorModel, config, _corpus)
     @show _corpus
-    X = [weighted_bow(model, FreqModel, x) |> normalize! for x in _corpus]
+    X = [vectorize(model, FreqModel, x) |> normalize! for x in _corpus]
     x = sum(X) |> normalize!
     @test 0.999 < dot(x, Dict(:la=>0.736665,:verde=>0.39922,:azul=>0.112482,:pera=>0.087128,:esta=>0.174256,:roja=>0.224964,:hoja=>0.112482,:casa=>0.337445,:rica=>0.174256,:manzana=>0.19961))
 end
@@ -208,7 +212,7 @@ end
     corpus = [x[1] for x in labeled_corpus]
 
     model = fit(VectorModel, config, corpus)
-    X = [weighted_bow(model, TfidfModel, x) |> normalize! for x in corpus]
+    X = [vectorize(model, TfidfModel, x) |> normalize! for x in corpus]
     y = [x[2] for x in labeled_corpus]
     rocchio = fit(Rocchio, X, y)
     @show rocchio.protos rocchio.pops

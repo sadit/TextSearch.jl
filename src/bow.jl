@@ -1,6 +1,6 @@
 import Base: +, *, /, ==, transpose, zero
-import LinearAlgebra: dot, norm
-import SimilaritySearch: normalize!, cosine_distance, angle_distance
+import LinearAlgebra: dot, norm, normalize!
+import SimilaritySearch: cosine_distance, angle_distance
 export BOW, compute_bow, add!
 
 # const BOW = Dict{Symbol,Int}

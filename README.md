@@ -36,20 +36,20 @@ julia> corpus = [t["text"] for t in db]
 julia> model = fit(VectorModel, config, corpus)
 julia> invindex = InvIndex()
 julia> for (i, text) in enumerate(corpus)
-        push!(invindex, i, weighted_bow(model, TfidfModel, text) |> normalize!)
+        push!(invindex, i, vectorize(model, TfidfModel, text) |> normalize!)
     end
 ```
 
 queries are made as follows
 ```julia
-julia> q = weighted_bow(model, TfidfModel, "que chida musica!!!") |> normalize!
+julia> q = vectorize(model, TfidfModel, "que chida musica!!!") |> normalize!
 julia> db[[p.objID for p in search(invindex, q, KnnResult(11))]]
 ```
 
 you can save memory by pruning large lists, as follows
 ```julia
 julia> invindex = prune(invindex, 100)
-julia> for p in search(invindex, weighted_bow(model, TfidfModel, "que chida musica!!!") |> normalize!, KnnResult(11))
+julia> for p in search(invindex, vectorize(model, TfidfModel, "que chida musica!!!") |> normalize!, KnnResult(11))
     println(db[p.objID]["klass"], "\t", db[p.objID]["text"])
 end
 ```
@@ -60,7 +60,7 @@ It is also simple to modify the bag of words to apply query expansion, downsampl
 julia> function randomsample!(bow)
         Dict(rand(bow, div(length(bow), 2)))
     end
-julia> for p in search(invindex, weighted_bow(model, TfidfModel, "que chida musica!!!", randomsample!) |> normalize!, KnnResult(11))
+julia> for p in search(invindex, vectorize(model, TfidfModel, "que chida musica!!!", randomsample!) |> normalize!, KnnResult(11))
     println(db[p.objID]["klass"], "\t", db[p.objID]["text"])
 end
 😎	No me toquen ando chida! 😎 https://t.co/39OKexhGFT
@@ -87,7 +87,7 @@ julia> db = loadtweets(basename(url))
 julia> config = TextConfig(qlist=[4], nlist=[])
 julia> corpus = [t["text"] for t in db]
 julia> model = fit(VectorModel, config, corpus)
-julia> db = [weighted_bow(model, TfidfModel, text) |> normalize! for text in corpus]
+julia> db = [vectorize(model, TfidfModel, text) |> normalize! for text in corpus]
 julia> invindex = fit(InvIndex, db)
 ```
 

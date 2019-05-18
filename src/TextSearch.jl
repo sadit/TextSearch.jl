@@ -1,4 +1,5 @@
 module TextSearch
+    import Base: broadcastable
     include("textconfig.jl")
     include("bow.jl")
     include("svec.jl")

@@ -1,5 +1,5 @@
 import SimilaritySearch: fit
-export VectorModel, fit, weighted_bow, TfidfModel, TfModel, IdfModel, FreqModel
+export VectorModel, fit, vectorize, TfidfModel, TfModel, IdfModel, FreqModel
 
 """
     abstract type Model
@@ -99,13 +99,13 @@ abstract type IdfModel end
 abstract type FreqModel end
 
 """
-    weighted_bow(model::VectorModel, weighting::Type, data, modify_bow!::Function=identity)::Dict{Symbol, Float64}
+    vectorize(model::VectorModel, weighting::Type, data, modify_bow!::Function=identity)::Dict{Symbol, Float64}
 
 Computes `data`'s weighted bag of words using the given model and weighting scheme.
 It takes a function `modify_bow!` to modify the bag
 before applying the weighting scheme; `modify_bow!` defaults to `identity`.
 """
-function weighted_bow(model::VectorModel, weighting::Type, data, modify_bow!::Function=identity)::BOW
+function vectorize(model::VectorModel, weighting::Type, data, modify_bow!::Function=identity)::BOW
     W = BOW()
     bag, maxfreq = compute_bow(model.config, data)
     bag = modify_bow!(bag)
@@ -117,6 +117,12 @@ function weighted_bow(model::VectorModel, weighting::Type, data, modify_bow!::Fu
     end
   
     W
+end
+
+vectorize(model::VectorModel, data, modify_bow!::Function=identity) = vectorize(model, TfidfModel, data, modify_bow!)
+
+function broadcastable(model::VectorModel)
+    (model,)
 end
 
 """
