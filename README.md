@@ -139,5 +139,5 @@ julia> M
 
 As you may see, prunning an inverted index improves the search speed significantly with
 a small impact in the recall. The sum of distances is also barely impacted. The `SearchGraph` and
-`Knr` indexes perform relatively good, yet inverted indexes are much better, this is way we need specialized methods like those provided in `TextSearch.jl` package. In any case, the approximation ratio is small, as indicated by the `distances_sum` ratio; it is true tha this indicator could have strange combinations and still be good, but high recall values also indicate acceptable values. 
-In particular, the scalability of the pruned inverted index is almost independent of the size of the dataset, being dependent mostly in the number of tokens in the query; of course, it is ealso dependent of the size of the pruned posting list.
+`Knr` indexes perform relatively good, but inverted indexes are much better; that is why we need specialized methods like those provided in `TextSearch.jl` package. In any case, the approximation ratio is small, as indicated by the `distances_sum` ratio. Notice that it is possible to have a good distance approximation factor with bad recall, in this sense, recall is a more strict score.
+In particular, the scalability of the pruned inverted index is almost independent of the size of the dataset, being dependent mostly in the number of tokens in the query; of course, it is also dependent of the size of the pruned posting list.

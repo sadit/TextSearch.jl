@@ -134,6 +134,7 @@ end
     @test u * u == w
     @test u * (1/9) == y
     @test (1/9) * u == y
+    @test dot(normalize!(u + v - v), normalize!(u)) > 0.99
 end
 
 @testset "io" begin

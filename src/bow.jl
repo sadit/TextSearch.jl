@@ -1,4 +1,4 @@
-import Base: +, *, /, ==, transpose, zero
+import Base: +, -, *, /, ==, transpose, zero
 import LinearAlgebra: dot, norm, normalize!
 import SimilaritySearch: cosine_distance, angle_distance
 export BOW, compute_bow, add!
@@ -113,6 +113,7 @@ function zero(::Type{BOW})
     BOW()
 end
 
+## inplace sum
 function add!(a::BOW, b::BOW)
     for (k, w) in b
         if w != 0.0
@@ -123,6 +124,7 @@ function add!(a::BOW, b::BOW)
     a
 end
 
+## sum
 function +(a::BOW, b::BOW)
     if length(a) < length(b) 
         a, b = b, a  # a must be the largest bow
@@ -138,18 +140,19 @@ function +(a::BOW, b::BOW)
     c
 end
 
-function +(a::BOW, b::F) where F <: Real
+## definitions for substraction
+function -(a::BOW, b::BOW)    
     c = copy(a)
-    for (k, v) in a
-        c[k] = v + b
+    for (k, w) in b
+        if w != 0.0
+            c[k] = get(c, k, 0.0) - w 
+        end
     end
 
     c
 end
 
-function +(b::F, a::BOW) where F <: Real
-    a + b
-end
+## definitions for product
 
 function *(a::BOW, b::BOW)
     if length(b) < length(a)
