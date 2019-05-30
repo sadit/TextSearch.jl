@@ -157,7 +157,7 @@ _corpus = [
     "la hoja verde",
 ]
 
-@testset "transpose vbow" begin
+@testset "transpose bow" begin
     config = TextConfig()
     config.nlist = [1]
     config.qlist = []
@@ -218,7 +218,28 @@ end
     rocchio = fit(Rocchio, X, y)
     @show rocchio.protos rocchio.pops
     @test sum(predict.(rocchio, X) .== y)/length(y) == 1.0
+
     for p in transform.(rocchio, X)
         println(p)
     end
+end
+
+
+@testset "rocchio baggingg" begin
+    config = TextConfig()
+    config.nlist = [1, 2]
+    config.qlist = [3]
+    config.skiplist = []
+    corpus = [x[1] for x in labeled_corpus]
+    model = fit(VectorModel, config, corpus)
+    X = [vectorize(model, TfidfModel, x) |> normalize! for x in corpus]
+    y = [x[2] for x in labeled_corpus]
+    rocchio = fit(RocchioBagging, X, y)
+    for p in transform.(rocchio, X)
+        println("===>", p)
+    end
+
+    #@show rocchio.protos rocchio.pops
+    @show predict.(rocchio, X)
+    @show y
 end

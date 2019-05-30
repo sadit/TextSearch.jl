@@ -1,12 +1,14 @@
-export Rocchio, fit, predict, transform
+export Rocchio, RocchioBagging, fit, predict, transform
 import SimilaritySearch: KnnResult
 import Base: broadcastable
-
+using StatsBase: countmap
 
 mutable struct Rocchio
     protos::Vector{BOW}  # prototypes
     pops::Vector{Int} # population per class
 end
+
+const RocchioBagging = Vector{Rocchio}
 
 function fit(::Type{Rocchio}, X::AbstractVector{BOW}, y::AbstractVector{Int}; nclasses=0)
     if nclasses == 0
@@ -46,5 +48,35 @@ function transform(rocchio::Rocchio, x::BOW)
 end
 
 function broadcastable(rocchio::Rocchio)
+    (rocchio,)
+end
+
+function fit(::Type{RocchioBagging}, X::AbstractVector{BOW}, y::AbstractVector{Int}, nrocchios=5; nclasses=0)::RocchioBagging
+    if nclasses == 0
+        nclasses = unique(y) |> length
+    end
+
+    s = ceil(Int, length(X) / 2)
+    L = RocchioBagging()
+    for i in 1:nrocchios
+        I = rand(1:length(X), s)
+        rocchio = fit(Rocchio, X[I], y[I], nclasses=nclasses)
+        push!(L, rocchio)
+    end
+
+    L
+end
+
+function predict(rocchio::RocchioBagging, x::BOW)
+    P = [predict(r, x) for r in rocchio] |> countmap |> collect
+    sort!(P, by=x->x[end])
+    P[end][1]
+end
+
+function transform(rocchio::RocchioBagging, x::BOW)
+    sum(transform(r, x) for r in rocchio) |> normalize!
+end
+
+function broadcastable(rocchio::RocchioBagging)
     (rocchio,)
 end

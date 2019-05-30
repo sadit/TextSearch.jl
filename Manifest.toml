@@ -13,6 +13,10 @@ version = "0.15.0"
 deps = ["Printf"]
 uuid = "ade2ca70-3891-5945-98fb-dc099432e06a"
 
+[[DelimitedFiles]]
+deps = ["Mmap"]
+uuid = "8bb1440f-4735-579b-a4ab-409b98df4dab"
+
 [[Distributed]]
 deps = ["Random", "Serialization", "Sockets"]
 uuid = "8ba89e20-285c-5b6f-9357-94700520ee1b"
@@ -32,6 +36,14 @@ deps = ["Dates", "Distributed", "Mmap", "Sockets", "Test", "Unicode"]
 git-tree-sha1 = "1f7a25b53ec67f5e9422f1f551ee216503f4a0fa"
 uuid = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
 version = "0.20.0"
+
+[[KernelMethods]]
+deps = ["DelimitedFiles", "Random", "SimilaritySearch", "Statistics", "StatsBase", "Test"]
+git-tree-sha1 = "d3bc1f1501f7a045ae9f08ef48bf397de6ee5c58"
+repo-rev = "master"
+repo-url = "https://github.com/sadit/KernelMethods.jl"
+uuid = "d79e8f30-5872-11e9-0dab-2d1842b87615"
+version = "0.1.1"
 
 [[Libdl]]
 uuid = "8f399da3-3557-5675-b5ff-fb832c97cbdb"
