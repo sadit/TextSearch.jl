@@ -4,6 +4,7 @@ function neardup(X::AbstractVector{T}, epsilon=0.1) where T
     invindex = InvIndex()
     res = KnnResult(1)
     L = zeros(Int, length(X))
+    L[1] = 1
     push!(invindex, 1, X[1])
     for i in 2:length(X)
         empty!(res)
