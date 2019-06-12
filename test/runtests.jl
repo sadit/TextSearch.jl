@@ -274,5 +274,5 @@ end
     @show corpus[1:10]
     X = [vectorize(model, TfModel, x) |> normalize! for x in corpus]
     XX = neardup(X, 0.2)
-    @show length(X) length(unique(XX))
+    @test length(X) > length(unique(XX))
 end
