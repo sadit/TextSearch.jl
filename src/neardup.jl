@@ -10,6 +10,7 @@ function neardup(X::AbstractVector{T}, epsilon=0.1) where T
         empty!(res)
         x = X[i]
         search(invindex, cosine_distance, x, res)
+        println(res)
         if length(res) == 0 || first(res).dist > epsilon
             push!(invindex, i, x)
             L[i] = i
