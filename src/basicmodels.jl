@@ -1,4 +1,3 @@
-import SimilaritySearch: fit
 export VectorModel, fit, vectorize, TfidfModel, TfModel, IdfModel, FreqModel
 
 """

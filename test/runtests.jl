@@ -3,6 +3,7 @@ using Test
 using SimilaritySearch
 using TextSearch
 using LinearAlgebra
+fit = TextSearch.fit
 
 const text0 = "@user;) #jello.world"
 const text1 = "hello world!! @user;) #jello.world :)"
@@ -225,7 +226,7 @@ end
 end
 
 
-@testset "rocchio baggingg" begin
+@testset "rocchio bagging" begin
     config = TextConfig()
     config.nlist = [1, 2]
     config.qlist = [3]
@@ -242,4 +243,36 @@ end
     #@show rocchio.protos rocchio.pops
     @show predict.(rocchio, X)
     @show y
+end
+
+
+@testset "neardup" begin
+    config = TextConfig()
+    config.nlist = [1]
+    config.qlist = []
+    config.skiplist = []
+
+    function create_corpus()
+        alphabet = Char.(97:100)
+        corpus = String[]
+        L = Char[]
+        for i in 1:10000
+            resize!(L, 0)
+            for j in 1:7
+                append!(L, rand(alphabet, 2))
+                push!(L, ' ')
+            end
+
+            push!(corpus, join(L))
+        end
+
+        corpus
+    end
+
+    corpus = create_corpus()
+    model = fit(VectorModel, config, corpus)
+    @show corpus[1:10]
+    X = [vectorize(model, TfModel, x) |> normalize! for x in corpus]
+    XX = neardup(X, 0.2)
+    @show length(X) length(unique(XX))
 end

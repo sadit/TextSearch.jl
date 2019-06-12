@@ -1,8 +1,7 @@
 import Base: push!
-import SimilaritySearch:
-    search
-using SimilaritySearch
+import SimilaritySearch: search
 export InvIndex, prune, search
+using SimilaritySearch
 
 """
 Inverted index search structure

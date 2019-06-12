@@ -1,6 +1,5 @@
 export Rocchio, RocchioBagging, fit, predict, transform
 import SimilaritySearch: KnnResult
-import Base: broadcastable
 using StatsBase: countmap
 
 mutable struct Rocchio
