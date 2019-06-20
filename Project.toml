@@ -1,7 +1,7 @@
 name = "TextSearch"
 uuid = "7f6f6c8a-3b03-11e9-223d-e7d88259bd6c"
 authors = ["Eric S. Tellez <donsadit@gmail.com>"]
-version = "0.2.13"
+version = "0.2.14"
 
 [deps]
 DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
@@ -17,4 +17,5 @@ UnicodePlots = "b8865327-cd53-5732-bb35-84acbb429228"
 
 [compat]
 SimilaritySearch = "0.3"
+KernelMethods = "0.1"
 julia = "0.7, 1"
