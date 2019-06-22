@@ -96,8 +96,8 @@ end
     dmodel = fit(DistModel, config, X, y)
     emodel = fit(EntModel, dmodel)
     emodel_ = fit(EntModel, config, X, y)
-    a = normalize!(vectorize(emodel, X))
-    b = normalize!(vectorize(emodel_, X))
+    a = vectorize(emodel, X)
+    b = vectorize(emodel_, X)
     @test 0.999 < dot(a, b)
  
     # a = [(emap[t.id], t.weight) for t in .tokens]
@@ -165,7 +165,7 @@ _corpus = [
     config.skiplist = []
     model = fit(VectorModel, config, _corpus)
     @show _corpus
-    X = [vectorize(model, FreqModel, x) |> normalize! for x in _corpus]
+    X = [vectorize(model, FreqModel, x) for x in _corpus]
     dX = transpose(X)
 end
 
@@ -178,10 +178,10 @@ end
     model = fit(VectorModel, config, _corpus)
     invindex = InvIndex()
     for c in _corpus
-        push!(invindex, invindex.n + 1, vectorize(model, TfidfModel, c) |> normalize!)
+        push!(invindex, invindex.n + 1, vectorize(model, TfidfModel, c))
     end
 
-    q = vectorize(model, TfidfModel, "la casa roja") |> normalize!
+    q = vectorize(model, TfidfModel, "la casa roja")
     res = search(invindex, cosine_distance, q, KnnResult(4))
     ires = [r.objID for r in res]
     @show res, _corpus[ires]
@@ -200,7 +200,7 @@ end
     config.skiplist = []
     model = fit(VectorModel, config, _corpus)
     @show _corpus
-    X = [vectorize(model, FreqModel, x) |> normalize! for x in _corpus]
+    X = [vectorize(model, FreqModel, x) for x in _corpus]
     x = sum(X) |> normalize!
     @test 0.999 < dot(x, Dict(:la=>0.736665,:verde=>0.39922,:azul=>0.112482,:pera=>0.087128,:esta=>0.174256,:roja=>0.224964,:hoja=>0.112482,:casa=>0.337445,:rica=>0.174256,:manzana=>0.19961))
 end
@@ -214,7 +214,7 @@ end
     corpus = [x[1] for x in labeled_corpus]
 
     model = fit(VectorModel, config, corpus)
-    X = [vectorize(model, TfidfModel, x) |> normalize! for x in corpus]
+    X = [vectorize(model, TfidfModel, x) for x in corpus]
     y = [x[2] for x in labeled_corpus]
     rocchio = fit(Rocchio, X, y)
     @show rocchio.protos rocchio.pops
@@ -233,7 +233,7 @@ end
     config.skiplist = []
     corpus = [x[1] for x in labeled_corpus]
     model = fit(VectorModel, config, corpus)
-    X = [vectorize(model, TfidfModel, x) |> normalize! for x in corpus]
+    X = [vectorize(model, TfidfModel, x) for x in corpus]
     y = [x[2] for x in labeled_corpus]
     rocchio = fit(RocchioBagging, X, y)
     for p in transform.(rocchio, X)
@@ -272,7 +272,7 @@ end
     corpus = create_corpus()
     model = fit(VectorModel, config, corpus)
     @show corpus[1:10]
-    X = [vectorize(model, TfModel, x) |> normalize! for x in corpus]
+    X = [vectorize(model, TfModel, x) for x in corpus]
     L, D  = neardup(X, 0.2)
     @test length(X) > length(unique(L))
 end

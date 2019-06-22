@@ -74,12 +74,13 @@ abstract type EntTpModel end
 
 Computes a weighted bow for a given `data`
 """
-function vectorize(model::EntModel, scheme::Type{T}, data, modify_bow!::Function=identity)::BOW where T <: Union{EntTfModel,EntTpModel,EntModel}
+function vectorize(model::EntModel, scheme::Type{T}, data, modify_bow!::Function=identity; normalize=true)::BOW where T <: Union{EntTfModel,EntTpModel,EntModel}
     bow, maxfreq = compute_bow(model.config, data)
     len = 0
     for v in values(bow)
         len += v
     end
+ 
     bow = modify_bow!(bow)
     for (token, freq) in bow
         w = get(model.tokens, token, 0.0)
@@ -90,11 +91,12 @@ function vectorize(model::EntModel, scheme::Type{T}, data, modify_bow!::Function
             delete!(bow, token)
         end
     end
-
+ 
+    normalize && normalize!(bow)
     bow    
 end
 
-vectorize(model::EntModel, data, modify_bow!::Function=identity) = vectorize(model, EntTpModel, data, modify_bow!)
+vectorize(model::EntModel, data, modify_bow!::Function=identity; normalize=true) = vectorize(model, EntTpModel, data, modify_bow!, normalize=normalize)
 
 _weight(::Type{EntTpModel}, ent, freq, n) = ent * freq / n
 _weight(::Type{EntTfModel}, ent, freq, n) = ent * freq

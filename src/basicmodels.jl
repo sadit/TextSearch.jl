@@ -94,7 +94,7 @@ Computes `data`'s weighted bag of words using the given model and weighting sche
 It takes a function `modify_bow!` to modify the bag
 before applying the weighting scheme; `modify_bow!` defaults to `identity`.
 """
-function vectorize(model::VectorModel, weighting::Type, data, modify_bow!::Function=identity)::BOW
+function vectorize(model::VectorModel, weighting::Type, data, modify_bow!::Function=identity; normalize=true)::BOW
     W = BOW()
     bag, maxfreq = compute_bow(model.config, data)
     bag = modify_bow!(bag)
@@ -104,11 +104,12 @@ function vectorize(model::VectorModel, weighting::Type, data, modify_bow!::Funct
             W[token] = _weight(weighting, freq, maxfreq, model.n, global_freq)
         end
     end
-  
+    
+    normalize && normalize!(W)
     W
 end
 
-vectorize(model::VectorModel, data, modify_bow!::Function=identity) = vectorize(model, TfidfModel, data, modify_bow!)
+vectorize(model::VectorModel, data, modify_bow!::Function=identity; normalize=normalize) = vectorize(model, TfidfModel, data, modify_bow!, normalize=normalize)
 
 function broadcastable(model::VectorModel)
     (model,)
