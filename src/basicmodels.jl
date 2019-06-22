@@ -109,7 +109,7 @@ function vectorize(model::VectorModel, weighting::Type, data, modify_bow!::Funct
     W
 end
 
-vectorize(model::VectorModel, data, modify_bow!::Function=identity; normalize=normalize) = vectorize(model, TfidfModel, data, modify_bow!, normalize=normalize)
+vectorize(model::VectorModel, data, modify_bow!::Function=identity; normalize=true) = vectorize(model, TfidfModel, data, modify_bow!, normalize=normalize)
 
 function broadcastable(model::VectorModel)
     (model,)
