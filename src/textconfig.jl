@@ -162,6 +162,7 @@ Tokenizes an array of strings
 """
 function tokenize(config::TextConfig, arr::AbstractVector, normalize::Function=identity)::Vector{Symbol}
     L = Symbol[]
+    n = length(arr)
     sizehint!(L, (length(config.nlist) + length(config.slist)) * (div(n, 2) + 1) + length(config.qlist) * n)
     for text in arr
         t = normalize_text(config, text)
