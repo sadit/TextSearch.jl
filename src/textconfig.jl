@@ -16,6 +16,7 @@ const PUNCTUACTION  = _PUNCTUACTION * _SYMBOLS
 const BLANK_LIST = string(' ', '\t', '\n', '\v', '\r')
 const RE_USER = r"""@[^;:,.@#&\\\-\"'/:\*\(\)\[\]\¿\?\¡\!\{\}~\<\>\|\s]+"""
 const RE_URL = r"(http|ftp|https)://\S+"
+const RE_NUM = r"\d+"
 const BLANK = ' '
 const PUNCTUACTION_BLANK = string(PUNCTUACTION, BLANK)
 
@@ -25,13 +26,13 @@ mutable struct TextConfig
     del_diac::Bool
     del_dup::Bool
     del_punc::Bool
-    del_num::Bool
-    del_url::Bool
-    del_usr::Bool
+    group_num::Bool
+    group_url::Bool
+    group_usr::Bool
     lc::Bool
     qlist::Vector{Int}
     nlist::Vector{Int}
-    skiplist::Vector{Tuple{Int,Int}}
+    slist::Vector{Tuple{Int,Int}}
  
     """
     Initializes a `TextConfig` structure
@@ -40,16 +41,16 @@ mutable struct TextConfig
         del_diac=true,
         del_dup=false,
         del_punc=false,
-        del_num=true,
-        del_url=true,
-        del_usr=false,
+        group_num=true,
+        group_url=true,
+        group_usr=false,
         lc=true,
         qlist=Int[],
         nlist=Int[1],
-        skiplist=Tuple{Int,Int}[]
+        slist=Tuple{Int,Int}[]
     )
-        new(del_diac, del_dup, del_punc, del_num, del_url, del_usr, lc,
-            qlist, nlist, skiplist)
+        new(del_diac, del_dup, del_punc, group_num, group_url, group_usr, lc,
+            qlist, nlist, slist)
     end
 end
 
@@ -64,12 +65,16 @@ function normalize_text(config::TextConfig, text::String)::Vector{Char}
         text = lowercase(text)
     end
 
-    if config.del_url
-        text = replace(text, RE_URL => "")
+    if config.group_url
+        text = replace(text, RE_URL => "_url")
     end
 
-    if config.del_usr
-        text = replace(text, RE_USER => "")
+    if config.group_usr
+        text = replace(text, RE_USER => "_usr")
+    end
+
+    if config.group_num
+        text = replace(text, RE_NUM => "_num")
     end
 
     L = Char[BLANK]
@@ -87,8 +92,6 @@ function normalize_text(config::TextConfig, text::String)::Vector{Char}
             continue
         elseif config.del_punc && u in PUNCTUACTION
             prev = u
-            continue
-        elseif config.del_num && isdigit(u)
             continue
         end
 
@@ -159,7 +162,7 @@ Tokenizes an array of strings
 """
 function tokenize(config::TextConfig, arr::AbstractVector, normalize::Function=identity)::Vector{Symbol}
     L = Symbol[]
-    sizehint!(L, (length(config.nlist) + length(config.skiplist)) * (div(n, 2) + 1) + length(config.qlist) * n)
+    sizehint!(L, (length(config.nlist) + length(config.slist)) * (div(n, 2) + 1) + length(config.qlist) * n)
     for text in arr
         t = normalize_text(config, text)
         tokenize_(config, t, L, normalize)
@@ -177,7 +180,7 @@ function tokenize(config::TextConfig, text::String, normalize::Function=identity
     t = normalize_text(config, text)
     n = length(text)
     L = Symbol[]
-    sizehint!(L, (length(config.nlist) + length(config.skiplist)) * (div(n, 2) + 1) + length(config.qlist) * n)
+    sizehint!(L, (length(config.nlist) + length(config.slist)) * (div(n, 2) + 1) + length(config.qlist) * n)
     tokenize_(config, t, L, normalize)
 end
 
@@ -202,7 +205,7 @@ function tokenize_(config::TextConfig, text::Vector{Char}, L::Vector{Symbol}, no
         end
     end
 
-    if length(config.nlist) > 0 || length(config.skiplist) > 0
+    if length(config.nlist) > 0 || length(config.slist) > 0
         ltext = tokenize_words(config, text, normalize, buff)
         n = length(ltext)
 
@@ -221,7 +224,7 @@ function tokenize_(config::TextConfig, text::Vector{Char}, L::Vector{Symbol}, no
             end
         end
 
-        @inbounds for (qsize, skip) in config.skiplist
+        @inbounds for (qsize, skip) in config.slist
             for start in 1:(n - (qsize + (qsize - 1) * skip) + 1)
                 if qsize == 2
                     t = Symbol(ltext[start], BLANK, ltext[start + 1 + skip])

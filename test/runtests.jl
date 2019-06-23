@@ -12,10 +12,10 @@ const corpus = ["hello world :)", "@user;) excellent!!", "#jello world."]
 
 @testset "Character q-grams" begin
     config = TextConfig()
-    config.del_usr = false
+    config.group_usr = false
     config.nlist = []
     config.qlist = [3]
-    config.skiplist = []
+    config.slist = []
     a = [(p.first, p.second) for p in compute_bow(config, text0)[1]]
     b = [(:rld, 1), (Symbol("@us"), 1), (:orl, 1), (:wor, 1), (Symbol("lo."), 1), (:use, 1), (:ser, 1), (Symbol("o.w"), 1), (:llo, 1), (Symbol("r;)"), 1), (:jel, 1), (Symbol(" #j"), 1), (Symbol("er;"), 1), (Symbol("ld "), 1), (Symbol(";) "), 1), (Symbol(" @u"), 1), (:ell, 1), (Symbol(") #"), 1), (Symbol(".wo"), 1), (Symbol("#je"), 1)]
     @test sort(a) == sort(b)
@@ -23,10 +23,10 @@ end
 
 @testset "Word n-grams" begin
     config = TextConfig()
-    config.del_usr = false
+    config.group_usr = false
     config.nlist = [1, 2]
     config.qlist = []
-    config.skiplist = []
+    config.slist = []
     a = [(p.first, p.second) for p in compute_bow(config, text0)[1]]
     b = [(Symbol("#jello"), 1), (Symbol("#jello ."), 1), (:., 1), (Symbol(". world"), 1), (Symbol(";)"), 1), (Symbol(";) #jello"), 1), (Symbol("@user"), 1), (Symbol("@user ;)"), 1), (:world, 1)]
     @test sort(a) == sort(b)
@@ -37,7 +37,7 @@ end
     config.nlist = []
     config.qlist = []
     config.del_punc = true
-    config.skiplist = [(2,1), (2, 2), (3, 1), (3, 2)]
+    config.slist = [(2,1), (2, 2), (3, 1), (3, 2)]
     #L = collect(compute_bow(text2, config))
     #sort!(L)
     a = [(p.first, p.second) for p in compute_bow(config, text2)[1]]
@@ -49,8 +49,8 @@ end
     config = TextConfig()
     config.nlist = [1]
     config.qlist = []
-    config.skiplist = []
-    config.del_usr = false
+    config.slist = []
+    config.group_usr = false
 
     @test tokenize(config, text1) == [Symbol(h) for h in ["hello", "world", "!!",  "@user", ";)", "#jello", ".", "world", ":)"]]
     model = fit(VectorModel, config, corpus)
@@ -162,7 +162,7 @@ _corpus = [
     config = TextConfig()
     config.nlist = [1]
     config.qlist = []
-    config.skiplist = []
+    config.slist = []
     model = fit(VectorModel, config, _corpus)
     @show _corpus
     X = [vectorize(model, FreqModel, x) for x in _corpus]
@@ -197,7 +197,7 @@ end
     config = TextConfig()
     config.nlist = [1]
     config.qlist = []
-    config.skiplist = []
+    config.slist = []
     model = fit(VectorModel, config, _corpus)
     @show _corpus
     X = [vectorize(model, FreqModel, x) for x in _corpus]
@@ -210,7 +210,7 @@ end
     config = TextConfig()
     config.nlist = [1,2]
     config.qlist = [3]
-    config.skiplist = []
+    config.slist = []
     corpus = [x[1] for x in labeled_corpus]
 
     model = fit(VectorModel, config, corpus)
@@ -230,7 +230,7 @@ end
     config = TextConfig()
     config.nlist = [1, 2]
     config.qlist = [3]
-    config.skiplist = []
+    config.slist = []
     corpus = [x[1] for x in labeled_corpus]
     model = fit(VectorModel, config, corpus)
     X = [vectorize(model, TfidfModel, x) for x in corpus]
@@ -250,7 +250,7 @@ end
     config = TextConfig()
     config.nlist = [1]
     config.qlist = []
-    config.skiplist = []
+    config.slist = []
 
     function create_corpus()
         alphabet = Char.(97:100)
