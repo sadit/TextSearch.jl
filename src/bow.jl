@@ -124,6 +124,12 @@ function add!(a::BOW, b::BOW)
     a
 end
 
+function add!(a::BOW, b::Pair)
+    k, w = b
+    a[k] = get(a, k, 0.0) + w
+    a
+end
+
 ## sum
 function +(a::BOW, b::BOW)
     if length(a) < length(b) 
@@ -138,6 +144,11 @@ function +(a::BOW, b::BOW)
     end
 
     c
+end
+
+function +(a::BOW, b::Pair)
+    c = copy(a)
+    add!(c, b)
 end
 
 ## definitions for substraction
