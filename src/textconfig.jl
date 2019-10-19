@@ -114,7 +114,7 @@ function push_word!(config::TextConfig, output::Vector{Symbol}, token::Vector{UI
     if length(token) > 0
         t = normalize(String(token))::String
 
-        if length(t) > 0
+        if t isa AbstractString && length(t) > 0
             push!(output, Symbol(t))
         end
     end
