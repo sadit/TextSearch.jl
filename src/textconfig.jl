@@ -112,7 +112,7 @@ Pushes a word into token list after applying the `normalize` function; it discar
 """
 function push_word!(config::TextConfig, output::Vector{Symbol}, token::Vector{UInt8}, normalize::Function)
     if length(token) > 0
-        t = normalize(String(token))::String
+        t = normalize(String(token))
 
         if t isa AbstractString && length(t) > 0
             push!(output, Symbol(t))
