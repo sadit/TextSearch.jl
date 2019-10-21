@@ -97,7 +97,6 @@ function normalize_text(config::TextConfig, text::String)::Vector{Char}
             prev = u
             continue
         end
-        @info u
 
         if u in EMOJIS
             if prev != BLANK
