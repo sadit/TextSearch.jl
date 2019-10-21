@@ -43,8 +43,8 @@ function fit(::Type{EntModel}, model::DistModel, smooth::Function=smooth_factor;
     EntModel(tokens, model.config)
 end
 
-function fit(::Type{EntModel}, config::TextConfig, corpus, y; nclasses=0, norm_by=minimum, smooth=smooth_factor, lower=0.001)
-    dmodel = fit(DistModel, config, corpus, y, nclasses=nclasses, norm_by=minimum)
+function fit(::Type{EntModel}, config::TextConfig, corpus, y; nclasses=0, weights=:balance, smooth=smooth_factor, lower=0.001)
+    dmodel = fit(DistModel, config, corpus, y, nclasses=nclasses, weights=weights)
     fit(EntModel, dmodel, smooth, lower=lower)
 end
 
@@ -69,19 +69,36 @@ abstract type EntTfModel end
 abstract type EntTpModel end
 
 """
-    vectorize(model::EntModel, data, modify_bow!::Function=identity)::BOW
-    vectorize(model::EntModel, ::Type, data, modify_bow!::Function=identity)::BOW
+    vectorize(model::EntModel, data)::BOW
+    vectorize(model::EntModel, scheme::Type, data)::BOW
 
-Computes a weighted bow for a given `data`
+Computes a weighted bow for the given `data`; the vector is scaled to the unit if `normalize` is true;
+`data` is an string or an array of strings. The weighting scheme may be any of `EntTfModel`, `EntTpModel`, or `EntModel`;
+the default scheme is EntTpModel
 """
-function vectorize(model::EntModel, scheme::Type{T}, data, modify_bow!::Function=identity; normalize=true)::BOW where T <: Union{EntTfModel,EntTpModel,EntModel}
-    bow, maxfreq = compute_bow(model.config, data)
+function vectorize(model::EntModel, scheme::Type{T}, data::DataType; normalize=true)::BOW where
+        T <: Union{EntTfModel,EntTpModel,EntModel} where
+        DataType <: Union{AbstractString, AbstractVector{S}} where
+        S <: AbstractString
+
+    bow, maxfreq = compute_bow(tokenize(model.config, data))
+    vectorize(model, scheme, bow, normalize=normalize)
+end
+
+"""
+    vectorize(model::EntModel, scheme::Type{T}, bow::BOW; normalize=true)::BOW
+
+Computes a weighted bow for the given `data`; the vector is scaled to the unit if `normalize` is true;
+`data` is an bag of words. The weighting scheme may be any of `EntTfModel`, `EntTpModel`, or `EntModel`
+
+"""
+function vectorize(model::EntModel, scheme::Type{T}, bow::BOW; normalize=true)::BOW where T <: Union{EntTfModel,EntTpModel,EntModel}
     len = 0
+
     for v in values(bow)
         len += v
     end
- 
-    bow = modify_bow!(bow)
+
     for (token, freq) in bow
         w = get(model.tokens, token, 0.0)
         w = _weight(scheme, w, freq,  len)
@@ -96,7 +113,7 @@ function vectorize(model::EntModel, scheme::Type{T}, data, modify_bow!::Function
     bow    
 end
 
-vectorize(model::EntModel, data, modify_bow!::Function=identity; normalize=true) = vectorize(model, EntTpModel, data, modify_bow!, normalize=normalize)
+vectorize(model::EntModel, data; normalize=true) = vectorize(model, EntTpModel, data, normalize=normalize)
 
 _weight(::Type{EntTpModel}, ent, freq, n) = ent * freq / n
 _weight(::Type{EntTfModel}, ent, freq, n) = ent * freq

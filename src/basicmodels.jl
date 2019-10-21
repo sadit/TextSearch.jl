@@ -32,7 +32,8 @@ function fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector)
 
     for data in corpus
         n += 1
-        _, maxfreq = compute_bow(config, data, voc)
+        _, _maxfreq = compute_bow(tokenize(config, data), voc)
+        maxfreq = max(maxfreq, _maxfreq)
         n % 1000 == 0 && print(stderr, "x")
         n % 100000 == 0 && println(stderr, " $(n/length(corpus))")
     end
@@ -57,6 +58,7 @@ function prune(model::VectorModel, freq::Int, rank::Int)
         w = W[i]
         M[w[1]] = w[2]
     end
+
     VectorModel(model.config, M, model.maxfreq, model.n)
 end
 
@@ -88,28 +90,53 @@ abstract type IdfModel end
 abstract type FreqModel end
 
 """
-    vectorize(model::VectorModel, weighting::Type, data, modify_bow!::Function=identity)::Dict{Symbol, Float64}
+    vectorize(model::VectorModel, weighting::Type, data; normalize=true)::Dict{Symbol, Float64}
 
-Computes `data`'s weighted bag of words using the given model and weighting scheme.
-It takes a function `modify_bow!` to modify the bag
-before applying the weighting scheme; `modify_bow!` defaults to `identity`.
+Computes `data`'s weighted bag of words using the given model and weighting scheme;
+the vector is normalized to the unit normed vector if normalize is true
 """
-function vectorize(model::VectorModel, weighting::Type, data, modify_bow!::Function=identity; normalize=true)::BOW
-    W = BOW()
-    bag, maxfreq = compute_bow(model.config, data)
-    bag = modify_bow!(bag)
-    for (token, freq) in bag
+function vectorize(model::VectorModel, weighting::Type, data::DataType; normalize=true)::BOW where DataType <: Union{AbstractString, AbstractVector{S}} where S <: AbstractString
+    bag, maxfreq = compute_bow(tokenize(model.config, data))
+    vectorize(model, weighting, bag, maxfreq, normalize=normalize)
+end
+
+"""
+    vectorize(model::VectorModel, weighting::Type, bow::BOW, maxfreq=0; normalize=true)::BOW
+
+Computes a weighted vector using the given bag of words and the specified weighting scheme.
+The result is computed on the input bow (replacing or removing entries as needed).
+"""
+function vectorize(model::VectorModel, weighting::Type, bow::BOW, maxfreq=0; normalize=true)::BOW
+    if maxfreq == 0
+        for v in values(bow)
+            maxfreq = max(maxfreq, v)
+        end
+    end
+
+    for (token, freq) in bow
         global_freq = get(model.tokens, token, 0.0)
+        w = 0.0
         if global_freq > 0.0
-            W[token] = _weight(weighting, freq, maxfreq, model.n, global_freq)
+            w = _weight(weighting, freq, maxfreq, model.n, global_freq)
+        end
+
+        if w <= 1e-6
+            delete!(bow, token)
+        else
+            bow[token] = w
         end
     end
     
-    normalize && normalize!(W)
-    W
+    normalize && normalize!(bow)
+    bow
 end
 
-vectorize(model::VectorModel, data, modify_bow!::Function=identity; normalize=true) = vectorize(model, TfidfModel, data, modify_bow!, normalize=normalize)
+"""
+    vectorize(model::VectorModel, data; normalize=true)
+
+Computes the vector of data using TfidfModel as default
+"""
+vectorize(model::VectorModel, data; normalize=true) = vectorize(model, TfidfModel, data, normalize=normalize)
 
 function broadcastable(model::VectorModel)
     (model,)

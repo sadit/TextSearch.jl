@@ -176,7 +176,7 @@ end
 
 Tokenizes an array of strings
 """
-function tokenize(config::TextConfig, arr::AbstractVector, normalize::Function=identity)::Vector{Symbol}
+function tokenize(config::TextConfig, arr::AbstractVector{S}, normalize::Function=identity)::Vector{Symbol} where S <: AbstractString
     L = Symbol[]
     n = length(arr)
     sizehint!(L, (length(config.nlist) + length(config.slist)) * (div(n, 2) + 1) + length(config.qlist) * n)

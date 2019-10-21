@@ -7,23 +7,6 @@ export BOW, compute_bow, add!
 const BOW = Dict{Symbol,Float64}
 
 """
-    compute_bow(config::TextConfig, text::String, voc::BOW)
-
-Computes a bag of words and the maximum frequency of the bag
-"""
-function compute_bow(config::TextConfig, text::String, voc::BOW)
-    maxfreq = 0.0
-    for token in tokenize(config, text)
-        sym = Symbol(token)
-        m = get(voc, sym, 0.0) + 1.0
-        voc[sym] = m
-        maxfreq = max(m, maxfreq)
-    end
-
-    voc, maxfreq
-end
-
-"""
     compute_bow(tokenlist::AbstractVector{Symbol}, voc::BOW)::Tuple{BOW,Float64}
 
 Updates a BOW using the given list of tokens
@@ -41,30 +24,6 @@ end
 
 # these are needed to call `compute_bow` for symbol's list but also for simplicity of the API
 compute_bow(tokenlist::AbstractVector{Symbol}) = compute_bow(tokenlist, BOW())
-compute_bow(config::TextConfig, tokenlist::AbstractVector{Symbol}, bow::BOW) = compute_bow(tokenlist, bow)
-compute_bow(config::TextConfig, tokenlist::AbstractVector{Symbol}) = compute_bow(tokenlist, BOW())
-
-"""
-    compute_bow(config::TextConfig, text::String)
-
-Compute a bag of words and the maximum frequency of the bag
-"""
-compute_bow(config::TextConfig, text::String) = compute_bow(config, text, BOW())
-
-"""
-    compute_bow(config::TextConfig, arr::AbstractVector{String})
-
-Computes a bag of word and the maximum frequency of the bag; the input is an array of strings that represent a single object
-"""
-function compute_bow(config::TextConfig, arr::AbstractVector{String})
-    D = BOW()
-    maxfreq = 0.0
-    for text in arr
-       _, maxfreq = compute_bow(config, text, D)
-    end
-
-    D, maxfreq
-end
 
 """
     normalize!(bow::BOW)

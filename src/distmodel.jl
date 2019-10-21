@@ -1,23 +1,52 @@
 export DistModel, feed!, fix!
 
 mutable struct DistModel <: Model
-    tokens::Dict{Symbol, Vector{Int}}
+    tokens::Dict{Symbol, Vector{Float64}}
     config::TextConfig
     sizes::Vector{Int}
 end
 
 const EMPTY_TOKEN_DIST = Int[]
 
-function fit(::Type{DistModel}, config::TextConfig, corpus, y; nclasses=0, norm_by=minimum)
+"""
+    fit(::Type{DistModel}, config::TextConfig, corpus, y; nclasses=0, weights=nothing, fix=true)
+
+Creates a DistModel object using the specified `corpus` (an array of strings or an array of arrays of strings);
+and its associated labels `y`. Optional parameters:
+- `nclasses`: the number of classes
+- `weights`: It has three different kind of values
+   - an array of `nclasses` floating point to scale the value of each bin in the computed histogram.
+   - the keyword :balance` that indicates that `weights` must try to compensate the unbalance among classes
+   - nothing: let the computed histogram untouched
+- `fix`: if true, it stores the empirical probabilities instead of frequencies
+
+"""
+function fit(::Type{DistModel}, config::TextConfig, corpus, y; nclasses=0, weights=nothing, fix=true)
     if nclasses == 0
         nclasses = unique(y) |> length
     end
     
-    model = DistModel(BOW(), config, zeros(Int, nclasses))
+    model = DistModel(Dict{Symbol, Vector{Float64}}(), config, zeros(Int, nclasses))
     feed!(model, corpus, y)
-    model
+    if weights == :balance
+        s = sum(model.sizes)
+        weights = [s / x  for x in model.sizes]
+    end
+
+    if !isnothing(weights)
+        normalize!(model, weights)
+    end
+
+    if fix
+        fix!(model)
+    end
 end
 
+"""
+    feed!(model::DistModel, corpus, y)
+
+DistModel objects support for incremental feed if `fix!` method is not called on `fit`
+"""
 function feed!(model::DistModel, corpus, y)
     config = model.config
     nclasses = length(model.sizes)
@@ -32,6 +61,7 @@ function feed!(model::DistModel, corpus, y)
             end
             token_dist[klass] += 1
         end
+
         model.sizes[klass] += 1
         n += 1
         n % 1000 == 0 && print(stderr, "*")
@@ -42,20 +72,28 @@ function feed!(model::DistModel, corpus, y)
     model
 end
 
-function normalize!(model::DistModel, by=minimum)
+"""
+    normalize!(model::DistModel, weights)
+
+Multiply weights in each histogram, e.g., looking for compensating unbalance
+"""
+function normalize!(model::DistModel, weights)
     nclasses = length(model.sizes)
-    val = by(model.sizes)
 
     for (token, hist) in model.tokens
         for i in 1:nclasses
-            hist[i] *= val / model.sizes[i]
+            hist[i] *= weights[i]
         end
     end
 end
 
+"""
+    fix!(model::DistModel)
+
+Replaces frequencies by empirical probabilities in the model
+"""
 function fix!(model::DistModel)
     nclasses = length(model.sizes)
-    nterms = length(model.tokens)
 
     for (token, dist) in model.tokens
         s = sum(dist)
@@ -66,12 +104,4 @@ function fix!(model::DistModel)
     end
 
     model
-end
-
-function fit(model::DistModel, corpus, y; norm_by=nothing)
-    feed!(model, corpus, y)
-    if norm_by != nothing
-        normalize!(model, norm_by)
-    end
-    fix!(model)
 end

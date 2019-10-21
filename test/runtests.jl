@@ -16,7 +16,7 @@ const corpus = ["hello world :)", "@user;) excellent!!", "#jello world."]
     config.nlist = []
     config.qlist = [3]
     config.slist = []
-    a = [(p.first, p.second) for p in compute_bow(config, text0)[1]]
+    a = [(p.first, p.second) for p in compute_bow(tokenize(config, text0))[1]]
     b = [(:rld, 1), (Symbol("@us"), 1), (:orl, 1), (:wor, 1), (Symbol("lo."), 1), (:use, 1), (:ser, 1), (Symbol("o.w"), 1), (:llo, 1), (Symbol("r;)"), 1), (:jel, 1), (Symbol(" #j"), 1), (Symbol("er;"), 1), (Symbol("ld "), 1), (Symbol(";) "), 1), (Symbol(" @u"), 1), (:ell, 1), (Symbol(") #"), 1), (Symbol(".wo"), 1), (Symbol("#je"), 1)]
     @test sort(a) == sort(b)
 end
@@ -27,7 +27,7 @@ end
     config.nlist = [1, 2]
     config.qlist = []
     config.slist = []
-    a = [(p.first, p.second) for p in compute_bow(config, text0)[1]]
+    a = [(p.first, p.second) for p in compute_bow(tokenize(config, text0))[1]]
     b = [(Symbol("#jello"), 1), (Symbol("#jello ."), 1), (:., 1), (Symbol(". world"), 1), (Symbol(";)"), 1), (Symbol(";) #jello"), 1), (Symbol("@user"), 1), (Symbol("@user ;)"), 1), (:world, 1)]
     @test sort(a) == sort(b)
  end
@@ -40,7 +40,7 @@ end
     config.slist = [(2,1), (2, 2), (3, 1), (3, 2)]
     #L = collect(compute_bow(text2, config))
     #sort!(L)
-    a = [(p.first, p.second) for p in compute_bow(config, text2)[1]]
+    a = [(p.first, p.second) for p in compute_bow(tokenize(config, text2))[1]]
     b = [(Symbol("a c"), 1), (Symbol("a c e"), 1), (Symbol("a d"), 1), (Symbol("a d g"), 1), (Symbol("b d"), 1), (Symbol("b d f"), 1), (Symbol("b e"), 1), (Symbol("b e h"), 1), (Symbol("c e"), 1), (Symbol("c e g"), 1), (Symbol("c f"), 1), (Symbol("c f i"), 1), (Symbol("d f"), 1), (Symbol("d f h"), 1), (Symbol("d g"), 1), (Symbol("d g j"), 1), (Symbol("e g"), 1), (Symbol("e g i"), 1), (Symbol("e h"), 1), (Symbol("e h k"), 1), (Symbol("f h"), 1), (Symbol("f h j"), 1), (Symbol("f i"), 1), (Symbol("f i l"), 1), (Symbol("g i"), 1), (Symbol("g i k"), 1), (Symbol("g j"), 1), (Symbol("g j m"), 1), (Symbol("h j"), 1), (Symbol("h j l"), 1), (Symbol("h k"), 1), (Symbol("h k n"), 1), (Symbol("i k"), 1), (Symbol("i k m"), 1), (Symbol("i l"), 1), (Symbol("i l o"), 1), (Symbol("j l"), 1), (Symbol("j l n"), 1), (Symbol("j m"), 1), (Symbol("j m p"), 1), (Symbol("k m"), 1), (Symbol("k m o"), 1), (Symbol("k n"), 1), (Symbol("k n q"), 1), (Symbol("l n"), 1), (Symbol("l n p"), 1), (Symbol("l o"), 1), (Symbol("m o"), 1), (Symbol("m o q"), 1), (Symbol("m p"), 1), (Symbol("n p"), 1), (Symbol("n q"), 1), (Symbol("o q"), 1)]
     @test sort(a) == sort(b)
 end
@@ -79,7 +79,7 @@ end
     config.nlist = [1]
     X = [x[1] for x in labeled_corpus]
     y = [x[2] for x in labeled_corpus]
-    dmodel = fit(DistModel, config, X, y, norm_by=minimum)
+    dmodel = fit(DistModel, config, X, y, weights=:balance)
     #dmap = id2token(dmodel)
     #@show sentiment_text
     #@show dmodel
