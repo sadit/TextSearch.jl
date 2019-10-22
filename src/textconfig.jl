@@ -35,7 +35,8 @@ mutable struct TextConfig
     qlist::Vector{Int}
     nlist::Vector{Int}
     slist::Vector{Tuple{Int,Int}}
- 
+    normalize_words::Function
+
     """
     Initializes a `TextConfig` structure
     """
@@ -50,10 +51,11 @@ mutable struct TextConfig
         lc=true,
         qlist=Int[],
         nlist=Int[1],
-        slist=Tuple{Int,Int}[]
+        slist=Tuple{Int,Int}[],
+        normalize_words::Function=identity
     )
         new(del_diac, del_dup, del_punc, group_num, group_url, group_usr, group_emo, lc,
-            qlist, nlist, slist)
+            qlist, nlist, slist, normalize_words)
     end
 end
 
@@ -120,13 +122,13 @@ end
 
 
 """
-    push_word!(config::TextConfig, output::Vector{String}, token::String, normalize::Function)
+    push_word!(config::TextConfig, output::Vector{String}, token::String, normalize_words::Function)
 
-Pushes a word into token list after applying the `normalize` function; it discards empty strings.
+Pushes a word into token list after applying the `normalize_words` function; it discards empty strings.
 """
-function push_word!(config::TextConfig, output::Vector{Symbol}, token::Vector{UInt8}, normalize::Function)
+function push_word!(config::TextConfig, output::Vector{Symbol}, token::Vector{UInt8}, normalize_words::Function)
     if length(token) > 0
-        t = normalize(String(token))
+        t = normalize_words(String(token))
 
         if t isa AbstractString && length(t) > 0
             push!(output, Symbol(t))
@@ -135,27 +137,27 @@ function push_word!(config::TextConfig, output::Vector{Symbol}, token::Vector{UI
 end
 
 """
-    tokenize_words(config::TextConfig, text::Vector{Char}, normalize::Function)
+    tokenize_words(config::TextConfig, text::Vector{Char}, normalize_words::Function)
 
 Performs the word tokenization
 """
-function tokenize_words(config::TextConfig, text::Vector{Char}, normalize::Function, buff::IOBuffer)
+function tokenize_words(config::TextConfig, text::Vector{Char}, normalize_words::Function, buff::IOBuffer)
     n = length(text)
     L = Symbol[]
     @inbounds for i in 1:n
         c = text[i]
 
         if c == BLANK
-            push_word!(config, L, take!(buff), normalize)
+            push_word!(config, L, take!(buff), normalize_words)
         elseif i > 1
             if text[i-1] in PUNCTUACTION && !(c in PUNCTUACTION) 
                 # flushing from punctuaction to non punctuaction.e
-                push_word!(config, L, take!(buff), normalize)
+                push_word!(config, L, take!(buff), normalize_words)
                 write(buff, c)
                 continue
             elseif !(text[i-1] in PUNCTUACTION_BLANK) && c in PUNCTUACTION
                 # flushing from neither punctuaction nor blank to some punctuaction symbol
-                push_word!(config, L, take!(buff), normalize)
+                push_word!(config, L, take!(buff), normalize_words)
                 write(buff, c)
                 continue
             else
@@ -166,7 +168,7 @@ function tokenize_words(config::TextConfig, text::Vector{Char}, normalize::Funct
         end
     end
 
-    push_word!(config, L, take!(buff), normalize)
+    push_word!(config, L, take!(buff), normalize_words)
 
     L
 end
@@ -176,13 +178,13 @@ end
 
 Tokenizes an array of strings
 """
-function tokenize(config::TextConfig, arr::AbstractVector{S}, normalize::Function=identity)::Vector{Symbol} where S <: AbstractString
+function tokenize(config::TextConfig, arr::AbstractVector{S})::Vector{Symbol} where S <: AbstractString
     L = Symbol[]
     n = length(arr)
     sizehint!(L, (length(config.nlist) + length(config.slist)) * (div(n, 2) + 1) + length(config.qlist) * n)
     for text in arr
         t = normalize_text(config, text)
-        tokenize_(config, t, L, normalize)
+        tokenize_(config, t, L)
     end
 
     L
@@ -193,12 +195,12 @@ end
 
 Tokenizes a string
 """
-function tokenize(config::TextConfig, text::String, normalize::Function=identity)::Vector{Symbol}
+function tokenize(config::TextConfig, text::String)::Vector{Symbol}
     t = normalize_text(config, text)
     n = length(text)
     L = Symbol[]
     sizehint!(L, (length(config.nlist) + length(config.slist)) * (div(n, 2) + 1) + length(config.qlist) * n)
-    tokenize_(config, t, L, normalize)
+    tokenize_(config, t, L)
 end
 
 
@@ -207,7 +209,7 @@ end
 
 Tokenizes a vector of characters (internal method)
 """
-function tokenize_(config::TextConfig, text::Vector{Char}, L::Vector{Symbol}, normalize::Function)::Vector{Symbol}
+function tokenize_(config::TextConfig, text::Vector{Char}, L::Vector{Symbol})::Vector{Symbol}
     n = length(text)
     buff = IOBuffer(Vector{UInt8}(undef, 64), write=true)
     @inbounds for q in config.qlist
@@ -223,7 +225,7 @@ function tokenize_(config::TextConfig, text::Vector{Char}, L::Vector{Symbol}, no
     end
 
     if length(config.nlist) > 0 || length(config.slist) > 0
-        ltext = tokenize_words(config, text, normalize, buff)
+        ltext = tokenize_words(config, text, config.normalize_words, buff)
         n = length(ltext)
 
         @inbounds for q in config.nlist

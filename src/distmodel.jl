@@ -19,7 +19,6 @@ and its associated labels `y`. Optional parameters:
    - the keyword :balance` that indicates that `weights` must try to compensate the unbalance among classes
    - nothing: let the computed histogram untouched
 - `fix`: if true, it stores the empirical probabilities instead of frequencies
-
 """
 function fit(::Type{DistModel}, config::TextConfig, corpus, y; nclasses=0, weights=nothing, fix=true)
     if nclasses == 0

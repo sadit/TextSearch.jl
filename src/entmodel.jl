@@ -11,13 +11,15 @@ function smooth_factor(dist::AbstractVector)::Float64
 end
 
 """
-    fit(::Type{EntModel}, model::DistModel, smooth::Function=smooth_factor; lower=0.001)
+    fit(::Type{EntModel}, model::DistModel, smooth::Function=smooth_factor; lower=0.001, normalize_words::Function=identity)
 
 
 Fits an EntModel using the already fitted DistModel; the `smooth` function is called to compute the smoothing factor
 for a given histogram. It accepts only symbols with a final weight higher or equal than `lower`.
+Words are normalized with `normalize_words`.
+
 """
-function fit(::Type{EntModel}, model::DistModel, smooth::Function=smooth_factor; lower=0.001)
+function fit(::Type{EntModel}, model::DistModel, smooth::Function=smooth_factor; lower=0.001, normalize_words::Function=identity)
     tokens = BOW()
     nclasses = length(model.sizes)
     maxent = log2(nclasses)
