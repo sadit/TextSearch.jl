@@ -1,4 +1,4 @@
-export EntModel
+export EntModel, EntTfModel, EntTpModel
 
 mutable struct EntModel <: Model
     tokens::BOW
