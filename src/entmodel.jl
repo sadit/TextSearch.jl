@@ -16,10 +16,9 @@ end
 
 Fits an EntModel using the already fitted DistModel; the `smooth` function is called to compute the smoothing factor
 for a given histogram. It accepts only symbols with a final weight higher or equal than `lower`.
-Words are normalized with `normalize_words`.
 
 """
-function fit(::Type{EntModel}, model::DistModel, smooth::Function=smooth_factor; lower=0.001, normalize_words::Function=identity)
+function fit(::Type{EntModel}, model::DistModel, smooth::Function=smooth_factor; lower=0.0001)
     tokens = BOW()
     nclasses = length(model.sizes)
     maxent = log2(nclasses)
@@ -45,7 +44,7 @@ function fit(::Type{EntModel}, model::DistModel, smooth::Function=smooth_factor;
     EntModel(tokens, model.config)
 end
 
-function fit(::Type{EntModel}, config::TextConfig, corpus, y; nclasses=0, weights=:balance, smooth=smooth_factor, lower=0.001)
+function fit(::Type{EntModel}, config::TextConfig, corpus, y; nclasses=0, weights=:balance, smooth=smooth_factor, lower=0.0001)
     dmodel = fit(DistModel, config, corpus, y, nclasses=nclasses, weights=weights)
     fit(EntModel, dmodel, smooth, lower=lower)
 end
