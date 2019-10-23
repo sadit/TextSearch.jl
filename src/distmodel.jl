@@ -32,7 +32,7 @@ function fit(::Type{DistModel}, config::TextConfig, corpus, y; nclasses=0, weigh
         weights = [s / x  for x in model.sizes]
     end
 
-    if !isnothing(weights)
+    if weights !== nothing
         normalize!(model, weights)
     end
 
