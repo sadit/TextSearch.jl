@@ -21,7 +21,7 @@ and its associated labels `y`. Optional parameters:
    - nothing: let the computed histogram untouched
 - `fix`: if true, it stores the empirical probabilities instead of frequencies
 """
-function fit(::Type{DistModel}, config::TextConfig, corpus, y; nclasses=0, weights=nothing, fix=true, smooth_factor::Float64=0.0)
+function fit(::Type{DistModel}, config::TextConfig, corpus, y; nclasses=0, weights=nothing, fix=false, smooth_factor::Float64=0.0)
     if nclasses == 0
         nclasses = unique(y) |> length
     end
