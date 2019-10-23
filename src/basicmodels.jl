@@ -43,14 +43,12 @@ function fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector)
 end
 
 """
-    prune(model::VectorModel, minfreq, rank=1.0)
+    prune(model::VectorModel, minfreq, rank::Int)
 
 Cuts the vocabulary by frequency using lower and higher filter;
-All tokens with frequency below `freq` are ignored; also, all tokens
-with rank lesser than `rank` (top frequencies) are ignored. 
+All tokens with frequency below `freq` are ignored; top `rank` tokens are also removed.
 """
 function prune(model::VectorModel, freq::Int, rank::Int)
-    # _weight(IdfModel, )
     W = [token => f for (token, f) in model.tokens if f >= freq]
     sort!(W, by=x->x[2])
     M = BOW()
