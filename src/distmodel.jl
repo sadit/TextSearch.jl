@@ -21,12 +21,12 @@ and its associated labels `y`. Optional parameters:
    - nothing: let the computed histogram untouched
 - `fix`: if true, it stores the empirical probabilities instead of frequencies
 """
-function fit(::Type{DistModel}, config::TextConfig, corpus, y; nclasses=0, weights=nothing, fix=false, smooth_factor::Float64=0.0)
+function fit(::Type{DistModel}, config::TextConfig, corpus, y; nclasses=0, weights=nothing, fix=false, smooth::Float64=0.0)
     if nclasses == 0
         nclasses = unique(y) |> length
     end
     
-    model = DistModel(Dict{Symbol, Vector{Float64}}(), config, zeros(Int, nclasses), fill(smooth_factor, nclasses))
+    model = DistModel(Dict{Symbol, Vector{Float64}}(), config, zeros(Int, nclasses), fill(smooth, nclasses))
     feed!(model, corpus, y)
     if weights == :balance
         s = sum(model.sizes)

@@ -93,11 +93,12 @@ end
     config.nlist = [1]
     X = [x[1] for x in labeled_corpus]
     y = [x[2] for x in labeled_corpus]
-    dmodel = fit(DistModel, config, X, y)
+    dmodel = fit(DistModel, config, X, y, weights=:balance)
     emodel = fit(EntModel, dmodel)
     emodel_ = fit(EntModel, config, X, y)
     a = vectorize(emodel, X)
     b = vectorize(emodel_, X)
+    @show a b
     @test 0.999 < dot(a, b)
  
     # a = [(emap[t.id], t.weight) for t in .tokens]
