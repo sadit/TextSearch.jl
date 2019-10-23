@@ -45,7 +45,7 @@ function fit(::Type{EntModel}, model::DistModel, smooth::Function=smooth_factor;
 end
 
 function fit(::Type{EntModel}, config::TextConfig, corpus, y; nclasses=0, weights=:balance, smooth=smooth_factor, lower=0.0001)
-    dmodel = fit(DistModel, config, corpus, y, nclasses=nclasses, weights=weights)
+    dmodel = fit(DistModel, config, corpus, y, nclasses=nclasses, weights=weights, fix=false)
     fit(EntModel, dmodel, smooth, lower=lower)
 end
 
