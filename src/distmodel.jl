@@ -40,6 +40,8 @@ function fit(::Type{DistModel}, config::TextConfig, corpus, y; nclasses=0, weigh
     if fix
         fix!(model)
     end
+
+    model
 end
 
 """
