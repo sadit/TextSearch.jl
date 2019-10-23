@@ -35,6 +35,7 @@ function fit(::Type{EntModel}, model::DistModel, smooth::Function=smooth_factor;
                 e -= pj * log2(pj)
             end
         end
+        
         e = 1.0 - e / maxent
         if e >= lower
             tokens[token] = e
