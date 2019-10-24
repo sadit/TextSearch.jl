@@ -35,7 +35,7 @@ function fit(::Type{EntModel}, model::DistModel, smooth::Function=smooth_factor;
                 e -= pj * log2(pj)
             end
         end
-        
+
         e = 1.0 - e / maxent
         if e >= lower
             tokens[token] = e
@@ -56,7 +56,7 @@ end
 Prunes the model accepting only those symbols with a weight higher than `lower`
 
 """
-function prune(model::EntModel, lower)
+function prune(model::EntModel, lower::Float64)
     tokens = BOW()
     for (t, ent) in model.tokens
         if ent >= lower
@@ -64,6 +64,23 @@ function prune(model::EntModel, lower)
         end
     end
     
+    EntModel(tokens, model.config)
+end
+
+"""
+    prune_select_top(model::EntModel, k::Int)
+
+Creates a new model preserving only the best `k` terms on `model`
+"""
+function prune_select_top(model::EntModel, k::Int)
+    X = sort!(collect(model.tokens), by=x->x[2], rev=true)
+    
+    tokens = BOW()
+    for i in 1:k
+        t, ent = X[i]
+        tokens[t] = ent
+    end
+
     EntModel(tokens, model.config)
 end
 
