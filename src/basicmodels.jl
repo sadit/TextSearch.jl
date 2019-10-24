@@ -43,12 +43,12 @@ function fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector)
 end
 
 """
-    prune(model::VectorModel, minfreq, rank::Int)
+    prune(model::VectorModel, minfreq, rank)
 
 Cuts the vocabulary by frequency using lower and higher filter;
 All tokens with frequency below `freq` are ignored; top `rank` tokens are also removed.
 """
-function prune(model::VectorModel, freq::Int, rank::Int)
+function prune(model::VectorModel, freq::Integer, rank::Integer)
     W = [token => f for (token, f) in model.tokens if f >= freq]
     sort!(W, by=x->x[2])
     M = BOW()
@@ -58,6 +58,36 @@ function prune(model::VectorModel, freq::Int, rank::Int)
     end
 
     VectorModel(model.config, M, model.maxfreq, model.n)
+end
+
+"""
+    prune_select_top(model::VectorModel, k::Integer, kind::Type{T}=IdfModel)
+
+Creates a new model with the best `k` tokens from `model` based on the `kind` scheme; kind must be either `IdfModel` or `FreqModel`
+"""
+function prune_select_top(model::VectorModel, k::Integer, kind::Type{T}=IdfModel) where T <: Union{IdfModel,FreqModel}
+    tokens = BOW()
+    maxfreq = 0
+    if kind == IdfModel
+        X = [(t, freq, _weight(kind, 0, 0, model.n, freq)) for (t, freq) in model.tokens]
+        sort!(X, by=x->x[end], rev=true)
+        for i in 1:k
+            t, freq, w = X[i]
+            tokens[t] = freq
+            maxfreq = max(maxfreq, freq)
+        end
+
+    else kind == FreqModel
+        X = [(t, freq) for (t, freq) in model.tokens]
+        sort!(X, by=x->x[end], rev=true)
+        for i in 1:k
+            t, freq = X[i]
+            tokens[t] = freq
+            maxfreq = max(maxfreq, freq)
+        end
+    end
+
+    VectorModel(model.config, tokens, maxfreq, model.n)
 end
 
 """
