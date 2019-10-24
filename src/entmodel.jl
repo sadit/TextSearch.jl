@@ -85,7 +85,7 @@ function prune_select_top(model::EntModel, k::Int)
     EntModel(tokens, model.config)
 end
 
-prune_select_top(model::EntModel, ratio::AbstractFloat) = prune_select_top(model, floor(Int, model.tokens * ratio))
+prune_select_top(model::EntModel, ratio::AbstractFloat) = prune_select_top(model, floor(Int, length(model.tokens) * ratio))
 
 abstract type EntTfModel end
 abstract type EntTpModel end

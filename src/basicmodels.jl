@@ -97,7 +97,7 @@ function prune_select_top(model::VectorModel, k::Integer, kind::Type{T}=IdfModel
     VectorModel(model.config, tokens, maxfreq, model.n)
 end
 
-prune_select_top(model::VectorModel, ratio::AbstractFloat, kind=IdfModel) = prune_select_top(model, floor(Int, model.tokens * ratio), kind)
+prune_select_top(model::VectorModel, ratio::AbstractFloat, kind=IdfModel) = prune_select_top(model, floor(Int, length(model.tokens) * ratio), kind)
 
 """
     update!(a::VectorModel, b::VectorModel)
