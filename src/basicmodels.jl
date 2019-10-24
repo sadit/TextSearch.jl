@@ -1,4 +1,4 @@
-export VectorModel, fit, vectorize, TfidfModel, TfModel, IdfModel, FreqModel
+export VectorModel, fit, vectorize, TfidfModel, TfModel, IdfModel, FreqModel, prune, prune_select_top
 
 """
     abstract type Model
