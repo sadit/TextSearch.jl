@@ -69,8 +69,9 @@ end
 
 """
     prune_select_top(model::EntModel, k::Int)
+    prune_select_top(model::EntModel, ratio::AbstractFloat)
 
-Creates a new model preserving only the best `k` terms on `model`
+Creates a new model preserving only the best `k` terms on `model`; the size can be indicated by the ratio of the database to be kept, i.e., ``0 < ratio < 1``.
 """
 function prune_select_top(model::EntModel, k::Int)
     X = sort!(collect(model.tokens), by=x->x[2], rev=true)
@@ -83,6 +84,8 @@ function prune_select_top(model::EntModel, k::Int)
 
     EntModel(tokens, model.config)
 end
+
+prune_select_top(model::EntModel, ratio::AbstractFloat) = prune_select_top(model, floor(Int, model.tokens * ratio))
 
 abstract type EntTfModel end
 abstract type EntTpModel end

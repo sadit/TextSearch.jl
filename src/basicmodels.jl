@@ -67,8 +67,10 @@ end
 
 """
     prune_select_top(model::VectorModel, k::Integer, kind::Type{T}=IdfModel)
+    prune_select_top(model::VectorModel, ratio::AbstractFloat, kind::Type{T}=IdfModel)
 
-Creates a new model with the best `k` tokens from `model` based on the `kind` scheme; kind must be either `IdfModel` or `FreqModel`
+Creates a new model with the best `k` tokens from `model` based on the `kind` scheme; kind must be either `IdfModel` or `FreqModel`.
+`ratio` is a floating point between 0 and 1 indicating the ratio of the vocabulary to be kept
 """
 function prune_select_top(model::VectorModel, k::Integer, kind::Type{T}=IdfModel) where T <: Union{IdfModel,FreqModel}
     tokens = BOW()
@@ -94,6 +96,8 @@ function prune_select_top(model::VectorModel, k::Integer, kind::Type{T}=IdfModel
 
     VectorModel(model.config, tokens, maxfreq, model.n)
 end
+
+prune_select_top(model::VectorModel, ratio::AbstractFloat, kind=IdfModel) = prune_select_top(model, floor(Int, model.tokens * ratio), kind)
 
 """
     update!(a::VectorModel, b::VectorModel)
