@@ -7,6 +7,11 @@ An abstract type that represents a weighting model
 """
 abstract type Model end
 
+abstract type TfidfModel end
+abstract type TfModel end
+abstract type IdfModel end
+abstract type FreqModel end
+
 """
     mutable struct VectorModel
 
@@ -112,10 +117,6 @@ function update!(a::VectorModel, b::VectorModel)
     a
 end
 
-abstract type TfidfModel end
-abstract type TfModel end
-abstract type IdfModel end
-abstract type FreqModel end
 
 """
     vectorize(model::VectorModel, weighting::Type, data; normalize=true)::Dict{Symbol, Float64}
