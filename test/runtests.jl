@@ -43,7 +43,7 @@ end
     @test sort(a) == sort(b)
 end
 
-@testset "Tokenizer, BOW, and vectorize" begin # test_vmodel
+@testset "Tokenizer, DVEC, and vectorize" begin # test_vmodel
     config = TextConfig()
     config.nlist = [1]
     config.qlist = []
@@ -170,7 +170,7 @@ end
     model = fit(VectorModel, config, _corpus)
     X = [vectorize(model, FreqModel, x) for x in _corpus]
     x = sum(X) |> normalize!
-    vec = dbow(model, x)
+    vec = dvec(model, x)
     expected = Dict(:la => 0.7366651330405098,:verde => 0.39921969741172364,:azul => 0.11248181187626208,:pera => 0.08712803682959973,:esta => 0.17425607365919946,:roja => 0.22496362375252416,:hoja => 0.11248181187626208,:casa => 0.33744543562878626,:rica => 0.17425607365919946,:manzana => 0.19960984870586182)
     @test 0.999 < dot(vec, expected)
 end

@@ -1,11 +1,11 @@
 import Base: +, -, *, /, ==, transpose, zero
 import LinearAlgebra: dot, norm, normalize!
 import SimilaritySearch: cosine_distance, angle_distance
-export DBOW, BOW, compute_bow # add!
+export DVEC, BOW, compute_bow # add!
 
-const DBOW{Ti,Tv<:Real} = Dict{Ti,Tv}
+const DVEC{Ti,Tv<:Real} = Dict{Ti,Tv}
 #const BOW = Dict{Symbol,Int}
-const BOW = DBOW{Symbol,Int}
+const BOW = DVEC{Symbol,Int}
 
 """
     compute_bow(tokenlist::AbstractVector{Symbol}, voc::BOW)::Tuple{BOW,Float64}
@@ -27,11 +27,11 @@ end
 compute_bow(tokenlist::AbstractVector{Symbol}) = compute_bow(tokenlist, BOW())
 ## 
 """
-    normalize!(bow::DBOW)
+    normalize!(bow::DVEC)
 
 Inplace normalization of `bow`
 """
-function normalize!(bow::DBOW{Ti,Tv}) where {Ti,Tv<:AbstractFloat}
+function normalize!(bow::DVEC{Ti,Tv}) where {Ti,Tv<:AbstractFloat}
     s = 1.0 / norm(bow)
     for (k, v) in bow
         bow[k] = convert(Tv, v * s)
@@ -40,7 +40,7 @@ function normalize!(bow::DBOW{Ti,Tv}) where {Ti,Tv<:AbstractFloat}
     bow
 end
 
-function normalize!(bow::DBOW{Ti,Tv}) where {Ti,Tv<:Integer}
+function normalize!(bow::DVEC{Ti,Tv}) where {Ti,Tv<:Integer}
     s = 1.0 / norm(bow)
     for (k, v) in bow
         bow[k] = round(T, v * s)
@@ -49,13 +49,13 @@ function normalize!(bow::DBOW{Ti,Tv}) where {Ti,Tv<:Integer}
     bow
 end
 
-function normalize!(matrix::AbstractVector{DBOW})
+function normalize!(matrix::AbstractVector{DVEC})
     for bow in matrix
         normalize!(bow)
     end
 end
 
-function dot(a::DBOW, b::DBOW)
+function dot(a::DVEC, b::DVEC)
     if length(b) < length(a)
         a, b = b, a  # a must be the smallest bow
     end
@@ -69,7 +69,7 @@ function dot(a::DBOW, b::DBOW)
     s
 end
 
-function norm(a::DBOW)::Float64
+function norm(a::DVEC)::Float64
     s = 0.0
     for w in values(a)
         s += w * w
@@ -78,13 +78,13 @@ function norm(a::DBOW)::Float64
     sqrt(s)
 end
 
-function zero(::Type{DBOW{Ti,Tv}}) where {Ti,Tv<:Real}
-    DBOW{Ti,Tv}()
+function zero(::Type{DVEC{Ti,Tv}}) where {Ti,Tv<:Real}
+    DVEC{Ti,Tv}()
 end
 
 
 ## inplace sum
-function add!(a::DBOW{Ti,Tv}, b::DBOW{Ti,Tv}) where {Ti,Tv<:Real}
+function add!(a::DVEC{Ti,Tv}, b::DVEC{Ti,Tv}) where {Ti,Tv<:Real}
     for (k, w) in b
         if w != 0
             a[k] = get(a, k, zero(Tv)) + w
@@ -94,7 +94,7 @@ function add!(a::DBOW{Ti,Tv}, b::DBOW{Ti,Tv}) where {Ti,Tv<:Real}
     a
 end
 
-function add!(a::DBOW{Ti,Tv}, b::AbstractSparseArray) where {Ti,Tv<:Real}
+function add!(a::DVEC{Ti,Tv}, b::AbstractSparseArray) where {Ti,Tv<:Real}
     for (k, w) in zip(b.nzind, b.nzval)
         if w != 0
             a[k] = get(a, k, zero(Tv)) + w
@@ -104,13 +104,13 @@ function add!(a::DBOW{Ti,Tv}, b::AbstractSparseArray) where {Ti,Tv<:Real}
     a
 end
 
-function add!(a::DBOW{Ti,Tv}, b::Pair{Ti,Tv}) where {Ti,Tv<:Real}
+function add!(a::DVEC{Ti,Tv}, b::Pair{Ti,Tv}) where {Ti,Tv<:Real}
     k, w = b
     a[k] = get(a, k, zero(Tv)) + w
     a
 end
 
-function +(a::DBOW{Ti,Tv}, b::DBOW{Ti,Tv}) where {Ti,Tv<:Real}
+function +(a::DVEC{Ti,Tv}, b::DVEC{Ti,Tv}) where {Ti,Tv<:Real}
     if length(a) < length(b) 
         a, b = b, a  # a must be the largest bow
     end
@@ -125,13 +125,13 @@ function +(a::DBOW{Ti,Tv}, b::DBOW{Ti,Tv}) where {Ti,Tv<:Real}
     c
 end
 
-function +(a::DBOW, b::Pair)
+function +(a::DVEC, b::Pair)
     c = copy(a)
     add!(c, b)
 end
 
 ## definitions for substraction
-function -(a::DBOW{Ti,Tv}, b::DBOW{Ti,Tv}) where {Ti,Tv<:Real}
+function -(a::DVEC{Ti,Tv}, b::DVEC{Ti,Tv}) where {Ti,Tv<:Real}
     c = copy(a)
     for (k, w) in b
         if w != 0
@@ -144,7 +144,7 @@ end
 
 ## definitions for product
 
-function *(a::DBOW{Ti,Tv}, b::DBOW{Ti,Tv}) where {Ti,Tv<:Real}
+function *(a::DVEC{Ti,Tv}, b::DVEC{Ti,Tv}) where {Ti,Tv<:Real}
     if length(b) < length(a)
         a, b = b, a  # a must be the smallest bow
     end
@@ -162,7 +162,7 @@ function *(a::DBOW{Ti,Tv}, b::DBOW{Ti,Tv}) where {Ti,Tv<:Real}
     c
 end
 
-function *(a::DBOW, b::F) where F<:Real
+function *(a::DVEC, b::F) where F<:Real
     c = copy(a)
     for (k, v) in a
         c[k] = convert(F, v * b)
@@ -171,11 +171,11 @@ function *(a::DBOW, b::F) where F<:Real
     c
 end
 
-function *(b::F, a::DBOW) where F<:Real
+function *(b::F, a::DVEC) where F<:Real
     a * b
 end
 
-function /(a::DBOW, b::F) where F<:Real
+function /(a::DVEC, b::F) where F<:Real
     c = copy(a)
     for (k, v) in a
         c[k] = convert(F, v / b)
@@ -185,27 +185,27 @@ function /(a::DBOW, b::F) where F<:Real
 end
 
 """
-    cosine_distance(a::DBOW, b::DBOW)::Float64
+    cosine_distance(a::DVEC, b::DVEC)::Float64
 
 Computes the cosine_distance between two weighted bags
 
 It supposes that bags are normalized (see `normalize!` function)
 
 """
-function cosine_distance(a::DBOW, b::DBOW)::Float64
+function cosine_distance(a::DVEC, b::DVEC)::Float64
     return 1.0 - dot(a, b)
 end
 
 const π_2 = π / 2
 """
-    angle_distance(a::DBOW, b::DBOW)::Float64
+    angle_distance(a::DVEC, b::DVEC)::Float64
 
 Computes the angle  between two weighted bags
 
 It supposes that all bags are normalized (see `normalize!` function)
 
 """
-function angle_distance(a::DBOW, b::DBOW)::Float64
+function angle_distance(a::DVEC, b::DVEC)::Float64
     d = dot(a, b)
 
     if d <= -1.0
@@ -219,6 +219,6 @@ function angle_distance(a::DBOW, b::DBOW)::Float64
     end
 end
 
-function cosine(a::DBOW, b::DBOW)::Float64
+function cosine(a::DVEC, b::DVEC)::Float64
     return dot(a, b) # * a.invnorm * b.invnorm # it is already normalized
 end

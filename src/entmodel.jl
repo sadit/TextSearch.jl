@@ -106,8 +106,8 @@ abstract type EntTfModel end
 abstract type EntTpModel end
 
 """
-    vectorize(model::EntModel, data)::BOW
-    vectorize(model::EntModel, scheme::Type, data)::BOW
+    vectorize(model::EntModel, data)
+    vectorize(model::EntModel, scheme::Type, data)
 
 Computes a weighted bow for the given `data`; the vector is scaled to the unit if `normalize` is true;
 `data` is an string or an array of strings. The weighting scheme may be any of `EntTfModel`, `EntTpModel`, or `EntModel`;
@@ -123,7 +123,7 @@ function vectorize(model::EntModel, scheme::Type{T}, data::DataType; normalize=t
 end
 
 """
-    vectorize(model::EntModel, scheme::Type{T}, bow::BOW; normalize=true)::BOW
+    vectorize(model::EntModel, scheme::Type{T}, bow::BOW; normalize=true)
 
 Computes a weighted bow for the given `data`; the vector is scaled to the unit if `normalize` is true;
 `data` is an bag of words. The weighting scheme may be any of `EntTfModel`, `EntTpModel`, or `EntModel`

@@ -1,12 +1,12 @@
 
-export dbow
+export dvec
 import SparseArrays: sparsevec
 
-function dbow(model::Model, x::AbstractSparseVector)
-    DBOW{Symbol,Float64}(model.id2token[x.nzind[i]] => x.nzval[i] for i in eachindex(x))
+function dvec(model::Model, x::AbstractSparseVector)
+    DVEC{Symbol,Float64}(model.id2token[x.nzind[i]] => x.nzval[i] for i in eachindex(x))
 end
 
-function sparsevec(model::VectorModel, bow::DBOW)
+function sparsevec(model::VectorModel, bow::DVEC{Symbol,Tv}) where Tv
     I = Int[]
     F = Float64[]
 
@@ -23,7 +23,7 @@ function sparsevec(model::VectorModel, bow::DBOW)
     sparsevec(I, F, model.m)
 end
 
-function sparsevec(model::EntModel, bow::DBOW)
+function sparsevec(model::EntModel, bow::DVEC{Symbol,Tv}) where Tv
     I = Int[]
     F = Float64[]
 
@@ -39,4 +39,3 @@ function sparsevec(model::EntModel, bow::DBOW)
 
     sparsevec(I, F, model.m)
 end
-

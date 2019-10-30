@@ -4,7 +4,7 @@ module TextSearch
     using SparseArrays
     using LinearAlgebra
     include("textconfig.jl")
-    include("bow.jl")
+    include("dvec.jl")
     include("io.jl")
     include("basicmodels.jl")
     include("distmodel.jl")

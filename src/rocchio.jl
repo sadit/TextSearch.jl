@@ -14,7 +14,7 @@ function fit(::Type{Rocchio}, X::AbstractVector{A}, y::AbstractVector{I}; nclass
         nclasses = unique(y) |> length
     end
 
-    prototypes = [DBOW{Int,Float64}() for i in 1:nclasses]
+    prototypes = [DVEC{Int,Float64}() for i in 1:nclasses]
     populations = zeros(Int, nclasses)
     println(stderr, "fitting Rocchio classifier with $(length(X)) items; and $nclasses classes")
     for i in 1:length(X)
