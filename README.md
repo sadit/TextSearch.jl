@@ -47,7 +47,7 @@ julia> db[[p.objID for p in TextSearch.search(invindex, cosine_distance, q, KnnR
 you can save memory by pruning large lists, as follows
 ```julia
 julia> invindex = prune(invindex, 100)
-julia> for p in search(invindex, vectorize(model, TfidfModel, "que chida musica!!!") |> normalize!, KnnResult(11))
+julia> for p in search(invindex, cosine_distance, vectorize(model, TfidfModel, "que chida musica!!!"), KnnResult(11))
     println(db[p.objID]["klass"], "\t", db[p.objID]["text"])
 end
 ```
@@ -55,25 +55,25 @@ in some cases this can improve results since it keeps the most weighted items pe
 
 It is also simple to modify the bag of words to apply query expansion, downsampling, error correction, etc.
 ```julia
-julia> function randomsample!(bow)
-        Dict(rand(bow, div(length(bow), 2)))
-    end
-julia> for p in search(invindex, vectorize(model, TfidfModel, "que chida musica!!!", randomsample!) |> normalize!, KnnResult(11))
-    println(db[p.objID]["klass"], "\t", db[p.objID]["text"])
-end
-😎	No me toquen ando chida! 😎 https://t.co/39OKexhGFT
-🙏	Díganme películas chidas para ver 🙏🏼
-😋	Me cae bien mi vecino por que siempre pone canciones chidas😋
-😉	Esta si esta chida para ir a la alameda los domingos 😉 https://t.co/vRExWJhOGH
-😐	Me va a quedar bien chida la falda ... 😐 https://t.co/YV3sfBAjqD
-😒	De chiquito cantaba chido😒
-🤓	Se ve que se va a poner muy chida la Jornada. 🤓
-💙	¡Qué chido está Pachuca! 💙
-😢	Siento que en MARCO una chava me tomó una foto chida y nunca la subieron 😢
-😥	El problema de ponerle fin a las relaciones es que también te separas de personas bien chidas que valen la pena 😥
-😜	#BuenMartes #gentechida a darle con todo que ya sólo falta un día después de pasado mañana para que llegue el viernes!! 😜
-```
+julia> config.normalize_words = randomsample!
+randomsample! (generic function with 1 method)
 
+julia> for p in search(invindex, cosine_distance, vectorize(model, TfidfModel, "que chida musica!!!"), KnnResult(11))
+           println(db[p.objID]["klass"], "\t", db[p.objID]["text"])
+       end
+💜	Que bonita es la música💜
+😊	Un poco de buena música 😊
+https://t.co/HjpPcjHw69
+✨	Hoy día de conocer nueva música ✨
+😴	La música de Luis me está durmiendo😴
+🎶	🎶La música hay que sentirla https://t.co/Y6IM7HJu3e
+😞	Como me aguita las fiestas la música de banda 😞
+😳	Me estoy volviendo LOCA!!!!! 😳
+😤	Odio bañarme sin música. 😤
+😢	Necesito con quien hablar de música😢
+🎶	Todas las cosas tienen música hoy, todos los hombres tienen música del sol de la calle. 🎺🎶 @… https://t.co/g3bhTK3t3U
+😎	Música para hacer piernita 😎 https://t.co/0hr6T2xN9G
+```
 
 TextSearch can also be used with SimilaritySearch methods. The initial code is identical to that needed by the inverted index
 ```julia
@@ -85,14 +85,13 @@ julia> db = loadtweets(basename(url))
 julia> config = TextConfig(qlist=[4], nlist=[])
 julia> corpus = [t["text"] for t in db]
 julia> model = fit(VectorModel, config, corpus)
-julia> db = [vectorize(model, TfidfModel, text) |> normalize! for text in corpus]
+julia> db = [vectorize(model, TfidfModel, text) for text in corpus]
 julia> invindex = fit(InvIndex, db)
 ```
 
-
 now, the code to use SimilaritySearch methods along with a brief comparison with inverted indexes
 ```julia
-julia> using SimilaritySearch.Graph, SimilaritySearch.SimilarReferences
+julia> using SimilaritySearch, SimilaritySearch
 julia> perf = Performance(db, cosine_distance)
 julia> seq = fit(Sequential, db)
 julia> knr = fit(Knr, cosine_distance, db, k=7, numrefs=1024)
