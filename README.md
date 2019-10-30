@@ -35,15 +35,13 @@ julia> config = TextConfig(qlist=[4], nlist=[])
 julia> corpus = [t["text"] for t in db]
 julia> model = fit(VectorModel, config, corpus)
 julia> invindex = InvIndex()
-julia> for (i, text) in enumerate(corpus)
-        push!(invindex, i, vectorize(model, TfidfModel, text) |> normalize!)
-    end
+julia> invindex = fit(InvIndex, [vectorize(model, TfidfModel, text) for text in corpus])
 ```
 
 queries are made as follows
 ```julia
-julia> q = vectorize(model, TfidfModel, "que chida musica!!!") |> normalize!
-julia> db[[p.objID for p in search(invindex, q, KnnResult(11))]]
+julia> q = vectorize(model, TfidfModel, "que chida musica!!!")
+julia> db[[p.objID for p in TextSearch.search(invindex, cosine_distance, q, KnnResult(11))]]
 ```
 
 you can save memory by pruning large lists, as follows

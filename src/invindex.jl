@@ -1,5 +1,6 @@
-import Base: push!
+import Base: push!, length
 import SimilaritySearch: search
+import SparseArrays: nonzeroinds, nonzeros
 export InvIndex, prune, search
 using SimilaritySearch
 
@@ -8,6 +9,7 @@ mutable struct PostingListType{F, I <: Integer} <: AbstractSparseVector{F, I}
     nzval::Vector{F}
     n::Int
 end
+
 
 const PostingList = PostingListType{Float64,Int}
 const EMPTY_POSTING_LIST = PostingList(Int[], Float64[], 0)
@@ -41,6 +43,28 @@ mutable struct InvIndex <: Index
     #InvIndex(lists, n) = new(lists, n)
 end
 
+function length(x::PostingListType)
+    x.n
+end
+
+function nonzeroinds(x::PostingListType)
+    x.nzind
+end
+
+function nonzeros(x::PostingListType)
+    x.nzval
+end
+
+function show(io::IO, x::PostingListType)
+    print(io, typeof(x), " of length ", x.n)
+    for (i, v) in zip(x.nzind, x.nzval)
+        println(io, "  [$i] = $v")
+    end
+end
+
+function show(io::IO, x::InvIndex)
+    print(io, typeof(x), "; n=$(length(x.n)), voc-size=$(length(x.lists)) ", x.n)
+end
 
 """
     push!(index::InvIndex, vec::AbstractSparseVector)

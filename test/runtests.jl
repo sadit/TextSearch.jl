@@ -156,6 +156,7 @@ end
     ires = [r.objID for r in res]
     @test sort(ires) == [1, 2, 3, 4]
     shortindex = prune(invindex, 3)
+    @show shortindex
     res = search(shortindex, cosine_distance, q, KnnResult(4))
     ires = [r.objID for r in res]
     @test sort(ires) == [1, 2, 3, 4]
