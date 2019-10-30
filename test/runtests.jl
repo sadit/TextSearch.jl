@@ -1,9 +1,7 @@
 # using Languages
-using Test
-using SimilaritySearch
-using TextSearch
-using SparseArrays, LinearAlgebra
-fit = TextSearch.fit
+using SimilaritySearch, TextSearch
+using Test, SparseArrays, LinearAlgebra, StatsBase
+const fit = TextSearch.fit
 
 const text0 = "@user;) #jello.world"
 const text1 = "hello world!! @user;) #jello.world :)"
@@ -76,20 +74,6 @@ const sentiment_text = "lol, esto me encanta"
 
 end
 
-@testset "DistModel-normalize! tests" begin
-    config = TextConfig()
-    config.nlist = [1]
-    X = [x[1] for x in labeled_corpus]
-    y = [x[2] for x in labeled_corpus]
-    dmodel = fit(DistModel, config, X, y, weights=:balance)
-    #dmap = id2token(dmodel)
-    #@show sentiment_text
-    #@show dmodel
-    #d1 = [(dmap[t.id], t.weight) for t in vectorize(dmodel, sentiment_text).tokens]
-    #d2 = [(:me1, 1.0), (:me2, 0.0), (:encanta1, 1.0), (:encanta2, 0.0), (:esto1, 0.4), (:esto2, 0.6), (:lol1, 1.0), (:lol2, 0.0)]
-    #@test string(d1) == string(d2)
-end
-
 @testset "EntModel tests" begin
     config = TextConfig()
     config.nlist = [1]
@@ -101,18 +85,7 @@ end
     a = vectorize(emodel, X)
     b = vectorize(emodel_, X)
     @test 0.999 < dot(a, b)
- 
-    # a = [(emap[t.id], t.weight) for t in .tokens]
-    # b = [(:esto,0.0290494),(:encanta,1.0),(:me,1.0),(:lol,1.0)]
-    # sort!(a)
-    # sort!(b)
-    # @test string(a) == string(b)
-
-    # @show [(maptoken[term.id], term.id, term.weight) for term in vectorize(sentiment_text, emodel).terms]
-    # @show vectorize(text4, vmodel)
-end
-#@test
-# @test TextConfig()
+ end
 
 ## 
 ## @testset "distances" begin
@@ -194,12 +167,8 @@ end
     config.qlist = []
     config.slist = []
     model = fit(VectorModel, config, _corpus)
-    @show _corpus
     X = [vectorize(model, FreqModel, x) for x in _corpus]
     x = sum(X) |> normalize!
-    for a in X
-        @info "-->", a
-    end
     vec = dbow(model, x)
     expected = Dict(:la => 0.7366651330405098,:verde => 0.39921969741172364,:azul => 0.11248181187626208,:pera => 0.08712803682959973,:esta => 0.17425607365919946,:roja => 0.22496362375252416,:hoja => 0.11248181187626208,:casa => 0.33744543562878626,:rica => 0.17425607365919946,:manzana => 0.19960984870586182)
     @test 0.999 < dot(vec, expected)
@@ -239,9 +208,7 @@ end
         println("===>", p)
     end
 
-    #@show rocchio.protos rocchio.pops
-    @show predict.(rocchio, X)
-    @show y
+    @test mean(predict.(rocchio, X) .== y) > 0.5
 end
 
 
