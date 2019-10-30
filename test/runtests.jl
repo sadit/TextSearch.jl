@@ -2,7 +2,7 @@
 using Test
 using SimilaritySearch
 using TextSearch
-using LinearAlgebra
+using SparseArrays, LinearAlgebra
 fit = TextSearch.fit
 
 const text0 = "@user;) #jello.world"
@@ -54,8 +54,10 @@ end
 
     @test tokenize(config, text1) == [Symbol(h) for h in ["hello", "world", "!!",  "@user", ";)", "#jello", ".", "world", ":)"]]
     model = fit(VectorModel, config, corpus)
-    @test length(vectorize(model, TfModel, text1)) == 8
-    @test length(vectorize(model, TfModel, text2)) == 0
+    x = vectorize(model, TfModel, text1)
+    @test nnz(x) == 8
+    x = vectorize(model, TfModel, text2)
+    @test nnz(x) == 0
 end
 
 
@@ -98,7 +100,6 @@ end
     emodel_ = fit(EntModel, config, X, y)
     a = vectorize(emodel, X)
     b = vectorize(emodel_, X)
-    @show a b
     @test 0.999 < dot(a, b)
  
     # a = [(emap[t.id], t.weight) for t in .tokens]
@@ -113,31 +114,31 @@ end
 #@test
 # @test TextConfig()
 
-
-@testset "distances" begin
-    u = Dict(:el => 0.9, :hola => 0.1, :mundo => 0.2) |> normalize!
-    v = Dict(:el => 0.4, :hola => 0.2, :mundo => 0.4) |> normalize!
-    w = Dict(:xel => 0.4, :xhola => 0.2, :xmundo => 0.4) |> normalize!
-
-    dist = angle_distance
-    @test dist(u, v) ≈ 0.5975474808029686
-    @test dist(u, u) <= eps(Float32)
-    @test dist(w, u) ≈ 1.5707963267948966
-end
-
-@testset "operations" begin
-    u = Dict(:el => 0.1, :hola => 0.2, :mundo => 0.4)
-    v = Dict(:el => 0.2, :hola => 0.4, :mundo => 0.8)
-    w = Dict(:el => 0.1^2, :hola => 0.2^2, :mundo => 0.4^2)
-    y = Dict(:el => 0.1/9, :hola => 0.2/9, :mundo => 0.4/9)
-    @test u == u
-    @test u != v
-    @test u + u == v
-    @test u * u == w
-    @test u * (1/9) == y
-    @test (1/9) * u == y
-    @test dot(normalize!(u + v - v), normalize!(u)) > 0.99
-end
+## 
+## @testset "distances" begin
+##     u = Dict(:el => 0.9, :hola => 0.1, :mundo => 0.2) |> normalize!
+##     v = Dict(:el => 0.4, :hola => 0.2, :mundo => 0.4) |> normalize!
+##     w = Dict(:xel => 0.4, :xhola => 0.2, :xmundo => 0.4) |> normalize!
+## 
+##     dist = angle_distance
+##     @test dist(u, v) ≈ 0.5975474808029686
+##     @test dist(u, u) <= eps(Float32)
+##     @test dist(w, u) ≈ 1.5707963267948966
+## end
+## 
+## @testset "operations" begin
+##     u = Dict(:el => 0.1, :hola => 0.2, :mundo => 0.4)
+##     v = Dict(:el => 0.2, :hola => 0.4, :mundo => 0.8)
+##     w = Dict(:el => 0.1^2, :hola => 0.2^2, :mundo => 0.4^2)
+##     y = Dict(:el => 0.1/9, :hola => 0.2/9, :mundo => 0.4/9)
+##     @test u == u
+##     @test u != v
+##     @test u + u == v
+##     @test u * u == w
+##     @test u * (1/9) == y
+##     @test (1/9) * u == y
+##     @test dot(normalize!(u + v - v), normalize!(u)) > 0.99
+## end
 
 @testset "io" begin
     buff = IOBuffer("""{"key1": "value1a", "key2c": "value2a"}
@@ -165,32 +166,25 @@ _corpus = [
     config.qlist = []
     config.slist = []
     model = fit(VectorModel, config, _corpus)
-    @show _corpus
     X = [vectorize(model, FreqModel, x) for x in _corpus]
     dX = transpose(X)
 end
 
-
 @testset "invindex" begin
     config = TextConfig()
-    config.qlist = [3, 4]
-    config.nlist = [1, 2, 3]
+    #config.qlist = [3, 4]
+    #config.nlist = [1, 2, 3]
+    config.nlist = [1]
 
     model = fit(VectorModel, config, _corpus)
-    invindex = InvIndex()
-    for c in _corpus
-        push!(invindex, invindex.n + 1, vectorize(model, TfidfModel, c))
-    end
-
+    invindex = fit(InvIndex, [vectorize(model, TfidfModel, text) for text in _corpus])
     q = vectorize(model, TfidfModel, "la casa roja")
     res = search(invindex, cosine_distance, q, KnnResult(4))
     ires = [r.objID for r in res]
-    @show res, _corpus[ires]
-    @test ires == [1, 2, 4, 3]
+    @test sort(ires) == [1, 2, 3, 4]
     shortindex = prune(invindex, 3)
     res = search(shortindex, cosine_distance, q, KnnResult(4))
     ires = [r.objID for r in res]
-    @show res, _corpus[ires]
     @test sort(ires) == [1, 2, 3, 4]
 end
 
@@ -203,7 +197,12 @@ end
     @show _corpus
     X = [vectorize(model, FreqModel, x) for x in _corpus]
     x = sum(X) |> normalize!
-    @test 0.999 < dot(x, Dict(:la=>0.736665,:verde=>0.39922,:azul=>0.112482,:pera=>0.087128,:esta=>0.174256,:roja=>0.224964,:hoja=>0.112482,:casa=>0.337445,:rica=>0.174256,:manzana=>0.19961))
+    for a in X
+        @info "-->", a
+    end
+    vec = dbow(model, x)
+    expected = Dict(:la => 0.7366651330405098,:verde => 0.39921969741172364,:azul => 0.11248181187626208,:pera => 0.08712803682959973,:esta => 0.17425607365919946,:roja => 0.22496362375252416,:hoja => 0.11248181187626208,:casa => 0.33744543562878626,:rica => 0.17425607365919946,:manzana => 0.19960984870586182)
+    @test 0.999 < dot(vec, expected)
 end
 
 
@@ -218,7 +217,6 @@ end
     X = [vectorize(model, TfidfModel, x) for x in corpus]
     y = [x[2] for x in labeled_corpus]
     rocchio = fit(Rocchio, X, y)
-    @show rocchio.protos rocchio.pops
     @test sum(predict.(rocchio, X) .== y)/length(y) == 1.0
 
     for p in transform.(rocchio, X)

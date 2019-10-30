@@ -3,18 +3,18 @@ import SimilaritySearch: KnnResult
 using StatsBase: countmap
 
 mutable struct Rocchio
-    protos::Vector{BOW}  # prototypes
+    protos::Vector{SparseVector}  # prototypes
     pops::Vector{Int} # population per class
 end
 
 const RocchioBagging = Vector{Rocchio}
 
-function fit(::Type{Rocchio}, X::AbstractVector{BOW}, y::AbstractVector{Int}; nclasses=0)
+function fit(::Type{Rocchio}, X::AbstractVector{A}, y::AbstractVector{I}; nclasses=0) where {I<:Integer,A<:AbstractSparseArray}
     if nclasses == 0
         nclasses = unique(y) |> length
     end
 
-    prototypes = [BOW() for i in 1:nclasses]
+    prototypes = [DBOW{Int,Float64}() for i in 1:nclasses]
     populations = zeros(Int, nclasses)
     println(stderr, "fitting Rocchio classifier with $(length(X)) items; and $nclasses classes")
     for i in 1:length(X)
@@ -25,14 +25,12 @@ function fit(::Type{Rocchio}, X::AbstractVector{BOW}, y::AbstractVector{Int}; nc
         populations[c] += 1
     end
 
-    for bow in prototypes
-        normalize!(bow)
-    end
-
-    Rocchio(prototypes, populations)
+    n = length(X[1])
+    P = [normalize!(sparsevec(p, n)) for p in prototypes]
+    Rocchio(P, populations)
 end
 
-function predict(rocchio::Rocchio, x::BOW)
+function predict(rocchio::Rocchio, x::AbstractSparseVector)
     res = KnnResult(1)
     for i in 1:length(rocchio.protos)
         d = cosine_distance(rocchio.protos[i], x)
@@ -42,7 +40,7 @@ function predict(rocchio::Rocchio, x::BOW)
     first(res).objID
 end
 
-function transform(rocchio::Rocchio, x::BOW)
+function transform(rocchio::Rocchio, x::AbstractSparseVector)
     [dot(rocchio.protos[i], x) for i in 1:length(rocchio.protos)]
 end
 
@@ -50,7 +48,7 @@ function broadcastable(rocchio::Rocchio)
     (rocchio,)
 end
 
-function fit(::Type{RocchioBagging}, X::AbstractVector{BOW}, y::AbstractVector{Int}, nrocchios=5; nclasses=0)::RocchioBagging
+function fit(::Type{RocchioBagging}, X::AbstractVector, y::AbstractVector{Int}, nrocchios=5; nclasses=0)::RocchioBagging
     if nclasses == 0
         nclasses = unique(y) |> length
     end
@@ -66,13 +64,13 @@ function fit(::Type{RocchioBagging}, X::AbstractVector{BOW}, y::AbstractVector{I
     L
 end
 
-function predict(rocchio::RocchioBagging, x::BOW)
+function predict(rocchio::RocchioBagging, x)
     P = [predict(r, x) for r in rocchio] |> countmap |> collect
     sort!(P, by=x->x[end])
     P[end][1]
 end
 
-function transform(rocchio::RocchioBagging, x::BOW)
+function transform(rocchio::RocchioBagging, x)
     sum(transform(r, x) for r in rocchio) |> normalize!
 end
 

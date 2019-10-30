@@ -1,10 +1,14 @@
 export DistModel, feed!, fix!
 
+const DistVocabulary = Dict{Symbol, Vector{Float64}}
+
 mutable struct DistModel <: Model
-    tokens::Dict{Symbol, Vector{Float64}}
     config::TextConfig
+    tokens::DistVocabulary
     sizes::Vector{Int}
     initial_dist::Vector{Float64}
+    m::Int
+    n::Int
 end
 
 const EMPTY_TOKEN_DIST = Int[]
@@ -26,7 +30,7 @@ function fit(::Type{DistModel}, config::TextConfig, corpus, y; nclasses=0, weigh
         nclasses = unique(y) |> length
     end
     
-    model = DistModel(Dict{Symbol, Vector{Float64}}(), config, zeros(Int, nclasses), fill(smooth, nclasses))
+    model = DistModel(config, DistVocabulary(), zeros(Int, nclasses), fill(smooth, nclasses), 0, 0)
     feed!(model, corpus, y)
     if weights == :balance
         s = sum(model.sizes)
@@ -71,6 +75,8 @@ function feed!(model::DistModel, corpus, y)
     end
     println(stderr, "finished DistModel: $n processed items")
 
+    model.n += length(corpus)
+    model.m = length(model.tokens)
     model
 end
 

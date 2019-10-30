@@ -3,104 +3,79 @@ import SimilaritySearch: search
 export InvIndex, prune, search
 using SimilaritySearch
 
-"""
-Inverted index search structure
+mutable struct PostingListType{F, I <: Integer} <: AbstractSparseVector{F, I}
+    nzind::Vector{I}
+    nzval::Vector{F}
+    n::Int
+end
 
+const PostingList = PostingListType{Float64,Int}
+const EMPTY_POSTING_LIST = PostingList(Int[], Float64[], 0)
+
+function push!(list::PostingListType{F, I}, p::Pair{I,F}) where I <: Integer where F <: Real
+    if length(list.nzind) > 0 && list.nzind[end] >= p[1]
+        error("ERROR: push! for PostingListType accepts only identifiers in increasing order -> $(list.nzind[end]) >= $(p[1])")
+    end
+    push!(list.nzind, p[1])
+    push!(list.nzval, p[2])
+    if p[1] > list.n
+        list.n = p[1]
+    end
+
+    list
+end
+
+"""
+mutable struct InvIndex{F, I <: Integer} <: Index
+
+Inverted index search structure
 """
 mutable struct InvIndex <: Index
-    lists::Dict{Symbol, Vector{SparseVectorEntry}}
+    lists::Dict{Int, PostingList}
     n::Int
-    InvIndex() = new(Dict{Symbol, Vector{SparseVectorEntry}}(), 0)
-    InvIndex(lists, n) = new(lists, n)
-end
-
-# useful constant for searching
-const EMPTY_SPARSE_VECTOR = SparseVectorEntry[]
-
-"""
-    update!(a::InvIndex, b::InvIndex)
-
-Updates inverted index `a` with `b`.
-"""
-function update!(a::InvIndex, b::InvIndex)
-    for (sym, list) in b.lists
-        if haskey(a.lists, sym)
-            append!(a.lists[sym], list)
-        else
-            a.lists[sym] = list
-        end
+    function InvIndex()
+        lists = Dict{Int, PostingList}()
+        new(lists, 0)
     end
 
-    a.n += b.n
-    a
+    #InvIndex(lists, n) = new(lists, n)
 end
 
-"""
-    save(f::IO, invindex::InvIndex)
-
-Writes `invindex` to the given stream
-"""
-function save(f::IO, invindex::InvIndex)
-    write(f, invindex.n)
-    write(f, length(invindex.lists))
-    for (sym, lst) in invindex.lists
-        println(f, string(sym))
-        write(f, length(lst))
-        for p in lst
-            write(f, p.id, p.weight)
-        end
-    end
-end
 
 """
-    load(f::IO, ::Type{InvIndex})
+    push!(index::InvIndex, vec::AbstractSparseVector)
 
-Reads an inverted index from the given file
+Inserts a weighted bag of words into the index.
+see [vectorize](@ref)
 """
-function load(f::IO, ::Type{InvIndex})
-    invindex = InvIndex()
-    invindex.n = read(f, Int)
-    m = read(f, Int)
-    for i in 1:m
-        sym = Symbol(readline(f))
-        l = read(f, Int)
-        lst = Vector{SparseVectorEntry}(undef, l)
-        invindex.lists[sym] = lst
-        for j in 1:l
-            id = read(f, Int)
-            weight = read(f, Float64)
-            lst[j] = SparseVectorEntry(id, weight)
-        end
-    end
-
-    invindex
-end
-
-"""
-    push!(index::InvIndex, objID::UInt64, bow::Dict{Symbol,Float64})
-
-Inserts a weighted bag of words (BOW) into the index.
-
-See [compute_bow](@ref) to compute a BOW from a text
-"""
-function push!(index::InvIndex, objID::Integer, bow::Dict{Symbol,Float64})
+function push!(index::InvIndex, vec::AbstractSparseVector)
     index.n += 1
-    for (sym, weight) in bow
-        if haskey(index.lists, sym)
-            push!(index.lists[sym], SparseVectorEntry(objID, weight))
+    objID = index.n
+    for (term, weight) in zip(vec.nzind, vec.nzval)
+        lst = get(index.lists, term, nothing)
+        if lst === nothing
+            index.lists[term] = PostingList([objID], [weight], index.n)
         else
-            index.lists[sym] = [SparseVectorEntry(objID, weight)]
+            push!(lst, objID => weight)
         end
     end
 end
 
-function fit(::Type{InvIndex}, db::AbstractVector{Dict{Symbol,Float64}})
-    invindex = InvIndex()
-    for (i, bow) in enumerate(db)
-        push!(invindex, i, bow)
+function fit(::Type{InvIndex}, db::AbstractVector{S}) where S <: AbstractSparseVector
+    index = InvIndex()
+    for vec in db
+        push!(index, vec)
     end
 
-    invindex
+    fix_size!(index)
+end
+
+function fix_size!(index::InvIndex)
+    for list in values(index.lists)
+        list.n = index.n
+    end
+
+    index
 end
 
 """
@@ -109,29 +84,37 @@ end
 Creates a new inverted index using the given `invindex` discarding many entries with low weight.
 It keeps at most `k` entries for each posting list; it keeps those entries with more wight values.
 """
-function prune(invindex::InvIndex, k)
+function prune(index::InvIndex, k)
     I = InvIndex()
-    I.n = invindex.n
-    sizehint!(I.lists, length(invindex.lists))
-
-    for (t, list) in invindex.lists
+    I.n = index.n
+    sizehint!(I.lists, length(index.lists))
+    P = zeros(Int, I.n)  # TODO compute maximum posting-list's length
+    for (t, list) in index.lists
         I.lists[t] = l = deepcopy(list)
-        sort!(l, by=x -> -x.weight)
-        if length(list) > k
-            resize!(l, k)
+        m = length(l.nzval)
+        if m > k
+            p = @view P[1:m]
+            sortperm!(p, l.nzval, rev=true)
+            permute!(l.nzind, p)
+            permute!(l.nzval, p)
+            resize!(l.nzind, k)
+            resize!(l.nzval, k)
+            p = @view P[1:k]
+            sortperm!(p, l.nzind)
+            sortperm!(p, l.nzval)
         end
     end
 
     # normalizing prunned vectors
-    _norm_pruned!(I)
+    _norm_prunned!(I)
 end
 
-function _norm_pruned!(I::InvIndex)
-    D = Dict{Int,Float64}()
+function _norm_prunned!(index::InvIndex)
+    D = Dict{Int,Float64}() 
     
-    for (t, list) in I.lists
-        for p in list
-            D[p.id] = get(D, p.id, 0.0) + p.weight * p.weight
+    for (t, list) in index.lists
+        for (id, weight) in zip(list.nzind, list.nzval)
+            D[id] = get(D, id, 0.0) + weight^2
         end
     end
 
@@ -139,31 +122,32 @@ function _norm_pruned!(I::InvIndex)
         D[k] = 1.0 / sqrt(v)
     end
 
-    for (t, list) in I.lists
-        for p in list
-            p.weight *= D[p.id]
+    for (t, list) in index.lists
+        for i in eachindex(list.nzind)
+            list.nzval[i] == D[list.nzind[i]]
         end
     end
 
-    I
+    index
 end
 
 """
-    search(invindex::InvIndex, dist::Function, q::Dict{Symbol, R}, res::KnnResult) where R <: Real
+    search(invindex::InvIndex, dist::Function, q::AbstractSparseVector, res::KnnResult) where R <: Real
 
 Seaches for the k-nearest neighbors of `q` inside the index `invindex`. The number of nearest
 neighbors is specified in `res`; it is also used to collect the results. Returns the object `res`.
 If `dist` is set to `angle_distance` then the angle is reported; otherwise the
 `cosine_distance` (i.e., 1 - cos) is computed.
 """
-function search(invindex::InvIndex, dist::Function, q::Dict{Symbol, R}, res::KnnResult) where R <: Real
+function search(invindex::InvIndex, dist::Function, q::AbstractSparseVector, res::KnnResult)
     D = Dict{Int, Float64}()
-    # normalize!(q) # we expect a normalized q 
-    for (sym, weight) in q
-        lst = get(invindex.lists, sym, EMPTY_SPARSE_VECTOR)
-        if length(lst) > 0
-            for e in lst
-                D[e.id] = get(D, e.id, 0.0) + weight * e.weight
+    # normalize!(q) # we expect a normalized q
+
+    for (t, weight) in zip(q.nzind, q.nzval)
+        lst = get(invindex.lists, t, EMPTY_POSTING_LIST)
+        if lst.n > 0
+            for (i, w) in zip(lst.nzind, lst.nzval)
+                D[i] = get(D, i, 0.0) + weight * w
             end
         end
     end

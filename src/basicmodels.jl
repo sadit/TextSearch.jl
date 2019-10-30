@@ -12,6 +12,13 @@ abstract type TfModel end
 abstract type IdfModel end
 abstract type FreqModel end
 
+struct IdFreq
+    id::Int
+    freq::Int
+end
+
+const Vocabulary = Dict{Symbol, IdFreq}
+
 """
     mutable struct VectorModel
 
@@ -19,9 +26,12 @@ Models a text through a vector space
 """
 mutable struct VectorModel <: Model
     config::TextConfig
-    tokens::BOW
+    tokens::Vocabulary
+    id2token::Dict{Int,Symbol}
+    # id2token::Dict{Int,Symbol}
     maxfreq::Int
-    n::Int
+    m::Int  # vocsize
+    n::Int  # collection size
 end
 
 """
@@ -30,39 +40,49 @@ end
 Trains a vector model using the text preprocessing configuration `config` and the input corpus. 
 """
 function fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector)
-    voc = BOW()
+    bow = BOW()
     n = 0
     maxfreq = 0.0
     println(stderr, "fitting VectorModel with $(length(corpus)) items")
 
     for data in corpus
         n += 1
-        _, _maxfreq = compute_bow(tokenize(config, data), voc)
+        _, _maxfreq = compute_bow(tokenize(config, data), bow)
         maxfreq = max(maxfreq, _maxfreq)
         n % 1000 == 0 && print(stderr, "x")
         n % 100000 == 0 && println(stderr, " $(n/length(corpus))")
     end
 
-    println(stderr, "finished VectorModel: $n processed items")
-    VectorModel(config, voc, Int(maxfreq), n)
+    tokens = Vocabulary()
+    id2token = Dict{Int,Symbol}()
+    i = 0
+    for (t, freq) in bow
+        i += 1
+        id2token[i] = t
+        tokens[t] = IdFreq(i, freq)
+    end
+
+    println(stderr, "finished VectorModel: $n processed items, voc-size: $(length(bow))")
+    VectorModel(config, tokens, id2token, Int(maxfreq), length(tokens), n)
 end
 
 """
     prune(model::VectorModel, minfreq, rank)
 
 Cuts the vocabulary by frequency using lower and higher filter;
-All tokens with frequency below `freq` are ignored; top `rank` tokens are also removed.
+All tokens with frequency below `minfreq` are ignored; top `rank` tokens are also removed.
 """
-function prune(model::VectorModel, freq::Integer, rank::Integer)
-    W = [token => f for (token, f) in model.tokens if f >= freq]
+function prune(model::VectorModel, minfreq::Integer, rank::Integer)
+    W = [(token, idfreq) for (token, idfreq) in model.tokens if idfreq.freq >= minfreq]
     sort!(W, by=x->x[2])
-    M = BOW()
+    tokens = Vocabulary()
     for i in 1:length(W)-rank+1
         w = W[i]
-        M[w[1]] = w[2]
+        tokens[w[1]] = w[2]
     end
 
-    VectorModel(model.config, M, model.maxfreq, model.n)
+    id2token = Dict(idfreq.id => t for (t, idfreq) in tokens)
+    VectorModel(model.config, tokens, id2token, model.maxfreq, model.m, model.n)
 end
 
 """
@@ -73,28 +93,29 @@ Creates a new model with the best `k` tokens from `model` based on the `kind` sc
 `ratio` is a floating point between 0 and 1 indicating the ratio of the vocabulary to be kept
 """
 function prune_select_top(model::VectorModel, k::Integer, kind::Type{T}=IdfModel) where T <: Union{IdfModel,FreqModel}
-    tokens = BOW()
+    tokens = Vocabulary()
     maxfreq = 0
     if kind == IdfModel
-        X = [(t, freq, _weight(kind, 0, 0, model.n, freq)) for (t, freq) in model.tokens]
+        X = [(t, idfreq, _weight(kind, 0, 0, model.n, idfreq.freq)) for (t, idfreq) in model.tokens]
         sort!(X, by=x->x[end], rev=true)
         for i in 1:k
-            t, freq, w = X[i]
-            tokens[t] = freq
-            maxfreq = max(maxfreq, freq)
+            t, idfreq, w = X[i]
+            tokens[t] = idfreq
+            maxfreq = max(maxfreq, idfreq)
         end
 
     else kind == FreqModel
-        X = [(t, freq) for (t, freq) in model.tokens]
+        X = [(t, idfreq.freq) for (t, idfreq) in model.tokens]
         sort!(X, by=x->x[end], rev=true)
         for i in 1:k
-            t, freq = X[i]
-            tokens[t] = freq
-            maxfreq = max(maxfreq, freq)
+            t, idfreq = X[i]
+            tokens[t] = idfreq
+            maxfreq = max(maxfreq, idfreq.freq)
         end
     end
 
-    VectorModel(model.config, tokens, maxfreq, model.n)
+    id2token = Dict(idfreq.id => t for (t, idfreq) in tokens)
+    VectorModel(model.config, tokens, id2token, maxfreq, model.m, model.n)
 end
 
 prune_select_top(model::VectorModel, ratio::AbstractFloat, kind=IdfModel) = prune_select_top(model, floor(Int, length(model.tokens) * ratio), kind)
@@ -105,22 +126,23 @@ prune_select_top(model::VectorModel, ratio::AbstractFloat, kind=IdfModel) = prun
 Updates `a` with `b` inplace; returns `a`.
 """
 function update!(a::VectorModel, b::VectorModel)
-    i = 0
-    for (k, freq1) in b.tokens
-        i += 1
-        freq2 = get(a, k, 0.0)
-        if freq1 == 0.0
-            a[k] = freq1
+    m = a.m
+    for (token, idfreq) in b.tokens
+        x = get(a.tokens, token, nothing)
+        if x === nothing
+            m += 1
+            a.tokens[token] = IdFreq(m, x.freq)
         else
-            a[k] = freq1 + freq2
+            a.tokens[token] = IdFreq(idfreq.id, idfreq.freq + x.freq)
         end
     end
 
     a.maxfreq = max(a.maxfreq, b.maxfreq)
     a.n += b.n
+    a.m = m
+    a.id2token = Dict(idfreq.id => t for (t, idfreq) in a.tokens)
     a
 end
-
 
 """
     vectorize(model::VectorModel, weighting::Type, data; normalize=true)::Dict{Symbol, Float64}
@@ -128,40 +150,45 @@ end
 Computes `data`'s weighted bag of words using the given model and weighting scheme;
 the vector is normalized to the unit normed vector if normalize is true
 """
-function vectorize(model::VectorModel, weighting::Type, data::DataType; normalize=true)::BOW where DataType <: Union{AbstractString, AbstractVector{S}} where S <: AbstractString
+function vectorize(model::VectorModel, weighting::Type, data::DataType; normalize=true) where DataType <: Union{AbstractString, AbstractVector{S}} where S <: AbstractString
     bag, maxfreq = compute_bow(tokenize(model.config, data))
     vectorize(model, weighting, bag, maxfreq, normalize=normalize)
 end
 
 """
-    vectorize(model::VectorModel, weighting::Type, bow::BOW, maxfreq=0; normalize=true)::BOW
+    vectorize(model::VectorModel, weighting::Type, bow::BOW, maxfreq=0; normalize=true)
 
 Computes a weighted vector using the given bag of words and the specified weighting scheme.
 The result is computed on the input bow (replacing or removing entries as needed).
 """
-function vectorize(model::VectorModel, weighting::Type, bow::BOW, maxfreq=0; normalize=true)::BOW
+function vectorize(model::VectorModel, weighting::Type, bow::BOW, maxfreq=0; normalize=true)
     if maxfreq == 0
         for v in values(bow)
             maxfreq = max(maxfreq, v)
         end
     end
 
+    I = Int[]
+    F = Float64[]
+
     for (token, freq) in bow
-        global_freq = get(model.tokens, token, 0.0)
-        w = 0.0
-        if global_freq > 0.0
-            w = _weight(weighting, freq, maxfreq, model.n, global_freq)
+        t = get(model.tokens, token, nothing)
+
+        if t === nothing
+            continue
         end
 
-        if w <= 1e-6
-            delete!(bow, token)
-        else
-            bow[token] = w
+        w = _weight(weighting, freq, maxfreq, model.n, t.freq)
+
+        if w > 1e-6
+            push!(I, t.id)
+            push!(F, w)
         end
     end
     
-    normalize && normalize!(bow)
-    bow
+    vec = sparsevec(I, F, model.m)
+    normalize && normalize!(vec)
+    vec
 end
 
 """
