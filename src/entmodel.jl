@@ -88,7 +88,7 @@ end
 Creates a new model preserving only the best `k` terms on `model`; the size can be indicated by the ratio of the database to be kept, i.e., ``0 < ratio < 1``.
 """
 function prune_select_top(model::EntModel, k::Int)
-    X = sort!(collect(model.tokens), by=x->x[2].wight, rev=true)
+    X = sort!(collect(model.tokens), by=x->x[2].weight, rev=true)
     
     tokens = WeightedVocabulary()
     for i in 1:k
