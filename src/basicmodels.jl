@@ -101,7 +101,7 @@ function prune_select_top(model::VectorModel, k::Integer, kind::Type{T}=IdfModel
         for i in 1:k
             t, idfreq, w = X[i]
             tokens[t] = idfreq
-            maxfreq = max(maxfreq, idfreq)
+            maxfreq = max(maxfreq, idfreq.freq)
         end
 
     else kind == FreqModel

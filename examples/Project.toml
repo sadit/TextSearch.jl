@@ -1,4 +1,5 @@
 [deps]
+IJulia = "7073ff75-c697-5162-941a-fcdaad2a7d2a"
 KernelMethods = "d79e8f30-5872-11e9-0dab-2d1842b87615"
 LIBLINEAR = "2d691ee1-e668-5016-a719-b2531b85e0f5"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
