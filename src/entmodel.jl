@@ -15,20 +15,20 @@ mutable struct EntModel <: Model
     n::Int
 end
 
-function smooth_factor(dist::AbstractVector)::Float64
-    s = sum(dist)
-    s < length(dist) ? 1.0 : 0.0
-end
-
 """
-    fit(::Type{EntModel}, model::DistModel, smooth::Function=smooth_factor; lower=0.001, normalize_words::Function=identity)
+    fit(::Type{EntModel}, model::DistModel; lower=0.001, normalize_words::Function=identity)
+    fit(::Type{EntModel}, config::TextConfig, corpus, y; smooth=3, weights=:balance, lower=0.0001, nclasses=0)
 
-
-Fits an EntModel using the already fitted DistModel; the `smooth` function is called to compute the smoothing factor
-for a given histogram. It accepts only symbols with a final weight higher or equal than `lower`.
-
+Fits an EntModel using the already fitted DistModel. It accepts only symbols with a final weight higher or equal than `lower`.
+Parameters:
+    - `corpus` is text collection
+    - `y` the set of associated labels (one-to-one with corpus)
+    - `smooth` is a smoothing factor for the histogram.
+    - `weights` accepts a list of weights (one per class) to be applied to the histogram
+    - `lower` controls the minimum weight to be accepted
+    - `nclasses` specifies the number of classes
 """
-function fit(::Type{EntModel}, model::DistModel, smooth::Function=smooth_factor; lower=0.0001)
+function fit(::Type{EntModel}, model::DistModel; lower=0.0001)
     tokens = WeightedVocabulary()
     nclasses = length(model.sizes)
     maxent = log2(nclasses)
@@ -36,12 +36,11 @@ function fit(::Type{EntModel}, model::DistModel, smooth::Function=smooth_factor;
     i = 0
     @inbounds for (token, dist) in model.tokens
         i += 1
-        b = smooth(dist)
         e = 0.0
-        pop = b * nclasses + sum(dist)
+        pop = sum(dist)
 
         for j in 1:nclasses
-            pj = (dist[j] + b) / pop
+            pj = dist[j] / pop
 
             if pj > 0.0
                 e -= pj * log2(pj)
@@ -58,9 +57,9 @@ function fit(::Type{EntModel}, model::DistModel, smooth::Function=smooth_factor;
     EntModel(model.config, tokens, id2token, model.m, model.n)
 end
 
-function fit(::Type{EntModel}, config::TextConfig, corpus, y; nclasses=0, weights=:balance, smooth=smooth_factor, lower=0.0001)
-    dmodel = fit(DistModel, config, corpus, y, nclasses=nclasses, weights=weights, fix=false)
-    fit(EntModel, dmodel, smooth, lower=lower)
+function fit(::Type{EntModel}, config::TextConfig, corpus, y; smooth=3, weights=:balance, lower=0.0001, nclasses=0)
+    dmodel = fit(DistModel, config, corpus, y, nclasses=nclasses, weights=weights, fix=false, smooth=smooth)
+    fit(EntModel, dmodel, lower=lower)
 end
 
 """
