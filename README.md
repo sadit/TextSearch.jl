@@ -51,29 +51,7 @@ julia> for p in search(invindex, cosine_distance, vectorize(model, TfidfModel, "
     println(db[p.objID]["klass"], "\t", db[p.objID]["text"])
 end
 ```
-in some cases this can improve results since it keeps the most weighted items per list.
-
-It is also simple to modify the bag of words to apply query expansion, downsampling, error correction, etc.
-```julia
-julia> config.normalize_words = randomsample!
-randomsample! (generic function with 1 method)
-
-julia> for p in search(invindex, cosine_distance, vectorize(model, TfidfModel, "que chida musica!!!"), KnnResult(11))
-           println(db[p.objID]["klass"], "\t", db[p.objID]["text"])
-       end
-💜	Que bonita es la música💜
-😊	Un poco de buena música 😊
-https://t.co/HjpPcjHw69
-✨	Hoy día de conocer nueva música ✨
-😴	La música de Luis me está durmiendo😴
-🎶	🎶La música hay que sentirla https://t.co/Y6IM7HJu3e
-😞	Como me aguita las fiestas la música de banda 😞
-😳	Me estoy volviendo LOCA!!!!! 😳
-😤	Odio bañarme sin música. 😤
-😢	Necesito con quien hablar de música😢
-🎶	Todas las cosas tienen música hoy, todos los hombres tienen música del sol de la calle. 🎺🎶 @… https://t.co/g3bhTK3t3U
-😎	Música para hacer piernita 😎 https://t.co/0hr6T2xN9G
-```
+in some cases this prunning can improve results since it keeps the most weighted items per list.
 
 TextSearch can also be used with SimilaritySearch methods. The initial code is identical to that needed by the inverted index
 ```julia

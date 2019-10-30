@@ -162,7 +162,7 @@ function *(a::DBOW{Ti,Tv}, b::DBOW{Ti,Tv}) where {Ti,Tv<:Real}
     c
 end
 
-function *(a::DBOW{F}, b::F) where F<:Real
+function *(a::DBOW, b::F) where F<:Real
     c = copy(a)
     for (k, v) in a
         c[k] = convert(F, v * b)
@@ -185,26 +185,27 @@ function /(a::DBOW, b::F) where F<:Real
 end
 
 """
-cosine_distance
+    cosine_distance(a::DBOW, b::DBOW)::Float64
 
 Computes the cosine_distance between two weighted bags
 
 It supposes that bags are normalized (see `normalize!` function)
 
 """
-function cosine_distance(a::BOW, b::BOW)::Float64
+function cosine_distance(a::DBOW, b::DBOW)::Float64
     return 1.0 - dot(a, b)
 end
 
+const π_2 = π / 2
 """
-angle_distance
+    angle_distance(a::DBOW, b::DBOW)::Float64
 
 Computes the angle  between two weighted bags
 
 It supposes that all bags are normalized (see `normalize!` function)
 
 """
-function angle_distance(a::BOW, b::BOW)
+function angle_distance(a::DBOW, b::DBOW)::Float64
     d = dot(a, b)
 
     if d <= -1.0
@@ -218,6 +219,6 @@ function angle_distance(a::BOW, b::BOW)
     end
 end
 
-function cosine(a::BOW, b::BOW)::Float64
+function cosine(a::DBOW, b::DBOW)::Float64
     return dot(a, b) # * a.invnorm * b.invnorm # it is already normalized
 end

@@ -87,31 +87,31 @@ end
     @test 0.999 < dot(a, b)
  end
 
-## 
-## @testset "distances" begin
-##     u = Dict(:el => 0.9, :hola => 0.1, :mundo => 0.2) |> normalize!
-##     v = Dict(:el => 0.4, :hola => 0.2, :mundo => 0.4) |> normalize!
-##     w = Dict(:xel => 0.4, :xhola => 0.2, :xmundo => 0.4) |> normalize!
-## 
-##     dist = angle_distance
-##     @test dist(u, v) ≈ 0.5975474808029686
-##     @test dist(u, u) <= eps(Float32)
-##     @test dist(w, u) ≈ 1.5707963267948966
-## end
-## 
-## @testset "operations" begin
-##     u = Dict(:el => 0.1, :hola => 0.2, :mundo => 0.4)
-##     v = Dict(:el => 0.2, :hola => 0.4, :mundo => 0.8)
-##     w = Dict(:el => 0.1^2, :hola => 0.2^2, :mundo => 0.4^2)
-##     y = Dict(:el => 0.1/9, :hola => 0.2/9, :mundo => 0.4/9)
-##     @test u == u
-##     @test u != v
-##     @test u + u == v
-##     @test u * u == w
-##     @test u * (1/9) == y
-##     @test (1/9) * u == y
-##     @test dot(normalize!(u + v - v), normalize!(u)) > 0.99
-## end
+
+@testset "distances" begin
+    u = Dict(:el => 0.9, :hola => 0.1, :mundo => 0.2) |> normalize!
+    v = Dict(:el => 0.4, :hola => 0.2, :mundo => 0.4) |> normalize!
+    w = Dict(:xel => 0.4, :xhola => 0.2, :xmundo => 0.4) |> normalize!
+
+    dist = angle_distance
+    @test dist(u, v) ≈ 0.5975474808029686
+    @test dist(u, u) <= eps(Float32)
+    @test dist(w, u) ≈ 1.5707963267948966
+end
+
+@testset "operations" begin
+    u = Dict(:el => 0.1, :hola => 0.2, :mundo => 0.4)
+    v = Dict(:el => 0.2, :hola => 0.4, :mundo => 0.8)
+    w = Dict(:el => 0.1^2, :hola => 0.2^2, :mundo => 0.4^2)
+    y = Dict(:el => 0.1/9, :hola => 0.2/9, :mundo => 0.4/9)
+    @test u == u
+    @test u != v
+    @test u + u == v
+    @test u * u == w
+    @test u * (1/9) == y
+    @test (1/9) * u == y
+    @test dot(normalize!(u + v - v), normalize!(u)) > 0.99
+end
 
 @testset "io" begin
     buff = IOBuffer("""{"key1": "value1a", "key2c": "value2a"}
