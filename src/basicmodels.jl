@@ -105,8 +105,8 @@ function prune_select_top(model::VectorModel, k::Integer, kind::Type{T}=IdfModel
         end
 
     else kind == FreqModel
-        X = [(t, idfreq.freq) for (t, idfreq) in model.tokens]
-        sort!(X, by=x->x[end], rev=true)
+        X = [(t, idfreq) for (t, idfreq) in model.tokens]
+        sort!(X, by=x->x[end].freq, rev=true)
         for i in 1:k
             t, idfreq = X[i]
             tokens[t] = idfreq

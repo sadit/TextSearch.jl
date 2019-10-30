@@ -58,7 +58,7 @@ end
     @test nnz(x) == 0
 end
 
-
+    
 const labeled_corpus = [("me gusta", 1), ("me encanta", 1), ("lo odio", 2), ("odio esto", 2), ("me encanta esto LOL!", 1)]
 const sentiment_text = "lol, esto me encanta"
 
