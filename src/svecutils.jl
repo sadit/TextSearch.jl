@@ -9,7 +9,7 @@ end
 
 function dvec(x::AbstractSparseVector)
     #DVEC{Symbol,Float64}(model.id2token[x.nzind[i]] => x.nzval[i] for i in nonzeroinds(x))
-    DVEC(t => v for (t, v) in zip(x.nzind, x.nzval))
+    DVEC{eltype(x.nzind), eltype(x.nzval)}(t => v for (t, v) in zip(x.nzind, x.nzval))
 end
 
 
