@@ -3,7 +3,8 @@ export dvec
 import SparseArrays: sparsevec
 
 function dvec(model::Model, x::AbstractSparseVector)
-    DVEC{Symbol,Float64}(model.id2token[x.nzind[i]] => x.nzval[i] for i in eachindex(x))
+    #DVEC{Symbol,Float64}(model.id2token[x.nzind[i]] => x.nzval[i] for i in nonzeroinds(x))
+    DVEC{Symbol,Float64}(model.id2token[t] => v for (t, v) in zip(x.nzind, x.nzval))
 end
 
 function sparsevec(model::VectorModel, bow::DVEC{Symbol,Tv}) where Tv
