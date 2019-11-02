@@ -12,7 +12,6 @@ function dvec(x::AbstractSparseVector)
     DVEC{eltype(x.nzind), eltype(x.nzval)}(t => v for (t, v) in zip(x.nzind, x.nzval))
 end
 
-
 function sparsevec(model::VectorModel, bow::DVEC{Symbol,Tv}) where Tv
     I = Int[]
     F = Float64[]
