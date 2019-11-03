@@ -39,7 +39,7 @@ function dvec2sparse(cols::AbstractVector{S}) where S<:DVEC{Ti,Tv} where {Ti,Tv}
         end
     end
 
-    sparsevec(I, J, F)
+    sparse(I, J, F)
 end
 
 function sparse2bow(model::Model, x::AbstractSparseVector)
