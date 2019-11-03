@@ -26,7 +26,7 @@ function sparsevec(vec::DVEC{Ti,Tv}, m=0) where {Ti<:Integer,Tv<:Number}
     end
 end
 
-function sparse(cols::AbstractVector{S}) where S<:DVEC{Ti,Tv} where {Ti<:Integer,Tv<:Number}
+function sparse(cols::AbstractVector{S}, m=0) where S<:DVEC{Ti,Tv} where {Ti<:Integer,Tv<:Number}
     I = Ti[]
     J = Ti[]
     F = Tv[]
@@ -38,8 +38,11 @@ function sparse(cols::AbstractVector{S}) where S<:DVEC{Ti,Tv} where {Ti<:Integer
             push!(F, weight)
         end
     end
-
-    sparse(I, J, F)
+    if m == 0
+        sparse(I, J, F)
+    else
+        sparse(m, length(cols), I, J, F)
+    end
 end
 
 function bow(model::Model, x::AbstractSparseVector)
