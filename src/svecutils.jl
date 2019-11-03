@@ -41,7 +41,7 @@ function sparse(cols::AbstractVector{S}, m=0) where S<:DVEC{Ti,Tv} where {Ti<:In
     if m == 0
         sparse(I, J, F)
     else
-        sparse(m, length(cols), I, J, F)
+        sparse(I, J, F, m, length(cols))
     end
 end
 
