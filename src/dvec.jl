@@ -1,16 +1,19 @@
 import Base: +, -, *, /, ==, transpose, zero
 import LinearAlgebra: dot, norm, normalize!
+import SparseArrays: nnz
 import SimilaritySearch: cosine_distance, angle_distance
-export DVEC, BOW, compute_bow # add!
+export DVEC, compute_bow # add!
 
 const DVEC{Ti,Tv<:Real} = Dict{Ti,Tv}
-#const BOW = Dict{Symbol,Int}
 const BOW = DVEC{Symbol,Int}
+const SVEC = DVEC{Int,Float64}
+
+nnz(dvec::DVEC) = length(dvec)
 
 """
-    compute_bow(tokenlist::AbstractVector{Symbol}, voc::BOW)::Tuple{BOW,Float64}
+    compute_bow(tokenlist::AbstractVector{Symbol}, voc::DVEC)
 
-Updates a BOW using the given list of tokens
+Updates a DVEC using the given list of tokens; returns `voc`
 """
 function compute_bow(tokenlist::AbstractVector{Symbol}, voc::BOW)
     maxfreq = 0
@@ -25,7 +28,7 @@ end
 
 # these are needed to call `compute_bow` for symbol's list but also for simplicity of the API
 compute_bow(tokenlist::AbstractVector{Symbol}) = compute_bow(tokenlist, BOW())
-## 
+
 """
     normalize!(bow::DVEC)
 
@@ -55,14 +58,14 @@ function normalize!(matrix::AbstractVector{DVEC})
     end
 end
 
-function dot(a::DVEC, b::DVEC)
+function dot(a::DVEC, b::DVEC)::Float64 
     if length(b) < length(a)
         a, b = b, a  # a must be the smallest bow
     end
     
     s = 0.0
     for (k, v) in a
-        w = get(b, k, 0.0)::Float64
+        w = convert(Float64, get(b, k, 0))
         s += v * w
     end
 

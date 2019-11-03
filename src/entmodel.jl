@@ -1,8 +1,8 @@
 export EntModel, EntTfModel, EntTpModel
 
 struct IdWeight
-    id::Int
-    weight::Float64
+    id::Int32
+    weight::Float32
 end
 
 const WeightedVocabulary = Dict{Symbol,IdWeight}
@@ -10,14 +10,14 @@ const WeightedVocabulary = Dict{Symbol,IdWeight}
 mutable struct EntModel <: Model
     config::TextConfig
     tokens::WeightedVocabulary
-    id2token::Dict{Int,Symbol}
+    id2token::Dict{Int32,Symbol}
     m::Int
     n::Int
 end
 
 """
-    fit(::Type{EntModel}, model::DistModel; lower=0.001, normalize_words::Function=identity)
-    fit(::Type{EntModel}, config::TextConfig, corpus, y; smooth=3, weights=:balance, lower=0.0001, nclasses=0)
+    fit(::Type{EntModel}, model::DistModel; lower=0.0, normalize_words::Function=identity)
+    fit(::Type{EntModel}, config::TextConfig, corpus, y; smooth=3, weights=:balance, lower=0.0, nclasses=0)
 
 Fits an EntModel using the already fitted DistModel. It accepts only symbols with a final weight higher or equal than `lower`.
 Parameters:
@@ -28,7 +28,7 @@ Parameters:
     - `lower` controls the minimum weight to be accepted
     - `nclasses` specifies the number of classes
 """
-function fit(::Type{EntModel}, model::DistModel; lower=0.0001)
+function fit(::Type{EntModel}, model::DistModel; lower=0.0)
     tokens = WeightedVocabulary()
     nclasses = length(model.sizes)
     maxent = log2(nclasses)
@@ -57,7 +57,7 @@ function fit(::Type{EntModel}, model::DistModel; lower=0.0001)
     EntModel(model.config, tokens, id2token, model.m, model.n)
 end
 
-function fit(::Type{EntModel}, config::TextConfig, corpus, y; smooth=3, weights=:balance, lower=0.0001, nclasses=0)
+function fit(::Type{EntModel}, config::TextConfig, corpus, y; smooth=3, weights=:balance, lower=0.0, nclasses=0)
     dmodel = fit(DistModel, config, corpus, y, nclasses=nclasses, weights=weights, fix=false, smooth=smooth)
     fit(EntModel, dmodel, lower=lower)
 end
@@ -128,15 +128,14 @@ Computes a weighted bow for the given `data`; the vector is scaled to the unit i
 `data` is an bag of words. The weighting scheme may be any of `EntTfModel`, `EntTpModel`, or `EntModel`
 
 """
-function vectorize(model::EntModel, scheme::Type{T}, bow::BOW; normalize=true) where T <: Union{EntTfModel,EntTpModel,EntModel}
+function vectorize(model::EntModel, scheme::Type{T}, bow::BOW; normalize=true) where T <: Union{EntTfModel,EntTpModel,EntModel} where Tv<:Real
     len = 0
 
     for v in values(bow)
         len += v
     end
 
-    I = Int[]
-    F = Float64[]
+    vec = SVEC()
     for (token, freq) in bow
         t = get(model.tokens, token, nothing)
         if t === nothing
@@ -145,12 +144,10 @@ function vectorize(model::EntModel, scheme::Type{T}, bow::BOW; normalize=true) w
     
         w = _weight(scheme, t.weight, freq,  len)
         if w > 1e-6
-            push!(I, t.id)
-            push!(F, t.weight)
+            vec[t.id] = w
         end
     end
  
-    vec = sparsevec(I, F, model.m)
     normalize && normalize!(vec)
     vec    
 end

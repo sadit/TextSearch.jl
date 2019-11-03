@@ -13,8 +13,8 @@ abstract type IdfModel end
 abstract type FreqModel end
 
 struct IdFreq
-    id::Int
-    freq::Int
+    id::Int32
+    freq::Int32
 end
 
 const Vocabulary = Dict{Symbol, IdFreq}
@@ -42,7 +42,7 @@ Trains a vector model using the text preprocessing configuration `config` and th
 function fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector)
     bow = BOW()
     n = 0
-    maxfreq = 0.0
+    maxfreq = 0
     println(stderr, "fitting VectorModel with $(length(corpus)) items")
 
     for data in corpus
@@ -145,21 +145,20 @@ function update!(a::VectorModel, b::VectorModel)
 end
 
 """
-    vectorize(model::VectorModel, weighting::Type, data; normalize=true)::Dict{Symbol, Float64}
+    vectorize(model::VectorModel, weighting::Type, data; normalize=true)::Dict{Int, Float64}
 
-Computes `data`'s weighted bag of words using the given model and weighting scheme;
+Computes `data`'s weighted bow of words using the given model and weighting scheme;
 the vector is normalized to the unit normed vector if normalize is true
 """
 function vectorize(model::VectorModel, weighting::Type, data::DataType; normalize=true) where DataType <: Union{AbstractString, AbstractVector{S}} where S <: AbstractString
-    bag, maxfreq = compute_bow(tokenize(model.config, data))
-    vectorize(model, weighting, bag, maxfreq, normalize=normalize)
+    bow, maxfreq = compute_bow(tokenize(model.config, data))
+    vectorize(model, weighting, bow, maxfreq, normalize=normalize)
 end
 
 """
-    vectorize(model::VectorModel, weighting::Type, bow::BOW, maxfreq=0; normalize=true)
+    vectorize(model::VectorModel, weighting::Type, bow::BOW, maxfreq=0; normalize=true) where Tv<:Real
 
 Computes a weighted vector using the given bag of words and the specified weighting scheme.
-The result is computed on the input bow (replacing or removing entries as needed).
 """
 function vectorize(model::VectorModel, weighting::Type, bow::BOW, maxfreq=0; normalize=true)
     if maxfreq == 0
@@ -168,9 +167,7 @@ function vectorize(model::VectorModel, weighting::Type, bow::BOW, maxfreq=0; nor
         end
     end
 
-    I = Int[]
-    F = Float64[]
-
+    vec = SVEC()
     for (token, freq) in bow
         t = get(model.tokens, token, nothing)
 
@@ -181,12 +178,10 @@ function vectorize(model::VectorModel, weighting::Type, bow::BOW, maxfreq=0; nor
         w = _weight(weighting, freq, maxfreq, model.n, t.freq)
 
         if w > 1e-6
-            push!(I, t.id)
-            push!(F, w)
+            vec[t.id] = w
         end
     end
     
-    vec = sparsevec(I, F, model.m)
     normalize && normalize!(vec)
     vec
 end

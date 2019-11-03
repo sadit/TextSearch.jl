@@ -3,18 +3,18 @@ import SimilaritySearch: KnnResult
 using StatsBase: countmap
 
 mutable struct Rocchio
-    protos::Vector{SparseVector}  # prototypes
+    protos::Vector{SVEC}  # prototypes
     pops::Vector{Int} # population per class
 end
 
 const RocchioBagging = Vector{Rocchio}
 
-function fit(::Type{Rocchio}, X::AbstractVector{A}, y::AbstractVector{I}; nclasses=0) where {I<:Integer,A<:AbstractSparseArray}
+function fit(::Type{Rocchio}, X::AbstractVector{A}, y::AbstractVector{I}; nclasses=0) where {I<:Integer,A<:DVEC}
     if nclasses == 0
         nclasses = unique(y) |> length
     end
 
-    prototypes = [DVEC{Int,Float64}() for i in 1:nclasses]
+    prototypes = [SVEC() for i in 1:nclasses]
     populations = zeros(Int, nclasses)
     println(stderr, "fitting Rocchio classifier with $(length(X)) items; and $nclasses classes")
     for i in 1:length(X)
@@ -26,11 +26,13 @@ function fit(::Type{Rocchio}, X::AbstractVector{A}, y::AbstractVector{I}; nclass
     end
 
     n = length(X[1])
-    P = [normalize!(sparsevec(p, n)) for p in prototypes]
-    Rocchio(P, populations)
+    for p in prototypes
+        normalize!(p)
+    end
+    Rocchio(prototypes, populations)
 end
 
-function predict(rocchio::Rocchio, x::AbstractSparseVector)
+function predict(rocchio::Rocchio, x::SVEC)
     res = KnnResult(1)
     for i in 1:length(rocchio.protos)
         d = cosine_distance(rocchio.protos[i], x)
@@ -40,7 +42,7 @@ function predict(rocchio::Rocchio, x::AbstractSparseVector)
     first(res).objID
 end
 
-function transform(rocchio::Rocchio, x::AbstractSparseVector)
+function transform(rocchio::Rocchio, x::SVEC)
     [dot(rocchio.protos[i], x) for i in 1:length(rocchio.protos)]
 end
 

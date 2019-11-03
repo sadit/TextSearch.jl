@@ -14,7 +14,7 @@ end
 const PostingList = PostingListType{Float64,Int}
 const EMPTY_POSTING_LIST = PostingList(Int[], Float64[], 0)
 
-function push!(list::PostingListType{F, I}, p::Pair{I,F}) where I <: Integer where F <: Real
+function push!(list::PostingListType, p::Pair)
     if length(list.nzind) > 0 && list.nzind[end] >= p[1]
         error("ERROR: push! for PostingListType accepts only identifiers in increasing order -> $(list.nzind[end]) >= $(p[1])")
     end
@@ -72,10 +72,10 @@ end
 Inserts a weighted bag of words into the index.
 see [vectorize](@ref)
 """
-function push!(index::InvIndex, vec::AbstractSparseVector)
+function push!(index::InvIndex, vec::DVEC)
     index.n += 1
     objID = index.n
-    for (term, weight) in zip(vec.nzind, vec.nzval)
+    for (term, weight) in vec
         lst = get(index.lists, term, nothing)
         if lst === nothing
             index.lists[term] = PostingList([objID], [weight], index.n)
@@ -85,7 +85,7 @@ function push!(index::InvIndex, vec::AbstractSparseVector)
     end
 end
 
-function fit(::Type{InvIndex}, db::AbstractVector{S}) where S <: AbstractSparseVector
+function fit(::Type{InvIndex}, db::AbstractVector{S}) where S <: DVEC
     index = InvIndex()
     for vec in db
         push!(index, vec)
@@ -156,18 +156,18 @@ function _norm_prunned!(index::InvIndex)
 end
 
 """
-    search(invindex::InvIndex, dist::Function, q::AbstractSparseVector, res::KnnResult) where R <: Real
+    search(invindex::InvIndex, dist::Function, q::SVEC, res::KnnResult) where R <: Real
 
 Seaches for the k-nearest neighbors of `q` inside the index `invindex`. The number of nearest
 neighbors is specified in `res`; it is also used to collect the results. Returns the object `res`.
 If `dist` is set to `angle_distance` then the angle is reported; otherwise the
 `cosine_distance` (i.e., 1 - cos) is computed.
 """
-function search(invindex::InvIndex, dist::Function, q::AbstractSparseVector, res::KnnResult)
+function search(invindex::InvIndex, dist::Function, q::SVEC, res::KnnResult)
     D = Dict{Int, Float64}()
     # normalize!(q) # we expect a normalized q
 
-    for (t, weight) in zip(q.nzind, q.nzval)
+    for (t, weight) in q
         lst = get(invindex.lists, t, EMPTY_POSTING_LIST)
         if lst.n > 0
             for (i, w) in zip(lst.nzind, lst.nzval)
