@@ -32,7 +32,7 @@ function dvec2sparse(cols::AbstractVector{S}) where S<:DVEC{Ti,Tv} where {Ti,Tv}
     F = Tv[]
 
     for j in eachindex(cols)
-        for (t, weight) in vec
+        for (t, weight) in cols[j]
             push!(I, t)
             push!(J, j)
             push!(F, weight)
