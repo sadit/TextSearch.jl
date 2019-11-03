@@ -1,5 +1,5 @@
 
-export dvec, sparse2bow, bow2dvec
+export dvec, sparse2bow, bow2dvec, dvec2sparse, bow2sparse
 import SparseArrays: sparsevec
 
 function sparse2bow(model::Model, x::AbstractSparseVector)
@@ -22,8 +22,8 @@ end
 sparse2dvec(x) = dvec
 
 function dvec2sparse(vec::DVEC{Ti,Tv}, m=0) where {Ti,Tv}
-    I = Int[]
-    F = Float64[]
+    I = Ti[]
+    F = Tv[]
 
     for (t, weight) in vec
         push!(I, t)
