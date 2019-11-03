@@ -1,5 +1,5 @@
 
-export dvec, sparse2bow, bow2dvec, dvec2sparse, bow2sparse
+export dvec, sparse2bow, bow2dvec, dvec2sparse, bow2sparse, dvec2bow
 import SparseArrays: sparsevec
 
 
