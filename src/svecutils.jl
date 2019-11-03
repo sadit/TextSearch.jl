@@ -1,6 +1,6 @@
 
-export dvec, sparse2bow, bow2dvec, dvec2sparse, bow2sparse, dvec2bow
-import SparseArrays: sparsevec
+export dvec, bow
+import SparseArrays: sparsevec, sparse
 
 
 function dvec(x::AbstractSparseVector)
@@ -10,7 +10,7 @@ end
 
 sparse2dvec(x) = dvec
 
-function dvec2sparse(vec::DVEC{Ti,Tv}, m=0) where {Ti,Tv}
+function sparsevec(vec::DVEC{Ti,Tv}, m=0) where {Ti<:Integer,Tv<:Number}
     I = Ti[]
     F = Tv[]
 
@@ -26,7 +26,7 @@ function dvec2sparse(vec::DVEC{Ti,Tv}, m=0) where {Ti,Tv}
     end
 end
 
-function dvec2sparse(cols::AbstractVector{S}) where S<:DVEC{Ti,Tv} where {Ti,Tv}
+function sparse(cols::AbstractVector{S}) where S<:DVEC{Ti,Tv} where {Ti<:Integer,Tv<:Number}
     I = Ti[]
     J = Ti[]
     F = Tv[]
@@ -42,19 +42,19 @@ function dvec2sparse(cols::AbstractVector{S}) where S<:DVEC{Ti,Tv} where {Ti,Tv}
     sparse(I, J, F)
 end
 
-function sparse2bow(model::Model, x::AbstractSparseVector)
+function bow(model::Model, x::AbstractSparseVector)
     DVEC{Symbol,eltype{x.nzval}}(model.id2token[t] => v for (t, v) in zip(x.nzind, x.nzval))
 end
 
-function dvec2bow(model::Model, x::DVEC{Ti,Tv}) where {Ti,Tv}
+function bow(model::Model, x::DVEC{Ti,Tv}) where {Ti<:Integer,Tv<:Number}
     DVEC{Symbol,Tv}(model.id2token[t] => v for (t, v) in x)
 end
 
-function bow2dvec(model::Model, x::DVEC{Symbol,Tv}, Ti=Int) where Tv<:Real
+function dvec(model::Model, x::DVEC{Symbol,Tv}, Ti=Int) where Tv<:Number
     DVEC{Ti,Tv}(model.tokens[t].id => v for (t, v) in zip(x.nzind, x.nzval))
 end
 
-function bow2sparse(model::VectorModel, bow::DVEC{Symbol,Tv}, Ti=Int) where Tv
+function sparsevec(model::VectorModel, bow::DVEC{Symbol,Tv}, Ti=Int) where {Tv<:Number}
     I = Ti[]
     F = Tv[]
 
@@ -71,7 +71,7 @@ function bow2sparse(model::VectorModel, bow::DVEC{Symbol,Tv}, Ti=Int) where Tv
     sparsevec(I, F, model.m)
 end
 
-function bow2sparse(model::EntModel, bow::DVEC{Symbol,Tv}, Ti=Int) where Tv
+function sparsevec(model::EntModel, bow::DVEC{Symbol,Tv}, Ti=Int) where {Tv<:Number}
     I = Ti[]
     F = Tv[]
 
