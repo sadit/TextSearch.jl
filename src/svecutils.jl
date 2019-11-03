@@ -21,6 +21,22 @@ end
 
 sparse2dvec(x) = dvec
 
+function dvec2sparse(vec::DVEC{Ti,Tv}, m=0) where {Ti,Tv}
+    I = Int[]
+    F = Float64[]
+
+    for (t, weight) in vec
+        push!(I, t)
+        push!(F, weight)
+    end
+
+    if m == 0
+        sparsevec(I, F)
+    else
+        sparsevec(I, F, m)
+    end
+end
+
 function bow2sparse(model::VectorModel, bow::DVEC{Symbol,Tv}) where Tv
     I = Int[]
     F = Float64[]
