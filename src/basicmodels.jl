@@ -43,14 +43,11 @@ function fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector)
     bow = BOW()
     n = 0
     maxfreq = 0
-    println(stderr, "fitting VectorModel with $(length(corpus)) items")
 
     for data in corpus
         n += 1
         _, _maxfreq = compute_bow(tokenize(config, data), bow)
         maxfreq = max(maxfreq, _maxfreq)
-        n % 1000 == 0 && print(stderr, "x")
-        n % 100000 == 0 && println(stderr, " $(n/length(corpus))")
     end
 
     tokens = Vocabulary()
@@ -62,7 +59,6 @@ function fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector)
         tokens[t] = IdFreq(i, freq)
     end
 
-    println(stderr, "finished VectorModel: $n processed items, voc-size: $(length(bow))")
     VectorModel(config, tokens, id2token, Int(maxfreq), length(tokens), n)
 end
 

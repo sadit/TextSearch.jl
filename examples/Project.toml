@@ -2,6 +2,7 @@
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 IJulia = "7073ff75-c697-5162-941a-fcdaad2a7d2a"
+IterTools = "c8e1da08-722c-5040-9ed9-7db0dc04731e"
 JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
 KernelMethods = "d79e8f30-5872-11e9-0dab-2d1842b87615"
 LIBLINEAR = "2d691ee1-e668-5016-a719-b2531b85e0f5"
