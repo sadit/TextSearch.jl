@@ -16,10 +16,7 @@ function fit(::Type{Rocchio}, X::AbstractVector{A}, y::AbstractVector{I}; nclass
 
     prototypes = [SVEC() for i in 1:nclasses]
     populations = zeros(Int, nclasses)
-    println(stderr, "fitting Rocchio classifier with $(length(X)) items; and $nclasses classes")
     for i in 1:length(X)
-        i % 1000 == 0 && print(stderr, "*")
-        i % 100000 == 0 && println(stderr, " adv: $(i / length(X))")
         c = y[i]
         add!(prototypes[c], X[i])
         populations[c] += 1
