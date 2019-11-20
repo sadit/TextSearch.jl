@@ -2,3 +2,7 @@
 *.jl.*.cov
 *.jl.mem
 *~
+.git*
+.ipynb*
+emotions.csv
+Manifest.toml

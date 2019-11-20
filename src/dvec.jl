@@ -85,6 +85,15 @@ function zero(::Type{DVEC{Ti,Tv}}) where {Ti,Tv<:Real}
     DVEC{Ti,Tv}()
 end
 
+function centroid(cluster::AbstractVector{DVEC{Ti,Tv}}) where {Ti,Tv<:Real}
+    u = zero(DVEC{Ti,Tv})
+
+    for v in cluster
+        add!(u, v)
+    end
+    
+    normalize!(u)
+end
 
 ## inplace sum
 function add!(a::DVEC{Ti,Tv}, b::DVEC{Ti,Tv}) where {Ti,Tv<:Real}
