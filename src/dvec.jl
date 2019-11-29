@@ -2,7 +2,7 @@ import Base: +, -, *, /, ==, transpose, zero
 import LinearAlgebra: dot, norm, normalize!
 import SparseArrays: nnz
 import SimilaritySearch: cosine_distance, angle_distance
-export DVEC, compute_bow # add!
+export DVEC, compute_bow, centroid
 
 const DVEC{Ti,Tv<:Real} = Dict{Ti,Tv}
 const BOW = DVEC{Symbol,Int}
