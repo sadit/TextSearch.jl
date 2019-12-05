@@ -1,6 +1,7 @@
 # This file is a part of TextSearch.jl
 # License is Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0.txt
 
+import Base: push!, append!
 export EntModel, EntTfModel, EntTpModel
 
 struct IdWeight
@@ -16,6 +17,18 @@ mutable struct EntModel <: Model
     id2token::Dict{Int32,Symbol}
     m::Int
     n::Int
+end
+
+function push!(model::Model, p::Pair)
+    model.m += 1
+    model.tokens[p[1]] = IdWeight(model.m, p[2])
+    model.id2token[model.m] = p[1]
+end
+
+function append!(model::Model, weighted_words)
+    for p in weighted_words
+        push!(model, p)
+    end
 end
 
 """
@@ -52,6 +65,7 @@ function fit(::Type{EntModel}, model::DistModel; lower=0.0)
 
         e = 1.0 - e / maxent
         if e >= lower
+           # tokens[token] = IdWeight(i, e * log2(length(string(token))))
             tokens[token] = IdWeight(i, e)
         end
     end
