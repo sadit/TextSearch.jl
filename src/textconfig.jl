@@ -65,7 +65,7 @@ end
 Normalizes a given text using the specified transformations of `config`
 
 """
-function normalize_text(config::TextConfig, text::String)::Vector{Char}
+function normalize_text(config::TextConfig, text::AbstractString)::Vector{Char}
     if config.lc
         text = lowercase(text)
     end
@@ -191,11 +191,11 @@ function tokenize(config::TextConfig, arr::AbstractVector{S})::Vector{Symbol} wh
 end
 
 """
-    tokenize(config::TextConfig, text::String)::Vector{Symbol}
+    tokenize(config::TextConfig, text::AbstractString)::Vector{Symbol}
 
 Tokenizes a string
 """
-function tokenize(config::TextConfig, text::String)::Vector{Symbol}
+function tokenize(config::TextConfig, text::AbstractString)::Vector{Symbol}
     t = normalize_text(config, text)
     n = length(text)
     L = Symbol[]

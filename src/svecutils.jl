@@ -54,7 +54,7 @@ function bow(model::Model, x::DVEC{Ti,Tv}) where {Ti<:Integer,Tv<:Number}
 end
 
 function dvec(model::Model, x::DVEC{Symbol,Tv}, Ti=Int) where Tv<:Number
-    DVEC{Ti,Tv}(model.tokens[t].id => v for (t, v) in zip(x.nzind, x.nzval))
+    DVEC{Ti,Tv}(model.tokens[t].id => v for (t, v) in x)
 end
 
 function sparsevec(model::VectorModel, bow::DVEC{Symbol,Tv}, Ti=Int) where {Tv<:Number}
