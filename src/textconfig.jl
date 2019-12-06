@@ -60,7 +60,7 @@ mutable struct TextConfig
 end
 
 """
-    normalize_text(config::TextConfig, text::String)::Vector{Char}
+    normalize_text(config::TextConfig, text::AbstractString)::Vector{Char}
 
 Normalizes a given text using the specified transformations of `config`
 
@@ -122,7 +122,7 @@ end
 
 
 """
-    push_word!(config::TextConfig, output::Vector{String}, token::String, normalize_words::Function)
+    push_word!(config::TextConfig, output::Vector{Symbol}, token::Vector{UInt8}, normalize_words::Function)
 
 Pushes a word into token list after applying the `normalize_words` function; it discards empty strings.
 """
