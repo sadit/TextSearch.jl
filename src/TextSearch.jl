@@ -11,6 +11,5 @@ module TextSearch
     include("entmodel.jl")
     include("svecutils.jl")
     include("invindex.jl")
-    include("rocchio.jl")
     include("neardup.jl")
 end
