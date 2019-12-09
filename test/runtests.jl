@@ -176,43 +176,6 @@ end
 end
 
 
-@testset "rocchio" begin
-    config = TextConfig()
-    config.nlist = [1,2]
-    config.qlist = [3]
-    config.slist = []
-    corpus = [x[1] for x in labeled_corpus]
-
-    model = fit(VectorModel, config, corpus)
-    X = [vectorize(model, TfidfModel, x) for x in corpus]
-    y = [x[2] for x in labeled_corpus]
-    rocchio = fit(Rocchio, X, y)
-    @test sum(predict.(rocchio, X) .== y)/length(y) == 1.0
-
-    for p in transform.(rocchio, X)
-        println(p)
-    end
-end
-
-
-@testset "rocchio bagging" begin
-    config = TextConfig()
-    config.nlist = [1, 2]
-    config.qlist = [3]
-    config.slist = []
-    corpus = [x[1] for x in labeled_corpus]
-    model = fit(VectorModel, config, corpus)
-    X = [vectorize(model, TfidfModel, x) for x in corpus]
-    y = [x[2] for x in labeled_corpus]
-    rocchio = fit(RocchioBagging, X, y)
-    for p in transform.(rocchio, X)
-        println("===>", p)
-    end
-
-    @test mean(predict.(rocchio, X) .== y) > 0.5
-end
-
-
 @testset "neardup" begin
     config = TextConfig()
     config.nlist = [1]
