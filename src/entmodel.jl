@@ -32,8 +32,8 @@ function append!(model::Model, weighted_words)
 end
 
 """
-    fit(::Type{EntModel}, model::DistModel; lower=0.0, normalize_words::Function=identity)
-    fit(::Type{EntModel}, config::TextConfig, corpus, y; smooth=3, weights=:balance, lower=0.0, nclasses=0)
+    fit(::Type{EntModel}, model::DistModel; lower=0.0)
+    fit(::Type{EntModel}, config::TextConfig, corpus, y; smooth=3, minocc=1, weights=:balance, lower=0.0, nclasses=0)
 
 Fits an EntModel using the already fitted DistModel. It accepts only symbols with a final weight higher or equal than `lower`.
 Parameters:
@@ -43,6 +43,7 @@ Parameters:
     - `weights` accepts a list of weights (one per class) to be applied to the histogram
     - `lower` controls the minimum weight to be accepted
     - `nclasses` specifies the number of classes
+	- `minocc`: minimum population to consider a token (without considering the smoothing factor).
 """
 function fit(::Type{EntModel}, model::DistModel; lower=0.0)
     tokens = WeightedVocabulary()
@@ -74,8 +75,8 @@ function fit(::Type{EntModel}, model::DistModel; lower=0.0)
     EntModel(model.config, tokens, id2token, model.m, model.n)
 end
 
-function fit(::Type{EntModel}, config::TextConfig, corpus, y; smooth=3, weights=:balance, lower=0.0, nclasses=0)
-    dmodel = fit(DistModel, config, corpus, y, nclasses=nclasses, weights=weights, fix=false, smooth=smooth)
+function fit(::Type{EntModel}, config::TextConfig, corpus, y; smooth=3, minocc=3, weights=:balance, lower=0.0, nclasses=0)
+    dmodel = fit(DistModel, config, corpus, y, nclasses=nclasses, weights=weights, fix=false, smooth=smooth, minocc=minocc)
     fit(EntModel, dmodel, lower=lower)
 end
 

@@ -39,7 +39,7 @@ end
 
 Trains a vector model using the text preprocessing configuration `config` and the input corpus. 
 """
-function fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector)
+function fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector; minocc::Integer=1)
     bow = BOW()
     n = 0
     maxfreq = 0
@@ -54,6 +54,7 @@ function fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector)
     id2token = Dict{Int,Symbol}()
     i = 0
     for (t, freq) in bow
+		freq < minocc && continue
         i += 1
         id2token[i] = t
         tokens[t] = IdFreq(i, freq)

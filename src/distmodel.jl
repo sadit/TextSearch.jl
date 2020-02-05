@@ -1,4 +1,4 @@
-export DistModel, feed!, fix!
+export DistModel, feed!, fix!, prune
 
 const DistVocabulary = Dict{Symbol, Vector{Float64}}
 
@@ -14,7 +14,7 @@ end
 const EMPTY_TOKEN_DIST = Int[]
 
 """
-    fit(::Type{DistModel}, config::TextConfig, corpus, y; nclasses=0, weights=nothing, fix=true)
+    fit(::Type{DistModel}, config::TextConfig, corpus, y; nclasses=0, weights=nothing, minocc=1, fix=true)
 
 Creates a DistModel object using the specified `corpus` (an array of strings or an array of arrays of strings);
 and its associated labels `y`. Optional parameters:
@@ -23,17 +23,21 @@ and its associated labels `y`. Optional parameters:
    - an array of `nclasses` floating point to scale the value of each bin in the computed histogram.
    - the keyword :balance` that indicates that `weights` must try to compensate the unbalance among classes
    - nothing: let the computed histogram untouched
+- `minocc`: minimum population to consider a token (without considering the smoothing factor).
 - `fix`: if true, it stores the empirical probabilities instead of frequencies
 """
-function fit(::Type{DistModel}, config::TextConfig, corpus, y; nclasses=0, weights=:balance, fix=false, smooth::Real=0)
+function fit(::Type{DistModel}, config::TextConfig, corpus, y; nclasses=0, weights=:balance, smooth::Real=0, minocc::Integer=1, fix=false)
     if nclasses == 0
         nclasses = unique(y) |> length
     end
+	
     smooth = fill(convert(Float64, smooth), nclasses)
-    counters = zeros(Int, nclasses)
-    model = DistModel(config, DistVocabulary(), counters, smooth, 0, 0)
+    model = DistModel(config, DistVocabulary(), zeros(Int, nclasses), smooth, 0, 0)
     feed!(model, corpus, y)
-    if weights == :balance
+
+	prune(model, first(smooth) * nclasses + minocc)
+	
+	if weights == :balance
         s = sum(model.sizes)
         weights = [s / x  for x in model.sizes]
     end
@@ -48,6 +52,21 @@ function fit(::Type{DistModel}, config::TextConfig, corpus, y; nclasses=0, weigh
 
     model
 end
+
+"""
+	prune(model::DistModel, minocc)
+
+Deletes tokens having a sum less of `minocc` as entries of its distribution.
+Note that the `smooth` factor, all balancing methods after calling the `fix! function the values will sum to 1.0.
+"""
+function prune(model::DistModel, minocc)
+	for (k, v) in model.tokens
+		if sum(v) < minocc
+			delete!(model.tokens, k)
+		end
+	end
+end
+
 
 """
     feed!(model::DistModel, corpus, y)
