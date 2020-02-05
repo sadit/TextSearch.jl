@@ -79,9 +79,9 @@ end
     config.nlist = [1]
     X = [x[1] for x in labeled_corpus]
     y = [x[2] for x in labeled_corpus]
-    dmodel = fit(DistModel, config, X, y, weights=:balance, smooth=1)
+    dmodel = fit(DistModel, config, X, y, weights=:balance, smooth=1, minocc=1)
     emodel = fit(EntModel, dmodel)
-    emodel_ = fit(EntModel, config, X, y, weights=:balance, smooth=1)
+    emodel_ = fit(EntModel, config, X, y, weights=:balance, smooth=1, minocc=1)
     a = vectorize(emodel, X)
     b = vectorize(emodel_, X)
     @test 0.999 < dot(a, b)
