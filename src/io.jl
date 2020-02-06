@@ -47,20 +47,9 @@ It supports two formats:
 - a raw json-dictionaries
 - a dictionary prefixed by some prefix key, that is, key<tab>json-dictionary
 
-After parsing the object, the `key` is inserted into the dictionary with the keyword "key"
-`dic["key"] = key`
-
 """
 function parsetweet(line)
-    if line[1] == '{'
-        tweet = JSON.parse(line)
-    else
-        key, value = split(line, '\t', limit=2)
-        tweet = JSON.parse(value)
-        tweet["key"] = key
-    end
-
-    tweet
+    JSON.parse(line)
 end
 
 """

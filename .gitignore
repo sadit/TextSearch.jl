@@ -2,6 +2,7 @@
 *.jl.*.cov
 *.jl.mem
 *~
+.vscode*
 .git*
 .ipynb*
 emotions.csv
