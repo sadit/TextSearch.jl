@@ -9,6 +9,7 @@ module TextSearch
     include("basicmodels.jl")
     include("distmodel.jl")
     include("entmodel.jl")
+    include("multi.jl")
     include("svecutils.jl")
     include("invindex.jl")
     include("neardup.jl")

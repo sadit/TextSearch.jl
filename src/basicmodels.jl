@@ -1,3 +1,6 @@
+# This file is a part of TextSearch.jl
+# License is Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0.txt
+
 export VectorModel, fit, vectorize, TfidfModel, TfModel, IdfModel, FreqModel, prune, prune_select_top
 
 """
@@ -116,30 +119,6 @@ function prune_select_top(model::VectorModel, k::Integer, kind::Type{T}=IdfModel
 end
 
 prune_select_top(model::VectorModel, ratio::AbstractFloat, kind=IdfModel) = prune_select_top(model, floor(Int, length(model.tokens) * ratio), kind)
-
-"""
-    update!(a::VectorModel, b::VectorModel)
-
-Updates `a` with `b` inplace; returns `a`.
-"""
-function update!(a::VectorModel, b::VectorModel)
-    m = a.m
-    for (token, idfreq) in b.tokens
-        x = get(a.tokens, token, nothing)
-        if x === nothing
-            m += 1
-            a.tokens[token] = IdFreq(m, x.freq)
-        else
-            a.tokens[token] = IdFreq(idfreq.id, idfreq.freq + x.freq)
-        end
-    end
-
-    a.maxfreq = max(a.maxfreq, b.maxfreq)
-    a.n += b.n
-    a.m = m
-    a.id2token = Dict(idfreq.id => t for (t, idfreq) in a.tokens)
-    a
-end
 
 """
     vectorize(model::VectorModel, weighting::Type, data; normalize=true)::Dict{Int, Float64}
