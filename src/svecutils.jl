@@ -5,6 +5,11 @@ export dvec, bow
 import SparseArrays: sparsevec, sparse
 
 
+"""
+    dvec(x::AbstractSparseVector)
+
+Converts an sparse vector into a DVEC sparse vector
+"""
 function dvec(x::AbstractSparseVector)
     #DVEC{Symbol,Float64}(model.id2token[x.nzind[i]] => x.nzval[i] for i in nonzeroinds(x))
     DVEC{eltype(x.nzind), eltype(x.nzval)}(t => v for (t, v) in zip(x.nzind, x.nzval))
@@ -12,6 +17,11 @@ end
 
 sparse2dvec(x) = dvec
 
+"""
+    sparsevec(vec::DVEC{Ti,Tv}, m=0) where {Ti<:Integer,Tv<:Number}
+
+Creates a sparse vector from a DVEC sparse vector
+"""
 function sparsevec(vec::DVEC{Ti,Tv}, m=0) where {Ti<:Integer,Tv<:Number}
     I = Ti[]
     F = Tv[]
@@ -28,6 +38,11 @@ function sparsevec(vec::DVEC{Ti,Tv}, m=0) where {Ti<:Integer,Tv<:Number}
     end
 end
 
+"""
+    sparse(cols::AbstractVector{S}, m=0) where S<:DVEC{Ti,Tv} where {Ti<:Integer,Tv<:Number}
+
+Creates a sparse matrix from an array of DVEC sparse vectors.
+"""
 function sparse(cols::AbstractVector{S}, m=0) where S<:DVEC{Ti,Tv} where {Ti<:Integer,Tv<:Number}
     I = Ti[]
     J = Ti[]
@@ -47,6 +62,12 @@ function sparse(cols::AbstractVector{S}, m=0) where S<:DVEC{Ti,Tv} where {Ti<:In
     end
 end
 
+"""
+    bow(model::Model, x::AbstractSparseVector)
+    bow(model::Model, x::DVEC{Ti,Tv}) where {Ti<:Integer,Tv<:Number}
+    
+Creates a bag of words using the sparse vector `x` and the text model `model`
+"""
 function bow(model::Model, x::AbstractSparseVector)
     DVEC{Symbol,eltype{x.nzval}}(model.id2token[t] => v for (t, v) in zip(x.nzind, x.nzval))
 end
@@ -55,10 +76,21 @@ function bow(model::Model, x::DVEC{Ti,Tv}) where {Ti<:Integer,Tv<:Number}
     DVEC{Symbol,Tv}(model.id2token[t] => v for (t, v) in x)
 end
 
+"""
+    dvec(model::Model, x::DVEC{Symbol,Tv}, Ti=Int) where Tv<:Number
+
+Creates a DVEC sparse vector from a bag of words sparse vector (i.e., with type DVEC{Symbol,Tv}),
+using the text model `model`
+"""
 function dvec(model::Model, x::DVEC{Symbol,Tv}, Ti=Int) where Tv<:Number
     DVEC{Ti,Tv}(model.tokens[t].id => v for (t, v) in x)
 end
 
+"""
+    sparsevec(model::VectorModel, bow::DVEC{Symbol,Tv}, Ti=Int) where {Tv<:Number}
+
+Creates a Julia's sparse vector from a the bag of words `bow` (using the text model `model`)
+"""
 function sparsevec(model::VectorModel, bow::DVEC{Symbol,Tv}, Ti=Int) where {Tv<:Number}
     I = Ti[]
     F = Tv[]
@@ -76,6 +108,11 @@ function sparsevec(model::VectorModel, bow::DVEC{Symbol,Tv}, Ti=Int) where {Tv<:
     sparsevec(I, F, model.m)
 end
 
+"""
+    sparsevec(model::EntModel, bow::DVEC{Symbol,Tv}, Ti=Int) where {Tv<:Number}
+
+Creates a sparse vector from the input bag of words. using the given model
+"""
 function sparsevec(model::EntModel, bow::DVEC{Symbol,Tv}, Ti=Int) where {Tv<:Number}
     I = Ti[]
     F = Tv[]

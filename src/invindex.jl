@@ -7,7 +7,7 @@ import SparseArrays: nonzeroinds, nonzeros
 export InvIndex, prune, search
 using SimilaritySearch
 
-mutable struct PostingListType{F, I <: Integer} <: AbstractSparseVector{F, I}
+mutable struct PostingListType{F, I<:Integer} <: AbstractSparseVector{F,I}
     nzind::Vector{I}
     nzval::Vector{F}
     n::Int
@@ -46,6 +46,12 @@ mutable struct InvIndex <: Index
     #InvIndex(lists, n) = new(lists, n)
 end
 
+"""
+    length(x::PostingListType)
+
+Return the size of the posting list
+
+"""
 function length(x::PostingListType)
     x.n
 end
@@ -58,6 +64,11 @@ function nonzeros(x::PostingListType)
     x.nzval
 end
 
+"""
+    show(io::IO, x::PostingListType)
+
+Pretty printing of a posting list
+"""
 function show(io::IO, x::PostingListType)
     print(io, typeof(x), " of length ", x.n)
     for (i, v) in zip(x.nzind, x.nzval)
@@ -65,6 +76,11 @@ function show(io::IO, x::PostingListType)
     end
 end
 
+"""
+    show(io::IO, x::InvIndex)
+
+Pretty printing of an inverted index
+"""
 function show(io::IO, x::InvIndex)
     print(io, typeof(x), "; n=$(length(x.n)), voc-size=$(length(x.lists)) ", x.n)
 end
@@ -88,6 +104,11 @@ function push!(index::InvIndex, vec::DVEC)
     end
 end
 
+"""
+    fit(::Type{InvIndex}, db::AbstractVector{S}) where S <: DVEC
+
+Creates an inverted index from an array of DVEC objects (generated with `vectorize`)
+"""
 function fit(::Type{InvIndex}, db::AbstractVector{S}) where S <: DVEC
     index = InvIndex()
     for vec in db
@@ -97,6 +118,11 @@ function fit(::Type{InvIndex}, db::AbstractVector{S}) where S <: DVEC
     fix_size!(index)
 end
 
+"""
+    fix_size!(index::InvIndex)
+
+Sets the size of each posting list
+"""
 function fix_size!(index::InvIndex)
     for list in values(index.lists)
         list.n = index.n
@@ -159,7 +185,7 @@ function _norm_prunned!(index::InvIndex)
 end
 
 """
-    search(invindex::InvIndex, dist::Function, q::SVEC, res::KnnResult) where R <: Real
+    search(invindex::InvIndex, dist::Function, q::SVEC, res::KnnResult)
 
 Seaches for the k-nearest neighbors of `q` inside the index `invindex`. The number of nearest
 neighbors is specified in `res`; it is also used to collect the results. Returns the object `res`.
