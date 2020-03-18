@@ -24,8 +24,9 @@ and its associated labels `y`. Optional parameters:
 - `nclasses`: the number of classes
 - `weights`: It has three different kind of values
    - an array of `nclasses` floating point to scale the value of each bin in the computed histogram.
-   - the keyword :balance` that indicates that `weights` must try to compensate the unbalance among classes
-   - nothing: let the computed histogram untouched
+   - `:balance` that indicates that `weights` must try to compensate the unbalance among classes
+   - `:rand` set random weights for each class
+   - `:none` let the computed histogram untouched
 - `minocc`: minimum population to consider a token (without considering the smoothing factor).
 - `fix`: if true, it stores the empirical probabilities instead of frequencies
 """
@@ -39,13 +40,19 @@ function fit(::Type{DistModel}, config::TextConfig, corpus, y; nclasses=0, weigh
     feed!(model, corpus, y)
 
 	prune(model, first(smooth) * nclasses + minocc)
-	
-	if weights == :balance
-        s = sum(model.sizes)
-        weights = [s / x  for x in model.sizes]
-    end
 
-    if weights !== nothing
+	if weights == :none
+		# do nothing
+	else
+		if weights == :balance
+			s = sum(model.sizes)
+			weights = [s / x for x in model.sizes]  ## this produces nicer numbers, but it is the same than weights = [1 / x for x in model.sizes]
+		elseif weights == :rand
+			weights = [rand() for x in model.sizes]
+		elseif weights isa Symbol
+			error("Unknown symbol '$weights' for weights parameter")
+		end
+		
         normalize!(model, weights)
     end
 
@@ -114,20 +121,29 @@ function normalize!(model::DistModel, weights)
 end
 
 """
-    fix!(model::DistModel)
+    fix!(model::DistModel, use_soft_max=false)
 
 Replaces frequencies by empirical probabilities in the model
 """
-function fix!(model::DistModel)
+function fix!(model::DistModel, use_soft_max=false)
     nclasses = length(model.sizes)
 
-    for (token, dist) in model.tokens
-        s = sum(dist)
-        for i in 1:nclasses
-            dist[i] /= s
-        end
+	if use_soft_max
+		for (token, dist) in model.tokens
+			s = sum(exp(d) for d in dist)
+			for i in 1:nclasses
+				dist[i] = exp(dist[i]) / s
+			end
 
-    end
+		end
+	else
+		for (token, dist) in model.tokens
+			s = sum(dist)
+			for i in 1:nclasses
+				dist[i] /= s
+			end
 
+		end
+	end
     model
 end

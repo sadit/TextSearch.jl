@@ -4,7 +4,7 @@
 import Base: +, -, *, /, ==, transpose, zero
 import LinearAlgebra: dot, norm, normalize!
 import SparseArrays: nnz
-import SimilaritySearch: cosine_distance, angle_distance
+import SimilaritySearch: cosine_distance, angle_distance, full_cosine_distance, full_angle_distance
 export DVEC, compute_bow, centroid
 
 const DVEC{Ti,Tv<:Real} = Dict{Ti,Tv}
@@ -202,7 +202,7 @@ end
 """
     cosine_distance(a::DVEC, b::DVEC)::Float64
 
-Computes the cosine_distance between two weighted bags
+Computes the cosine_distance between two DVEC sparse vectors
 
 It supposes that bags are normalized (see `normalize!` function)
 
@@ -211,11 +211,22 @@ function cosine_distance(a::DVEC, b::DVEC)::Float64
     return 1.0 - dot(a, b)
 end
 
+"""
+    full_cosine_distance(a::DVEC, b::DVEC)::Float64
+
+Computes the cosine_distance between two DVEC sparse vectors
+
+"""
+function full_cosine_distance(a::DVEC, b::DVEC)::Float64
+    return 1.0 - full_cosine(a, b)
+end
+
 const π_2 = π / 2
+
 """
     angle_distance(a::DVEC, b::DVEC)::Float64
 
-Computes the angle  between two weighted bags
+Computes the angle  between two DVEC sparse vectors
 
 It supposes that all bags are normalized (see `normalize!` function)
 
@@ -234,6 +245,31 @@ function angle_distance(a::DVEC, b::DVEC)::Float64
     end
 end
 
+"""
+    full_angle_distance(a::DVEC, b::DVEC)::Float64
+
+Computes the angle  between two DVEC sparse vectors
+
+"""
+
+function full_angle_distance(a::DVEC, b::DVEC)::Float64
+    d = full_cosine(a, b)
+
+    if d <= -1.0
+        return π
+    elseif d >= 1.0
+        return 0.0
+    elseif d == 0  # turn around for zero vectors, in particular for denominator=0
+        return π_2
+    else
+        return acos(d)
+    end
+end
+
 function cosine(a::DVEC, b::DVEC)::Float64
     return dot(a, b) # * a.invnorm * b.invnorm # it is already normalized
+end
+
+function full_cosine(a::DVEC, b::DVEC)::Float64
+    return dot(a, b) / (norm(a) * norm(b))
 end
