@@ -2,6 +2,7 @@
 # License is Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0.txt
 
 export VectorModel, fit, vectorize, TfidfModel, TfModel, IdfModel, FreqModel, prune, prune_select_top
+using Distributed
 
 """
     abstract type Model
@@ -37,33 +38,45 @@ mutable struct VectorModel <: Model
     n::Int  # collection size
 end
 
+function create_bow_from_corpus(config, corpus)
+    m = nworkers()
+    n = length(corpus)
+
+    L = []
+    for _corpus in Iterators.partition(corpus, floor(Int, n / m))
+        b = @spawn begin
+            bow = BOW()
+            for text in _corpus
+                compute_bow(tokenize(config, text), bow)
+            end
+            bow
+        end
+        push!(L, b)
+    end
+
+    sum(fetch.(L))
+end
+
 """
     fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector)
 
 Trains a vector model using the text preprocessing configuration `config` and the input corpus. 
 """
 function fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector; minocc::Integer=1)
-    bow = BOW()
-    n = 0
-    maxfreq = 0
-
-    for data in corpus
-        n += 1
-        _, _maxfreq = compute_bow(tokenize(config, data), bow)
-        maxfreq = max(maxfreq, _maxfreq)
-    end
-
+    bow = create_bow_from_corpus(config, corpus)
     tokens = Vocabulary()
     id2token = Dict{Int,Symbol}()
     i = 0
+    maxfreq = 0
     for (t, freq) in bow
 		freq < minocc && continue
         i += 1
         id2token[i] = t
         tokens[t] = IdFreq(i, freq)
+        maxfreq = max(maxfreq, freq)
     end
 
-    VectorModel(config, tokens, id2token, Int(maxfreq), length(tokens), n)
+    VectorModel(config, tokens, id2token, Int(maxfreq), length(tokens), length(corpus))
 end
 
 """
@@ -127,8 +140,8 @@ Computes `data`'s weighted bow of words using the given model and weighting sche
 the vector is normalized to the unit normed vector if normalize is true
 """
 function vectorize(model::VectorModel, weighting::Type, data::DataType; normalize=true) where DataType <: Union{AbstractString, AbstractVector{S}} where S <: AbstractString
-    bow, maxfreq = compute_bow(tokenize(model.config, data))
-    vectorize(model, weighting, bow, maxfreq, normalize=normalize)
+    bow = compute_bow(tokenize(model.config, data))
+    vectorize(model, weighting, bow, maximum(bow), normalize=normalize)
 end
 
 """

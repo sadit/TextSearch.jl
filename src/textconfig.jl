@@ -9,7 +9,7 @@ using Unicode
 # using SnowballStemmer
 
 # const _PUNCTUACTION = """;:,.@#&\\-\"'/:*"""
-const _PUNCTUACTION = """;:,.&\\-\"'/:*“”«»"""
+const _PUNCTUACTION = """;:,.&\\-\"'/:*"️“”«»"""
 const _SYMBOLS = "()[]¿?¡!{}~<>|"
 const PUNCTUACTION  = _PUNCTUACTION * _SYMBOLS
 # A symbol s in this list will be expanded to BLANK*s if the predecesor of s is neither s nor BLANK
@@ -240,9 +240,8 @@ function tokenize_(config::TextConfig, text::Vector{Char}, L::Vector{Symbol})::V
                     write(buff, BLANK)
                 end
                 write(buff, ltext[last])
-                # w = join(v, BLANK)
-                # push!(L, Symbol(w))
-                push!(L, Symbol(take!(buff)))
+                t = Symbol(take!(buff))
+                push!(L, t)
             end
         end
 

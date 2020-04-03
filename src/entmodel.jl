@@ -135,7 +135,7 @@ function vectorize(model::EntModel, scheme::Type{T}, data::DataType; normalize=t
         DataType <: Union{AbstractString, AbstractVector{S}} where
         S <: AbstractString
 
-    bow, maxfreq = compute_bow(tokenize(model.config, data))
+    bow = compute_bow(tokenize(model.config, data))
     vectorize(model, scheme, bow, normalize=normalize)
 end
 

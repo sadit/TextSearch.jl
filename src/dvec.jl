@@ -14,20 +14,35 @@ const SVEC = DVEC{Int,Float64}
 nnz(dvec::DVEC) = length(dvec)
 
 """
-    compute_bow(tokenlist::AbstractVector{Symbol}, voc::DVEC)
+    Base.maximum(voc::DVEC)
+
+Computes the maximum (weight) value in a BOW
+"""
+function Base.maximum(voc::DVEC)
+    m = 0
+    for v in values(voc)
+        if v > m
+            m = v
+        end
+    end
+
+    m
+end
+
+"""
+    compute_bow(tokenlist::AbstractVector{Symbol}, voc::BOW)
 
 Updates a DVEC using the given list of tokens; returns `voc`
 """
 function compute_bow(tokenlist::AbstractVector{Symbol}, voc::BOW)
-    maxfreq = 0
     for sym in tokenlist
         m = get(voc, sym, 0) + 1
         voc[sym] = m
-        maxfreq = max(m, maxfreq)
     end
 
-    voc, maxfreq
+    voc
 end
+
 
 # these are needed to call `compute_bow` for symbol's list but also for simplicity of the API
 compute_bow(tokenlist::AbstractVector{Symbol}) = compute_bow(tokenlist, BOW())
