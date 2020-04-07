@@ -1,7 +1,7 @@
 # This file is a part of TextSearch.jl
 # License is Apac
 
-export search_with_intersection, intersection
+export search_with_intersection, search_with_union, intersection
 """
 find_insert_position(arr::AbstractVector, value)
 
@@ -98,8 +98,8 @@ end
 
 _get_id(x) = x.id
 
-function search_with_intersection(invindex::InvIndex, dist::Function, q::SVEC, res::KnnResult; ignore_lists_larger_than::Int=100_000)
-    # normalize!(q) # we expect a normalized q 
+function search_with_intersection(invindex::InvIndex, dist::Function, q::SVEC, res::KnnResult; ignore_lists_larger_than::Int=10_000)
+    # normalize!(q) # we expect a normalized q
     L = PostList[]
     for (sym, weight) in q
         list = get(invindex.lists, sym, EMPTY_POSTING_LIST)
@@ -135,24 +135,13 @@ function search_with_intersection(invindex::InvIndex, dist::Function, q::SVEC, r
     res
 end
 
-function search(invindex::InvIndex, dist::Function, q::SVEC, res::KnnResult; ignore_lists_larger_than::Int=100_000)
-    # normalize!(q) # we expect a normalized q 
-    L = PostList[]
-    for (sym, weight) in q
-        list = get(invindex.lists, sym, EMPTY_POSTING_LIST)
-        if length(list) > 0 && length(list) < ignore_lists_larger_than
-            push!(L, list)
-        end
-    end
-
-    I = intersection(L, _get_id)
+function search_with_union(invindex::InvIndex, dist::Function, q::SVEC, res::KnnResult; ignore_lists_larger_than::Int=10_000)
     D = SVEC()
-    output = PostList()
+    # normalize!(q) # we expect a normalized q 
     for (sym, weight) in q
-        list = get(invindex.lists, sym, EMPTY_POSTING_LIST)
-        if length(list) > 0 && length(list) < ignore_lists_larger_than
-            empty!(output)
-            for e in baezayates(I, _get_id, list, _get_id, output)
+        lst = get(invindex.lists, sym, EMPTY_POSTING_LIST)
+        if length(lst) > 0 && length(lst) < ignore_lists_larger_than
+            for e in lst
                 D[e.id] = get(D, e.id, 0.0) + weight * e.weight
             end
         end

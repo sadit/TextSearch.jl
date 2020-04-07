@@ -149,30 +149,13 @@ neighbors is specified in `res`; it is also used to collect the results. Returns
 If `dist` is set to `angle_distance` then the angle is reported; otherwise the
 `cosine_distance` (i.e., 1 - cos) is computed.
 """
-function search(invindex::InvIndex, dist::Function, q::SVEC, res::KnnResult; ignore_lists_larger_than::Int=100_000)
-    D = SVEC()
-    # normalize!(q) # we expect a normalized q 
-    for (sym, weight) in q
-        lst = get(invindex.lists, sym, EMPTY_POSTING_LIST)
-        if length(lst) > 0 && length(lst) < ignore_lists_larger_than
-            for e in lst
-                D[e.id] = get(D, e.id, 0.0) + weight * e.weight
-            end
-        end
-    end
 
-    for (i, w) in D
-        if dist == angle_distance
-            w = max(-1.0, w)
-            w = min(1.0, w)
-            w = acos(w)
-            push!(res, i, w)
-        else
-            push!(res, i, 1.0 - w)  # cosine distance
-        end
+function search(invindex::InvIndex, dist::Function, q::SVEC, res::KnnResult; ignore_lists_larger_than::Int=10_000)
+    if length(q) <= 3
+        search_with_intersection(invindex, dist, q, res; ignore_lists_larger_than=ignore_lists_larger_than)
+    else
+        search_with_union(invindex, dist, q, res; ignore_lists_larger_than=ignore_lists_larger_than)
     end
-
-    res
 end
 
 include("invindexio.jl")
