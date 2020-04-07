@@ -4,11 +4,6 @@
 import Base: push!, append!
 export EntModel, EntTfModel, EntTpModel
 
-struct IdWeight
-    id::Int32
-    weight::Float32
-end
-
 const WeightedVocabulary = Dict{Symbol,IdWeight}
 
 mutable struct EntModel <: Model

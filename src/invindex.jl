@@ -7,20 +7,21 @@ import SparseArrays: nonzeroinds, nonzeros
 export InvIndex, prune, search
 using SimilaritySearch
 
+const PostList = Vector{IdWeight}
+
 """
 Inverted index search structure
 
 """
 mutable struct InvIndex <: Index
-    lists::Dict{Int, Vector{IdWeight}}
+    lists::Dict{Int,PostList}
     n::Int
-    InvIndex() = new(Dict{Int, Vector{IdWeight}}(), 0)
+    InvIndex() = new(Dict{Int,PostList}(), 0)
     InvIndex(lists, n) = new(lists, n)
 end
 
 # useful constant for searching
-const EMPTY_SPARSE_VECTOR = IdWeight[]
-include("invindexio.jl")
+const EMPTY_POSTING_LIST = PostList()
 
 """
     update!(a::InvIndex, b::InvIndex)
@@ -68,6 +69,35 @@ function fit(::Type{InvIndex}, db::AbstractVector{SVEC})
 end
 
 """
+    optimize!(invindex::InvIndex; keep_k=3000, store_large_lists=true)
+
+Resizes large posting lists to maintain at most `keep_k` entries (most weighted ones).
+If `store_large_lists` is true, then these lists are not deleted, but instead they are
+stored under the negative of its key.
+"""
+function optimize!(invindex::InvIndex; keep_k=3000, store_large_lists=true)
+    for (t, list) in invindex.lists
+        if t < 0
+            # ignore negative keys, negative keys store large lists
+            if !store_large_lists
+                delete!(invindex.lists, t)
+            end
+
+            continue
+        end
+
+        if length(list) > keep_k
+            if store_large_lists
+                invindex.lists[-t] = deepcopy(list)
+            end
+            sort!(list, by=x -> x.weight, rev=true)
+            resize!(list, keep_k)
+            sort!(list, by=x -> x.id)
+        end
+    end
+end
+
+"""
     prune(invindex::InvIndex, k)
 
 Creates a new inverted index using the given `invindex` discarding many entries with low weight.
@@ -80,9 +110,10 @@ function prune(invindex::InvIndex, k)
 
     for (t, list) in invindex.lists
         I.lists[t] = l = deepcopy(list)
-        sort!(l, by=x -> -x.weight)
         if length(list) > k
+            sort!(l, by=x -> -x.weight)
             resize!(l, k)
+            sort!(l, by=x -> x.id)         
         end
     end
 
@@ -104,7 +135,7 @@ function _norm_pruned!(I::InvIndex)
     end
 
     for k in keys(I.lists)
-        I.lists[k] = [IdWeight(p.id, p.weight * D[p.id]) for p in I.lists[k]]
+        I.lists[k] = l = [IdWeight(p.id, p.weight * D[p.id]) for p in I.lists[k]]
     end
 
     I
@@ -118,12 +149,12 @@ neighbors is specified in `res`; it is also used to collect the results. Returns
 If `dist` is set to `angle_distance` then the angle is reported; otherwise the
 `cosine_distance` (i.e., 1 - cos) is computed.
 """
-function search(invindex::InvIndex, dist::Function, q::SVEC, res::KnnResult)
+function search(invindex::InvIndex, dist::Function, q::SVEC, res::KnnResult; ignore_lists_larger_than::Int=100_000)
     D = SVEC()
     # normalize!(q) # we expect a normalized q 
     for (sym, weight) in q
-        lst = get(invindex.lists, sym, EMPTY_SPARSE_VECTOR)
-        if length(lst) > 0
+        lst = get(invindex.lists, sym, EMPTY_POSTING_LIST)
+        if length(lst) > 0 && length(lst) < ignore_lists_larger_than
             for e in lst
                 D[e.id] = get(D, e.id, 0.0) + weight * e.weight
             end
@@ -143,3 +174,6 @@ function search(invindex::InvIndex, dist::Function, q::SVEC, res::KnnResult)
 
     res
 end
+
+include("invindexio.jl")
+include("intersection.jl")

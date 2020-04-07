@@ -143,6 +143,16 @@ _corpus = [
     dX = transpose(X)
 end
 
+function are_posting_lists_sorted(invindex)
+    for (k, lists) in invindex.lists
+        if issorted([p.id for p in lists]) == false
+            return false
+        end
+    end
+
+    true
+end
+
 @testset "invindex" begin
     config = TextConfig()
     #config.qlist = [3, 4]
@@ -151,15 +161,34 @@ end
 
     model = fit(VectorModel, config, _corpus)
     invindex = fit(InvIndex, [vectorize(model, TfidfModel, text) for text in _corpus])
+    @test are_posting_lists_sorted(invindex)
     q = vectorize(model, TfidfModel, "la casa roja")
     res = search(invindex, cosine_distance, q, KnnResult(4))
-    ires = [r.objID for r in res]
-    @test sort(ires) == [1, 2, 3, 4]
+    @test sort([r.objID for r in res]) == [1, 2, 3, 4]
+    begin # searching with intersection
+        res = search_with_intersection(invindex, cosine_distance, q, KnnResult(4))
+        @assert first(res).objID == 1
+
+        q = vectorize(model, TfidfModel, "esta rica")
+        res = search_with_intersection(invindex, cosine_distance, q, KnnResult(4))
+        @assert [5, 6] == sort!([r.objID for r in res])
+    end
+
     shortindex = prune(invindex, 3)
-    @show shortindex
+    @test are_posting_lists_sorted(invindex)
+    q = vectorize(model, TfidfModel, "la casa roja")
     res = search(shortindex, cosine_distance, q, KnnResult(4))
-    ires = [r.objID for r in res]
-    @test sort(ires) == [1, 2, 3, 4]
+    @test sort!([r.objID for r in res]) == [1, 2, 3, 4]
+
+    begin # searching with intersection
+        res = search_with_intersection(shortindex, cosine_distance, q, KnnResult(4))
+        @test first(res).objID == 1
+
+        q = vectorize(model, TfidfModel, "esta rica")
+        res = search_with_intersection(shortindex, cosine_distance, q, KnnResult(4))
+        @info res
+        @test [5, 6] == sort!([r.objID for r in res])
+    end
 end
 
 @testset "centroid computing" begin

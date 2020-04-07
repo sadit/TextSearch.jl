@@ -6,6 +6,12 @@ module TextSearch
     import StatsBase: fit, predict
     using SparseArrays
     using LinearAlgebra
+
+    struct IdWeight
+        id::Int32
+        weight::Float32
+    end
+
     include("textconfig.jl")
     include("dvec.jl")
     include("io.jl")
