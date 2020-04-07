@@ -150,13 +150,15 @@ If `dist` is set to `angle_distance` then the angle is reported; otherwise the
 `cosine_distance` (i.e., 1 - cos) is computed.
 """
 
-function search(invindex::InvIndex, dist::Function, q::SVEC, res::KnnResult; ignore_lists_larger_than::Int=10_000, small_query_k=3)
-    if length(q) <= small_query_k
+function search(invindex::InvIndex, dist::Function, q::SVEC, res::KnnResult; ignore_lists_larger_than::Int=10_000, intersection_k=3, one_error_k=6)
+    if length(q) <= intersection_k
         search_with_intersection(invindex, dist, q, res; ignore_lists_larger_than=ignore_lists_larger_than)
+    elseif length(q) <= one_error_k
+        search_with_one_error(invindex, dist, q, res; ignore_lists_larger_than=ignore_lists_larger_than)
     else
         search_with_union(invindex, dist, q, res; ignore_lists_larger_than=ignore_lists_larger_than)
     end
 end
 
 include("invindexio.jl")
-include("intersection.jl")
+include("setsearch.jl")

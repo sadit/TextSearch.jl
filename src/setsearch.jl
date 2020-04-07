@@ -1,7 +1,7 @@
 # This file is a part of TextSearch.jl
 # License is Apac
 
-export search_with_intersection, search_with_union, intersection
+export search_with_intersection, search_with_union, search_with_one_error, intersection
 """
 find_insert_position(arr::AbstractVector, value)
 
@@ -98,6 +98,21 @@ end
 
 _get_id(x) = x.id
 
+function _append_to_result(dist::Function, D::Dict, res::KnnResult)
+    for (i, w) in D
+        if dist == angle_distance
+            w = max(-1.0, w)
+            w = min(1.0, w)
+            w = acos(w)
+            push!(res, i, w)
+        else
+            push!(res, i, 1.0 - w)  # cosine distance
+        end
+    end
+
+    res
+end
+
 function search_with_intersection(invindex::InvIndex, dist::Function, q::SVEC, res::KnnResult; ignore_lists_larger_than::Int=10_000)
     # normalize!(q) # we expect a normalized q
     L = PostList[]
@@ -121,18 +136,7 @@ function search_with_intersection(invindex::InvIndex, dist::Function, q::SVEC, r
         end
     end
 
-    for (i, w) in D
-        if dist == angle_distance
-            w = max(-1.0, w)
-            w = min(1.0, w)
-            w = acos(w)
-            push!(res, i, w)
-        else
-            push!(res, i, 1.0 - w)  # cosine distance
-        end
-    end
-
-    res
+    _append_to_result(dist, D, res)
 end
 
 function search_with_union(invindex::InvIndex, dist::Function, q::SVEC, res::KnnResult; ignore_lists_larger_than::Int=10_000)
@@ -147,15 +151,25 @@ function search_with_union(invindex::InvIndex, dist::Function, q::SVEC, res::Knn
         end
     end
 
-    for (i, w) in D
-        if dist == angle_distance
-            w = max(-1.0, w)
-            w = min(1.0, w)
-            w = acos(w)
-            push!(res, i, w)
-        else
-            push!(res, i, 1.0 - w)  # cosine distance
+    _append_to_result(dist, D, res)
+end
+
+function search_with_one_error(invindex::InvIndex, dist::Function, q::SVEC, res::KnnResult; ignore_lists_larger_than::Int=10_000)
+    D = Dict{Int,Float64}(p.objID => p.dist for p in res)
+
+    for (term, weight) in collect(q)
+        delete!(q, term)
+        empty!(res)
+        search_with_intersection(invindex, dist, q, res; ignore_lists_larger_than=ignore_lists_larger_than)
+        for p in res
+            D[p.objID] = min(p.dist, get(D, p.objID, typemax(Float64)))
         end
+
+        q[term] = weight
+    end
+
+    for (id, dist) in D
+        push!(res, id, dist)
     end
 
     res

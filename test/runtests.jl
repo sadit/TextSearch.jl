@@ -162,16 +162,19 @@ end
     model = fit(VectorModel, config, _corpus)
     invindex = fit(InvIndex, [vectorize(model, TfidfModel, text) for text in _corpus])
     @test are_posting_lists_sorted(invindex)
-    q = vectorize(model, TfidfModel, "la casa roja")
-    res = search_with_union(invindex, cosine_distance, q, KnnResult(4))
-    @test sort([r.objID for r in res]) == [1, 2, 3, 4]
-    begin # searching with intersection
+    begin # searching
+        q = vectorize(model, TfidfModel, "la casa roja")
+        res = search_with_union(invindex, cosine_distance, q, KnnResult(4))
+        @test sort([r.objID for r in res]) == [1, 2, 3, 4]
+
+        res = search_with_one_error(invindex, cosine_distance, q, KnnResult(4))
+        @info "ONE-ERROR" res
         res = search_with_intersection(invindex, cosine_distance, q, KnnResult(4))
-        @assert [r.objID for r in res] == [1]
+        @test [r.objID for r in res] == [1]
 
         q = vectorize(model, TfidfModel, "esta rica")
         res = search_with_intersection(invindex, cosine_distance, q, KnnResult(4))
-        @assert [5, 6] == sort!([r.objID for r in res])
+        @test [5, 6] == sort!([r.objID for r in res])
     end
 
     shortindex = prune(invindex, 3)
