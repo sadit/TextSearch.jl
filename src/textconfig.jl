@@ -69,22 +69,6 @@ Normalizes a given text using the specified transformations of `config`
 
 """
 function normalize_text(config::TextConfig, text::AbstractString)::Vector{Char}
-    if config.lc
-        text = lowercase(text)
-    end
-
-    if config.group_url
-        text = replace(text, RE_URL => "_url")
-    end
-
-    if config.group_usr
-        text = replace(text, RE_USER => "_usr")
-    end
-
-    if config.group_num
-        text = replace(text, RE_NUM => "_num")
-    end
-
     L = Char[BLANK]
     prev = BLANK
 
@@ -123,18 +107,38 @@ function normalize_text(config::TextConfig, text::AbstractString)::Vector{Char}
     L
 end
 
+function _apply_preprocessing(config::TextConfig, text)
+    if config.lc
+        text = lowercase(text)
+    end
+
+    if config.group_url
+        text = replace(text, RE_URL => "_url")
+    end
+
+    if config.group_usr
+        text = replace(text, RE_USER => "_usr")
+    end
+
+    if config.group_num
+        text = replace(text, RE_NUM => "_num")
+    end
+
+    text
+end
 
 """
     push_word!(config::TextConfig, output::Vector{Symbol}, token::Vector{UInt8}, normalize_words::Function)
 
 Pushes a word into token list after applying the `normalize_words` function; it discards empty strings.
 """
-function push_word!(config::TextConfig, output::Vector{Symbol}, token::Vector{UInt8}, normalize_words::Function)
+function push_word!(config::TextConfig, output::AbstractVector, token::Vector{UInt8}, normalize_words::Function)
     if length(token) > 0
-        t = normalize_words(String(token))
+        w = _apply_preprocessing(config, String(token))
+        t = normalize_words(w)
 
         if t isa AbstractString && length(t) > 0
-            push!(output, Symbol(t))
+            push!(output, t)
         end
     end
 end
@@ -146,7 +150,7 @@ Performs the word tokenization
 """
 function tokenize_words(config::TextConfig, text::Vector{Char}, normalize_words::Function, buff::IOBuffer)
     n = length(text)
-    L = Symbol[]
+    L = String[]
     @inbounds for i in 1:n
         c = text[i]
 
@@ -215,6 +219,9 @@ Tokenizes a vector of characters (internal method)
 function tokenize_(config::TextConfig, text::Vector{Char}, L::Vector{Symbol})::Vector{Symbol}
     n = length(text)
     buff = IOBuffer(Vector{UInt8}(undef, 64), write=true)
+    word_list = tokenize_words(config, text, config.normalize_words, buff)
+    text = join(word_list, BLANK)
+
     @inbounds for q in config.qlist
         for i in 1:(n - q + 1)
             last = i + q - 1
@@ -228,18 +235,17 @@ function tokenize_(config::TextConfig, text::Vector{Char}, L::Vector{Symbol})::V
     end
 
     if length(config.nlist) > 0 || length(config.slist) > 0
-        ltext = tokenize_words(config, text, config.normalize_words, buff)
-        n = length(ltext)
+        n = length(word_list)
 
         @inbounds for q in config.nlist
             for i in 1:(n - q + 1)
                 last = i + q - 1
                 for j in i:last-1
-                    # for w in @view ltext[i:i+q-1]
-                    write(buff, ltext[j])
+                    # for w in @view word_list[i:i+q-1]
+                    write(buff, word_list[j])
                     write(buff, BLANK)
                 end
-                write(buff, ltext[last])
+                write(buff, word_list[last])
                 t = Symbol(take!(buff))
                 push!(L, t)
             end
@@ -248,9 +254,9 @@ function tokenize_(config::TextConfig, text::Vector{Char}, L::Vector{Symbol})::V
         @inbounds for (qsize, skip) in config.slist
             for start in 1:(n - (qsize + (qsize - 1) * skip) + 1)
                 if qsize == 2
-                    t = Symbol(ltext[start], BLANK, ltext[start + 1 + skip])
+                    t = Symbol(word_list[start], BLANK, word_list[start + 1 + skip])
                 else
-                    t = Symbol(join([ltext[start + i * (1+skip)] for i in 0:(qsize-1)], BLANK))
+                    t = Symbol(join([word_list[start + i * (1+skip)] for i in 0:(qsize-1)], BLANK))
                 end
                 
                 push!(L, t)

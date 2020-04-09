@@ -15,7 +15,7 @@ const corpus = ["hello world :)", "@user;) excellent!!", "#jello world."]
     config.qlist = [3]
     config.slist = []
     a = [(p.first, p.second) for p in compute_bow(tokenize(config, text0))]
-    b = [(:rld, 1), (Symbol("@us"), 1), (:orl, 1), (:wor, 1), (Symbol("lo."), 1), (:use, 1), (:ser, 1), (Symbol("o.w"), 1), (:llo, 1), (Symbol("r;)"), 1), (:jel, 1), (Symbol(" #j"), 1), (Symbol("er;"), 1), (Symbol("ld "), 1), (Symbol(";) "), 1), (Symbol(" @u"), 1), (:ell, 1), (Symbol(") #"), 1), (Symbol(".wo"), 1), (Symbol("#je"), 1)]
+    b = [(Symbol(" #j"), 1), (Symbol(" . "), 1), (Symbol(" ;)"), 1), (Symbol(" wo"), 1), (Symbol("#je"), 1), (Symbol(") #"), 1), (Symbol(". w"), 1), (Symbol(";) "), 1), (Symbol("@us"), 1), (:ell, 1), (Symbol("er "), 1), (:jel, 1), (:llo, 1), (Symbol("lo "), 1), (Symbol("o ."), 1), (:orl, 1), (Symbol("r ;"), 1), (:ser, 1), (:use, 1), (:wor, 1)]
     @test sort(a) == sort(b)
 end
 

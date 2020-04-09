@@ -2,9 +2,9 @@
 # License is Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0.txt
 
 import Base: push!, length
-import SimilaritySearch: search
+import SimilaritySearch: search, optimize!
 import SparseArrays: nonzeroinds, nonzeros
-export InvIndex, prune, search
+export InvIndex, search, optimize!
 using SimilaritySearch
 
 const PostList = Vector{IdWeight}
