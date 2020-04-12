@@ -83,6 +83,7 @@ function normalize_text(config::TextConfig, text::AbstractString)::Vector{Char}
         elseif config.del_dup && prev == u
             continue
         elseif config.del_punc && u in PUNCTUACTION
+            L[end] !== BLANK && push!(L, BLANK)
             prev = u
             continue
         end
@@ -110,10 +111,6 @@ end
 function _apply_preprocessing(config::TextConfig, text)
     if config.lc
         text = lowercase(text)
-    end
-
-    if config.group_url
-        text = replace(text, RE_URL => "_url")
     end
 
     if config.group_usr
@@ -190,6 +187,10 @@ function tokenize(config::TextConfig, arr::AbstractVector{S})::Vector{Symbol} wh
     n = length(arr)
     sizehint!(L, (length(config.nlist) + length(config.slist)) * (div(n, 2) + 1) + length(config.qlist) * n)
     for text in arr
+        if config.group_url
+            text = replace(text, RE_URL => "_url")
+        end
+
         t = normalize_text(config, text)
         tokenize_(config, t, L)
     end
@@ -203,6 +204,10 @@ end
 Tokenizes a string
 """
 function tokenize(config::TextConfig, text::AbstractString)::Vector{Symbol}
+    if config.group_url
+        text = replace(text, RE_URL => "_url")
+    end
+
     t = normalize_text(config, text)
     n = length(text)
     L = Symbol[]
@@ -219,6 +224,7 @@ Tokenizes a vector of characters (internal method)
 function tokenize_(config::TextConfig, text::Vector{Char}, L::Vector{Symbol})::Vector{Symbol}
     n = length(text)
     buff = IOBuffer(Vector{UInt8}(undef, 64), write=true)
+
     word_list = tokenize_words(config, text, config.normalize_words, buff)
     text = join(word_list, BLANK)
 

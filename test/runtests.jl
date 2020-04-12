@@ -1,6 +1,6 @@
 # using Languages
 using SimilaritySearch, TextSearch
-using Test, SparseArrays, LinearAlgebra, StatsBase
+using Test, SparseArrays, LinearAlgebra, StatsBase, Random
 const fit = TextSearch.fit
 
 const text0 = "@user;) #jello.world"
@@ -151,6 +151,23 @@ function are_posting_lists_sorted(invindex)
     end
 
     true
+end
+
+@testset "intersection" begin
+    Random.seed!(1)
+    for i in 1:100
+        A = shuffle!(collect(1:1000))[1:10] |> sort!
+        B = shuffle!(collect(1:1000))[1:100] |> sort!
+        C = intersection([A, B])
+        C_ = sort!(intersect(A, B))
+        @test C == C_
+        if C != C_
+            @info A
+            @info B
+            @info C C_
+            exit(-1)
+        end
+    end
 end
 
 @testset "invindex" begin

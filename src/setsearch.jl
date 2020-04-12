@@ -36,11 +36,18 @@ The matched objects of `second` are stored in `output`.
 function baezayates(first::AbstractVector, byfirst::Function, second::AbstractVector{T}, bysecond::Function, output::AbstractVector{T}) where T
     m = length(first)
     n = length(second)
+    if m == 0 || n == 0
+        return output
+    end
     imedian = ceil(Int, m / 2)
     median = byfirst(first[imedian])
     pos = find_insert_position(median, second, bysecond)
+    pos_matches = pos > 0 && median == bysecond(second[pos])
     _first = @view first[1:imedian-1]
-    _second = @view second[1:pos-1]
+    left_pos = pos_matches ? pos - 1 : pos
+    _second = @view second[1:left_pos]
+    
+    # @show "======" imedian median pos _first _second
     length(_first) > 0 && length(_second) > 0 && baezayates(_first, byfirst, _second, bysecond, output)
     
     if pos == 0
@@ -87,6 +94,7 @@ function intersection(sets::AbstractVector{S}, by::Function=identity) where
         {S<:AbstractVector}
     n = length(sets)
     T = eltype(eltype(sets))
+
     if n == 0
         T[]
     elseif n == 1
@@ -116,13 +124,15 @@ end
 function search_with_intersection(invindex::InvIndex, dist::Function, q::SVEC, res::KnnResult; ignore_lists_larger_than::Int=10_000)
     # normalize!(q) # we expect a normalized q
     L = PostList[]
-    for (sym, weight) in q
-        list = get(invindex.lists, sym, EMPTY_POSTING_LIST)
+    for (id, weight) in q
+        list = get(invindex.lists, -id, EMPTY_POSTING_LIST)
+        if length(list) == 0
+            list = get(invindex.lists, id, EMPTY_POSTING_LIST)
+        end
         if length(list) > 0 && length(list) < ignore_lists_larger_than
             push!(L, list)
         end
     end
-
     I = intersection(L, _get_id)
     D = SVEC()
     output = PostList()
@@ -160,6 +170,7 @@ function search_with_one_error(invindex::InvIndex, dist::Function, q::SVEC, res:
     for (term, weight) in collect(q)
         delete!(q, term)
         empty!(res)
+        
         search_with_intersection(invindex, dist, q, res; ignore_lists_larger_than=ignore_lists_larger_than)
         for p in res
             D[p.objID] = min(p.dist, get(D, p.objID, typemax(Float64)))
