@@ -179,6 +179,7 @@ function search_with_one_error(invindex::InvIndex, dist::Function, q::SVEC, res:
         q[term] = weight
     end
 
+    empty!(res)
     for (id, dist) in D
         push!(res, id, dist)
     end
