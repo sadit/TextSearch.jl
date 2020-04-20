@@ -141,7 +141,7 @@ function push_word!(config::TextConfig, output::AbstractVector, token::Vector{UI
 end
 
 """
-    tokenize_words(config::TextConfig, text::Vector{Char}, normalize_words::Function)
+    tokenize_words(config::TextConfig, text::Vector{Char}, normalize_words::Function, buff::IOBuffer)
 
 Performs the word tokenization
 """
@@ -186,13 +186,14 @@ function tokenize(config::TextConfig, arr::AbstractVector{S})::Vector{Symbol} wh
     L = Symbol[]
     n = length(arr)
     sizehint!(L, (length(config.nlist) + length(config.slist)) * (div(n, 2) + 1) + length(config.qlist) * n)
+    buff = IOBuffer(Vector{UInt8}(undef, 64), write=true)
     for text in arr
         if config.group_url
             text = replace(text, RE_URL => "_url")
         end
 
         t = normalize_text(config, text)
-        tokenize_(config, t, L)
+        tokenize_(config, t, L, buff)
     end
 
     L
@@ -212,31 +213,25 @@ function tokenize(config::TextConfig, text::AbstractString)::Vector{Symbol}
     n = length(text)
     L = Symbol[]
     sizehint!(L, (length(config.nlist) + length(config.slist)) * (div(n, 2) + 1) + length(config.qlist) * n)
-    tokenize_(config, t, L)
+    buff = IOBuffer(Vector{UInt8}(undef, 64), write=true)
+    tokenize_(config, t, L, buff)
 end
 
 
 """
-    tokenize_(config::TextConfig, text::Vector{Char}, L::Vector{Symbol})::Vector{Symbol}
+    tokenize_(config::TextConfig, text::Vector{Char}, L::Vector{Symbol}, buff)::Vector{Symbol}
 
 Tokenizes a vector of characters (internal method)
 """
-function tokenize_(config::TextConfig, text::Vector{Char}, L::Vector{Symbol})::Vector{Symbol}
-    n = length(text)
-    buff = IOBuffer(Vector{UInt8}(undef, 64), write=true)
-
+function tokenize_(config::TextConfig, text::Vector{Char}, L::Vector{Symbol}, buff)::Vector{Symbol}
     word_list = tokenize_words(config, text, config.normalize_words, buff)
-    text = join(word_list, BLANK)
+    text = [c for c in join(word_list, BLANK)]
+    n = length(text)
 
     @inbounds for q in config.qlist
         for i in 1:(n - q + 1)
             last = i + q - 1
-            for j in i:last
-                # for w in @view text[i:]
-                write(buff, text[j])
-            end
-
-            push!(L, Symbol(take!(buff)))
+            push!(L, Symbol(String(text[i:last])))
         end
     end
 
@@ -251,9 +246,9 @@ function tokenize_(config::TextConfig, text::Vector{Char}, L::Vector{Symbol})::V
                     write(buff, word_list[j])
                     write(buff, BLANK)
                 end
+
                 write(buff, word_list[last])
-                t = Symbol(take!(buff))
-                push!(L, t)
+                push!(L, Symbol(take!(buff)))
             end
         end
 
