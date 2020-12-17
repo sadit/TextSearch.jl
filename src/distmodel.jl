@@ -1,6 +1,6 @@
 # This file is a part of TextSearch.jl
 # License is Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0.txt
-
+using CategoricalArrays
 export DistModel, feed!, fix!, prune
 
 const DistVocabulary = Dict{Symbol, Vector{Float64}}
@@ -17,7 +17,7 @@ end
 const EMPTY_TOKEN_DIST = Int[]
 
 """
-    fit(::Type{DistModel}, config::TextConfig, corpus, y; nclasses=0, weights=nothing, minocc=1, fix=true)
+    fit(::Type{DistModel}, config::TextConfig, corpus, y::CategoricalArray; nclasses=0, weights=nothing, minocc=1, fix=true)
 
 Creates a DistModel object using the specified `corpus` (an array of strings or an array of arrays of strings);
 and its associated labels `y`. Optional parameters:
@@ -30,9 +30,9 @@ and its associated labels `y`. Optional parameters:
 - `minocc`: minimum population to consider a token (without considering the smoothing factor).
 - `fix`: if true, it stores the empirical probabilities instead of frequencies
 """
-function fit(::Type{DistModel}, config::TextConfig, corpus, y; nclasses=0, weights=:balance, smooth::Real=0, minocc::Integer=1, fix=false)
+function fit(::Type{DistModel}, config::TextConfig, corpus, y::CategoricalArray; nclasses=0, weights=:balance, smooth::Real=0, minocc::Integer=1, fix=false)
     if nclasses == 0
-        nclasses = unique(y) |> length
+        nclasses = levels(y) |> length
     end
 	
     smooth = fill(convert(Float64, smooth), nclasses)
@@ -83,11 +83,11 @@ end
 
 DistModel objects support for incremental feed if `fix!` method is not called on `fit`
 """
-function feed!(model::DistModel, corpus, y)
+function feed!(model::DistModel, corpus, y::CategoricalArray)
     config = model.config
     nclasses = length(model.sizes)
 
-    for (klass, text) in zip(y, corpus)
+    for (klass, text) in zip(y.refs, corpus)
         for token in tokenize(config, text)
             token_dist = get(model.tokens, token, EMPTY_TOKEN_DIST)
             if length(token_dist) == 0

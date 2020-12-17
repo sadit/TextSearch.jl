@@ -1,6 +1,6 @@
 # using Languages
 using SimilaritySearch, TextSearch
-using Test, SparseArrays, LinearAlgebra, StatsBase, Random
+using Test, SparseArrays, LinearAlgebra, CategoricalArrays, StatsBase, Random
 const fit = TextSearch.fit
 
 const text0 = "@user;) #jello.world"
@@ -61,16 +61,18 @@ end
 end
 
     
-const labeled_corpus = [("me gusta", 1), ("me encanta", 1), ("lo odio", 2), ("odio esto", 2), ("me encanta esto LOL!", 1)]
-const sentiment_text = "lol, esto me encanta"
+const sentiment_corpus = ["me gusta", "me encanta", "lo odio", "odio esto", "me encanta esto LOL!"]
+const sentiment_labels = categorical(["pos", "pos", "neg", "neg", "pos"])
+const sentiment_msg = "lol, esto me encanta"
 
 @testset "DistModel tests" begin
     config = TextConfig()
     config.nlist = [1]
-    dmodel = fit(DistModel, config, [x[1] for x in labeled_corpus], [x[2] for x in labeled_corpus])
-    @show sentiment_text
+    
+    dmodel = fit(DistModel, config, sentiment_corpus, sentiment_labels)
+    @show sentiment_msg
     @show dmodel
-    #a = vectorize(dmodel, TfIdf, sentiment_text)
+    #a = vectorize(dmodel, TfIdf, sentiment_msg)
     #b = [(:me1,1.0),(:me2,0.0),(:encanta1,1.0),(:encanta2,0.0),(:esto1,0.4),(:esto2,0.6),(:lol1,1.0),(:lol2,0.0)]
     #@test string(a) == string(b)
 
@@ -79,13 +81,11 @@ end
 @testset "EntModel tests" begin
     config = TextConfig()
     config.nlist = [1]
-    X = [x[1] for x in labeled_corpus]
-    y = [x[2] for x in labeled_corpus]
-    dmodel = fit(DistModel, config, X, y, weights=:balance, smooth=1, minocc=1)
+    dmodel = fit(DistModel, config, sentiment_corpus, sentiment_labels, weights=:balance, smooth=1, minocc=1)
     emodel = fit(EntModel, dmodel)
-    emodel_ = fit(EntModel, config, X, y, weights=:balance, smooth=1, minocc=1)
-    a = vectorize(emodel, X)
-    b = vectorize(emodel_, X)
+    emodel_ = fit(EntModel, config, sentiment_corpus, sentiment_labels, weights=:balance, smooth=1, minocc=1)
+    a = vectorize(emodel, sentiment_corpus)
+    b = vectorize(emodel_, sentiment_corpus)
     @test 0.999 < dot(a, b)
  end
 
@@ -184,32 +184,32 @@ end
     begin # searching
         q = vectorize(model, TfidfModel, "la casa roja")
         res = search_with_union(invindex, cosine_distance, q, KnnResult(4))
-        @test sort([r.objID for r in res]) == [1, 2, 3, 4]
+        @test sort([r.id for r in res]) == [1, 2, 3, 4]
 
         res = search_with_one_error(invindex, cosine_distance, q, KnnResult(4))
         @info "ONE-ERROR" res
         res = search_with_intersection(invindex, cosine_distance, q, KnnResult(4))
-        @test [r.objID for r in res] == [1]
+        @test [r.id for r in res] == [1]
 
         q = vectorize(model, TfidfModel, "esta rica")
         res = search_with_intersection(invindex, cosine_distance, q, KnnResult(4))
-        @test [5, 6] == sort!([r.objID for r in res])
+        @test [5, 6] == sort!([r.id for r in res])
     end
 
     shortindex = prune(invindex, 3)
     @test are_posting_lists_sorted(invindex)
     q = vectorize(model, TfidfModel, "la casa roja")
     res = search_with_union(shortindex, cosine_distance, q, KnnResult(4))
-    @test sort!([r.objID for r in res]) == [1, 2, 3, 4]
+    @test sort!([r.id for r in res]) == [1, 2, 3, 4]
 
     begin # searching with intersection
         res = search_with_intersection(shortindex, cosine_distance, q, KnnResult(4))
-        @test [r.objID for r in res] == [1]
+        @test [r.id for r in res] == [1]
 
         q = vectorize(model, TfidfModel, "esta rica")
         res = search_with_intersection(shortindex, cosine_distance, q, KnnResult(4))
         @info res
-        @test [5, 6] == sort!([r.objID for r in res])
+        @test [5, 6] == sort!([r.id for r in res])
     end
 end
 

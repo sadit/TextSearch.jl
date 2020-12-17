@@ -20,7 +20,7 @@ function neardup(X::AbstractVector{T}, epsilon=0.1) where T
             L[i] = i
             D[i] = 0.0
         else
-            L[i] = first(res).objID
+            L[i] = first(res).id
             D[i] = first(res).dist
         end
     end

@@ -165,7 +165,7 @@ function search_with_union(invindex::InvIndex, dist::Function, q::SVEC, res::Knn
 end
 
 function search_with_one_error(invindex::InvIndex, dist::Function, q::SVEC, res::KnnResult; ignore_lists_larger_than::Int=10_000)
-    D = Dict{Int,Float64}(p.objID => p.dist for p in res)
+    D = Dict{Int,Float64}(p.id => p.dist for p in res)
 
     for (term, weight) in collect(q)
         delete!(q, term)
@@ -173,7 +173,7 @@ function search_with_one_error(invindex::InvIndex, dist::Function, q::SVEC, res:
         
         search_with_intersection(invindex, dist, q, res; ignore_lists_larger_than=ignore_lists_larger_than)
         for p in res
-            D[p.objID] = min(p.dist, get(D, p.objID, typemax(Float64)))
+            D[p.id] = min(p.dist, get(D, p.id, typemax(Float64)))
         end
 
         q[term] = weight
