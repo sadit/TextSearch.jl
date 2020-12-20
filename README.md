@@ -41,14 +41,14 @@ julia> invindex = fit(InvIndex, [vectorize(model, TfidfModel, text) for text in 
 queries are made as follows
 ```julia
 julia> q = vectorize(model, TfidfModel, "que chida musica!!!")
-julia> db[[p.objID for p in TextSearch.search(invindex, cosine_distance, q, KnnResult(11))]]
+julia> db[[p.id for p in TextSearch.search(invindex, cosine_distance, q, KnnResult(11))]]
 ```
 
 you can save memory by pruning large lists, as follows
 ```julia
 julia> invindex = prune(invindex, 100)
 julia> for p in search(invindex, cosine_distance, vectorize(model, TfidfModel, "que chida musica!!!"), KnnResult(11))
-    println(db[p.objID]["klass"], "\t", db[p.objID]["text"])
+    println(db[p.id]["klass"], "\t", db[p.id]["text"])
 end
 ```
 in some cases this prunning can improve results since it keeps the most weighted items per list.
