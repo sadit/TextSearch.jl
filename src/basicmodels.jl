@@ -2,7 +2,6 @@
 # License is Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0.txt
 
 export VectorModel, fit, vectorize, TfidfModel, TfModel, IdfModel, FreqModel, prune, prune_select_top
-using Distributed
 
 """
     abstract type Model
@@ -38,23 +37,31 @@ mutable struct VectorModel <: Model
     n::Int  # collection size
 end
 
+## function create_bow_from_corpus(config, corpus; batch_size=128)
+##     m = nworkers()
+##     n = length(corpus)
+## 
+##     L = []
+##     for _corpus in Iterators.partition(corpus, batch_size)
+##         b = @spawn begin
+##             bow = BOW()
+##             for text in _corpus
+##                 compute_bow(tokenize(config, text), bow)
+##             end
+##             bow
+##         end
+##         push!(L, b)
+##     end
+## 
+##     sum(fetch.(L))
+## end
+
 function create_bow_from_corpus(config, corpus)
-    m = nworkers()
-    n = length(corpus)
-
-    L = []
-    for _corpus in Iterators.partition(corpus, floor(Int, n / m))
-        b = @spawn begin
-            bow = BOW()
-            for text in _corpus
-                compute_bow(tokenize(config, text), bow)
-            end
-            bow
-        end
-        push!(L, b)
+    bow = BOW()
+    for text in corpus
+        compute_bow(tokenize(config, text), bow)
     end
-
-    sum(fetch.(L))
+    bow
 end
 
 """

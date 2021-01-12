@@ -14,7 +14,6 @@ module TextSearch
 
     include("textconfig.jl")
     include("dvec.jl")
-    include("io.jl")
     include("basicmodels.jl")
     include("distmodel.jl")
     include("entmodel.jl")

@@ -115,16 +115,6 @@ end
     @test dot(normalize!(u + v - v), normalize!(u)) > 0.99
 end
 
-@testset "io" begin
-    buff = IOBuffer("""{"key1": "value1a", "key2c": "value2a"}
-{"key1": "value1b", "key2c": "value2b"}
-{"key1": "value1c", "key2b": "value2c"}
-{"key1": "value1d", "key2a": "value2d"}""")
-    itertweets(buff) do x
-        @info x
-    end
-end
-
 _corpus = [
     "la casa roja",
     "la casa verde",
