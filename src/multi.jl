@@ -1,8 +1,8 @@
 # This file is a part of TextSearch.jl
 # License is Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0.txt
 
-import KCenters: glue
-export update!, glue
+import KCenters
+export update!, joinmodel
 """
     update!(a::VectorModel, b::VectorModel)
 
@@ -28,12 +28,12 @@ a
 end
 
 """
-    glue(arr::AbstractVector{VectorModel})
-    glue(arr::AbstractVector{EntModel})
+    joinmodel(arr::AbstractVector{VectorModel})
+    joinmodel(arr::AbstractVector{EntModel})
 
 Joins a list of models into a single one; frequencies and weights are computed as the mean of its non-missing occurrences
 """
-function glue(arr::AbstractVector{VectorModel})
+function joinmodel(arr::AbstractVector{VectorModel})
     item = first(arr)
     # Vocabulary = Dict{Symbol, IdFreq}
     tokens_ = Dict{Symbol,Int}()

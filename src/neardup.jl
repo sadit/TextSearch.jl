@@ -14,7 +14,7 @@ function neardup(X::AbstractVector{T}, epsilon=0.1) where T
     @inbounds for i in 2:length(X)
         empty!(res)
         x = X[i]
-        search_with_union(invindex, cosine_distance, x, res)
+        search_with_union(invindex, x, res)
         if length(res) == 0 || first(res).dist > epsilon
             push!(invindex, i => x)
             L[i] = i

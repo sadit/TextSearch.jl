@@ -4,8 +4,8 @@
 import Base: +, -, *, /, ==, transpose, zero
 import LinearAlgebra: dot, norm, normalize!
 import SparseArrays: nnz
-import SimilaritySearch: cosine_distance, angle_distance, full_cosine_distance, full_angle_distance
-export DVEC, compute_bow, centroid
+using SimilaritySearch
+export DVEC, compute_bow, centroid, evaluate, NormalizedAngleDistance, NormalizedCosineDistance, AngleDistance, NormalizedAngleDistance
 
 const DVEC{Ti,Tv<:Real} = Dict{Ti,Tv}
 const BOW = DVEC{Symbol,Int}
@@ -214,39 +214,41 @@ function /(a::DVEC, b::F) where F<:Real
     c
 end
 
-"""
-    cosine_distance(a::DVEC, b::DVEC)::Float64
 
-Computes the cosine_distance between two DVEC sparse vectors
+
+"""
+    evaluate(::NormalizedCosineDistance, a::DVEC, b::DVEC)::Float64
+
+Computes the cosine distance between two DVEC sparse vectors
 
 It supposes that bags are normalized (see `normalize!` function)
 
 """
-function cosine_distance(a::DVEC, b::DVEC)::Float64
+function evaluate(::NormalizedCosineDistance, a::DVEC, b::DVEC)::Float64
     return 1.0 - dot(a, b)
 end
 
 """
-    full_cosine_distance(a::DVEC, b::DVEC)::Float64
+    evaluate(::CosineDistance, a::DVEC, b::DVEC)::Float64
 
-Computes the cosine_distance between two DVEC sparse vectors
+Computes the cosine distance between two DVEC sparse vectors
 
 """
-function full_cosine_distance(a::DVEC, b::DVEC)::Float64
+function evaluate(::CosineDistance, a::DVEC, b::DVEC)::Float64
     return 1.0 - full_cosine(a, b)
 end
 
 const π_2 = π / 2
 
 """
-    angle_distance(a::DVEC, b::DVEC)::Float64
+    evaluate(::NormalizedAngleDistance, a::DVEC, b::DVEC)::Float64
 
 Computes the angle  between two DVEC sparse vectors
 
 It supposes that all bags are normalized (see `normalize!` function)
 
 """
-function angle_distance(a::DVEC, b::DVEC)::Float64
+function evaluate(::NormalizedAngleDistance, a::DVEC, b::DVEC)::Float64
     d = dot(a, b)
 
     if d <= -1.0
@@ -261,13 +263,13 @@ function angle_distance(a::DVEC, b::DVEC)::Float64
 end
 
 """
-    full_angle_distance(a::DVEC, b::DVEC)::Float64
+    evaluate(::AngleDistance, a::DVEC, b::DVEC)::Float64
 
-Computes the angle  between two DVEC sparse vectors
+Computes the angle between two DVEC sparse vectors
 
 """
 
-function full_angle_distance(a::DVEC, b::DVEC)::Float64
+function evaluate(::AngleDistance, a::DVEC, b::DVEC)::Float64
     d = full_cosine(a, b)
 
     if d <= -1.0

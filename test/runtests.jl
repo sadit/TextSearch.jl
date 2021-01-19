@@ -95,10 +95,10 @@ end
     v = Dict(:el => 0.4, :hola => 0.2, :mundo => 0.4) |> normalize!
     w = Dict(:xel => 0.4, :xhola => 0.2, :xmundo => 0.4) |> normalize!
 
-    dist = angle_distance
-    @test dist(u, v) ≈ 0.5975474808029686
-    @test dist(u, u) <= eps(Float32)
-    @test dist(w, u) ≈ 1.5707963267948966
+    dist = AngleDistance()
+    @test evaluate(dist, u, v) ≈ 0.5975474808029686
+    @test evaluate(dist, u, u) <= eps(Float32)
+    @test evaluate(dist, w, u) ≈ 1.5707963267948966
 end
 
 @testset "operations" begin
@@ -169,35 +169,35 @@ end
     config.nlist = [1]
 
     model = fit(VectorModel, config, _corpus)
-    invindex = fit(InvIndex, [vectorize(model, TfidfModel, text) for text in _corpus])
+    invindex = InvIndex([vectorize(model, TfidfModel, text) for text in _corpus])
     @test are_posting_lists_sorted(invindex)
     begin # searching
         q = vectorize(model, TfidfModel, "la casa roja")
-        res = search_with_union(invindex, cosine_distance, q, KnnResult(4))
+        res = search_with_union(invindex, q, KnnResult(4))
         @test sort([r.id for r in res]) == [1, 2, 3, 4]
 
-        res = search_with_one_error(invindex, cosine_distance, q, KnnResult(4))
+        res = search_with_one_error(invindex, q, KnnResult(4))
         @info "ONE-ERROR" res
-        res = search_with_intersection(invindex, cosine_distance, q, KnnResult(4))
+        res = search_with_intersection(invindex, q, KnnResult(4))
         @test [r.id for r in res] == [1]
 
         q = vectorize(model, TfidfModel, "esta rica")
-        res = search_with_intersection(invindex, cosine_distance, q, KnnResult(4))
+        res = search_with_intersection(invindex, q, KnnResult(4))
         @test [5, 6] == sort!([r.id for r in res])
     end
 
     shortindex = prune(invindex, 3)
     @test are_posting_lists_sorted(invindex)
     q = vectorize(model, TfidfModel, "la casa roja")
-    res = search_with_union(shortindex, cosine_distance, q, KnnResult(4))
+    res = search_with_union(shortindex, q, KnnResult(4))
     @test sort!([r.id for r in res]) == [1, 2, 3, 4]
 
     begin # searching with intersection
-        res = search_with_intersection(shortindex, cosine_distance, q, KnnResult(4))
+        res = search_with_intersection(shortindex, q, KnnResult(4))
         @test [r.id for r in res] == [1]
 
         q = vectorize(model, TfidfModel, "esta rica")
-        res = search_with_intersection(shortindex, cosine_distance, q, KnnResult(4))
+        res = search_with_intersection(shortindex, q, KnnResult(4))
         @info res
         @test [5, 6] == sort!([r.id for r in res])
     end

@@ -13,11 +13,12 @@ const PostList = Vector{IdWeight}
 Inverted index search structure
 
 """
-mutable struct InvIndex <: Index
+mutable struct InvIndex <: AbstractSearchContext
     lists::Dict{Int,PostList}
     n::Int
-    InvIndex() = new(Dict{Int,PostList}(), 0)
-    InvIndex(lists, n) = new(lists, n)
+    res::KnnResult
+    InvIndex() = new(Dict{Int,PostList}(), 0, KnnResult(10))
+    InvIndex(lists, n) = new(lists, n, KnnResult(10))
 end
 
 # useful constant for searching
@@ -59,7 +60,7 @@ function push!(index::InvIndex, p::Pair{Int,SVEC})
     end
 end
 
-function fit(::Type{InvIndex}, db::AbstractVector{SVEC})
+function InvIndex(db::AbstractVector{SVEC})
     invindex = InvIndex()
     for (i, v) in enumerate(db)
         push!(invindex, i => v)
@@ -142,7 +143,8 @@ function _norm_pruned!(I::InvIndex)
 end
 
 """
-    search(invindex::InvIndex, dist::Function, q::Dict{Symbol, R}, res::KnnResult) where R <: Real
+    search(invindex::InvIndex, q::SVEC, res::KnnResult; ignore_lists_larger_than::Int=10_000)
+
 
 Seaches for the k-nearest neighbors of `q` inside the index `invindex`. The number of nearest
 neighbors is specified in `res`; it is also used to collect the results. Returns the object `res`.
@@ -150,8 +152,13 @@ If `dist` is set to `angle_distance` then the angle is reported; otherwise the
 `cosine_distance` (i.e., 1 - cos) is computed.
 """
 
-function search(invindex::InvIndex, dist::Function, q::SVEC, res::KnnResult; ignore_lists_larger_than::Int=10_000)
-    search_with_union(invindex, dist, q, res, ignore_lists_larger_than=ignore_lists_larger_than)
+function search(invindex::InvIndex, q::SVEC, res::KnnResult; ignore_lists_larger_than::Int=10_000)
+    search_with_union(invindex, q, res, ignore_lists_larger_than=ignore_lists_larger_than)
+end
+
+function search(invindex::InvIndex, q::SVEC, ksearch::Integer; ignore_lists_larger_than::Int=10_000)
+    empty!(invindex.res, ksearch)
+    search(invindex, q, invindex.res; ignore_lists_larger_than=ignore_lists_larger_than)
 end
 
 include("invindexio.jl")
