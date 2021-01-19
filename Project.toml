@@ -17,6 +17,6 @@ Unicode = "4ec0a83e-493e-50e2-b9ac-8f72acf5a8f5"
 [compat]
 CategoricalArrays = "0.8.3"
 KCenters = "0.2.3"
-SimilaritySearch = "0.3.21"
+SimilaritySearch = "0.3.21, 0.4"
 StatsBase = "0.32.0"
 julia = "0.7, 1"
