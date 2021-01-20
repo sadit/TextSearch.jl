@@ -5,6 +5,7 @@ import Base: +, -, *, /, ==, transpose, zero
 import LinearAlgebra: dot, norm, normalize!
 import SparseArrays: nnz
 using SimilaritySearch
+import SimilaritySearch: evaluate
 export DVEC, compute_bow, centroid, evaluate, NormalizedAngleDistance, NormalizedCosineDistance, AngleDistance, NormalizedAngleDistance
 
 const DVEC{Ti,Tv<:Real} = Dict{Ti,Tv}
