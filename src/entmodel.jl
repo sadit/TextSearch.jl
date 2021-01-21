@@ -6,7 +6,7 @@ export EntModel, EntTfModel, EntTpModel
 
 const WeightedVocabulary = Dict{Symbol,IdWeight}
 
-mutable struct EntModel <: Model
+mutable struct EntModel <: TextModel
     config::TextConfig
     tokens::WeightedVocabulary
     id2token::Dict{Int32,Symbol}
@@ -14,13 +14,13 @@ mutable struct EntModel <: Model
     n::Int
 end
 
-function push!(model::Model, p::Pair)
+function push!(model::EntModel, p::Pair)
     model.m += 1
     model.tokens[p[1]] = IdWeight(model.m, p[2])
     model.id2token[model.m] = p[1]
 end
 
-function append!(model::Model, weighted_words)
+function append!(model::EntModel, weighted_words)
     for p in weighted_words
         push!(model, p)
     end

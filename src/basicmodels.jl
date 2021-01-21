@@ -1,19 +1,19 @@
 # This file is a part of TextSearch.jl
 # License is Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0.txt
 
-export VectorModel, fit, vectorize, TfidfModel, TfModel, IdfModel, FreqModel, prune, prune_select_top
+export TextModel, VectorModel, fit, vectorize, TfidfModel, TfModel, IdfModel, FreqModel, prune, prune_select_top
 
 """
     abstract type Model
 
 An abstract type that represents a weighting model
 """
-abstract type Model end
+abstract type TextModel end
 
-abstract type TfidfModel end
-abstract type TfModel end
-abstract type IdfModel end
-abstract type FreqModel end
+abstract type TfidfModel <: TextModel end
+abstract type TfModel <: TextModel end
+abstract type IdfModel <: TextModel end
+abstract type FreqModel <: TextModel end
 
 struct IdFreq
     id::Int32
@@ -27,7 +27,7 @@ const Vocabulary = Dict{Symbol, IdFreq}
 
 Models a text through a vector space
 """
-mutable struct VectorModel <: Model
+mutable struct VectorModel <: TextModel
     config::TextConfig
     tokens::Vocabulary
     id2token::Dict{Int,Symbol}

@@ -63,26 +63,26 @@ function sparse(cols::AbstractVector{S}, m=0) where S<:DVEC{Ti,Tv} where {Ti<:In
 end
 
 """
-    bow(model::Model, x::AbstractSparseVector)
-    bow(model::Model, x::DVEC{Ti,Tv}) where {Ti<:Integer,Tv<:Number}
+    bow(model::TextModel, x::AbstractSparseVector)
+    bow(model::TextModel, x::DVEC{Ti,Tv}) where {Ti<:Integer,Tv<:Number}
     
 Creates a bag of words using the sparse vector `x` and the text model `model`
 """
-function bow(model::Model, x::AbstractSparseVector)
+function bow(model::TextModel, x::AbstractSparseVector)
     DVEC{Symbol,eltype{x.nzval}}(model.id2token[t] => v for (t, v) in zip(x.nzind, x.nzval))
 end
 
-function bow(model::Model, x::DVEC{Ti,Tv}) where {Ti<:Integer,Tv<:Number}
+function bow(model::TextModel, x::DVEC{Ti,Tv}) where {Ti<:Integer,Tv<:Number}
     DVEC{Symbol,Tv}(model.id2token[t] => v for (t, v) in x)
 end
 
 """
-    dvec(model::Model, x::DVEC{Symbol,Tv}, Ti=Int) where Tv<:Number
+    dvec(model::TextModel, x::DVEC{Symbol,Tv}, Ti=Int) where Tv<:Number
 
 Creates a DVEC sparse vector from a bag of words sparse vector (i.e., with type DVEC{Symbol,Tv}),
 using the text model `model`
 """
-function dvec(model::Model, x::DVEC{Symbol,Tv}, Ti=Int) where Tv<:Number
+function dvec(model::TextModel, x::DVEC{Symbol,Tv}, Ti=Int) where Tv<:Number
     DVEC{Ti,Tv}(model.tokens[t].id => v for (t, v) in x)
 end
 

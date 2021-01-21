@@ -5,7 +5,7 @@ export DistModel, feed!, fix!, prune
 
 const DistVocabulary = Dict{Symbol, Vector{Float64}}
 
-mutable struct DistModel <: Model
+mutable struct DistModel <: TextModel
     config::TextConfig
     tokens::DistVocabulary
     sizes::Vector{Int}
