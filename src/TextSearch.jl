@@ -13,8 +13,10 @@ module TextSearch
     end
 
     include("textconfig.jl")
+    include("normalize.jl")
+    include("tokenize.jl")
     include("dvec.jl")
-    include("basicmodels.jl")
+    include("vmodel.jl")
     include("distmodel.jl")
     include("entmodel.jl")
     include("multi.jl")

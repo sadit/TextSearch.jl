@@ -1,7 +1,12 @@
 # This file is a part of TextSearch.jl
 # License is Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0.txt
 
-export TextModel, VectorModel, fit, vectorize, TfidfModel, TfModel, IdfModel, FreqModel, prune, prune_select_top
+export TextModel, VectorModel, fit, vectorize, prune, prune_select_top
+
+abstract type TfidfModel <: WeightingType end
+abstract type TfModel <: WeightingType end
+abstract type IdfModel <: WeightingType end
+abstract type FreqModel <: WeightingType end
 
 """
     abstract type Model
@@ -9,11 +14,6 @@ export TextModel, VectorModel, fit, vectorize, TfidfModel, TfModel, IdfModel, Fr
 An abstract type that represents a weighting model
 """
 abstract type TextModel end
-
-abstract type TfidfModel <: TextModel end
-abstract type TfModel <: TextModel end
-abstract type IdfModel <: TextModel end
-abstract type FreqModel <: TextModel end
 
 struct IdFreq
     id::Int32
@@ -31,13 +31,12 @@ mutable struct VectorModel <: TextModel
     config::TextConfig
     tokens::Vocabulary
     id2token::Dict{Int,Symbol}
-    # id2token::Dict{Int,Symbol}
     maxfreq::Int
     m::Int  # vocsize
     n::Int  # collection size
 end
 
-## function create_bow_from_corpus(config, corpus; batch_size=128)
+## function corpus_bow(config, corpus; batch_size=128)
 ##     m = nworkers()
 ##     n = length(corpus)
 ## 
@@ -56,21 +55,22 @@ end
 ##     sum(fetch.(L))
 ## end
 
-function create_bow_from_corpus(config, corpus)
+function corpus_bow(config::TextConfig, corpus::AbstractVector)
     bow = BOW()
     for text in corpus
         compute_bow(tokenize(config, text), bow)
     end
+
     bow
 end
 
 """
-    fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector)
+    VectorModel(config::TextConfig, corpus::AbstractVector)
 
 Trains a vector model using the text preprocessing configuration `config` and the input corpus. 
 """
-function fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector; minocc::Integer=1)
-    bow = create_bow_from_corpus(config, corpus)
+function VectorModel(config::TextConfig, corpus::AbstractVector; minocc::Integer=1)
+    bow = corpus_bow(config, corpus)
     tokens = Vocabulary()
     id2token = Dict{Int,Symbol}()
     i = 0

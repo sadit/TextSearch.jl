@@ -8,42 +8,30 @@ const text1 = "hello world!! @user;) #jello.world :)"
 const text2 = "a b c d e f g h i j k l m n o p q"
 const corpus = ["hello world :)", "@user;) excellent!!", "#jello world."]
 
-@testset "Character q-grams" begin
-    config = TextConfig()
-    config.group_usr = false
-    config.nlist = []
-    config.qlist = [3]
-    config.slist = []
-    a = [(p.first, p.second) for p in compute_bow(tokenize(config, text0))]
-    b = [(:rld, 1), (Symbol(" #j"), 1), (Symbol(" . "), 1), (Symbol(" ;)"), 1), (Symbol(" wo"), 1), (Symbol("#je"), 1), (Symbol(") #"), 1), (Symbol(". w"), 1), (Symbol(";) "), 1), (Symbol("@us"), 1), (:ell, 1), (Symbol("er "), 1), (:jel, 1), (:llo, 1), (Symbol("lo "), 1), (Symbol("o ."), 1), (:orl, 1), (Symbol("r ;"), 1), (:ser, 1), (:use, 1), (:wor, 1)]
-    @info setdiff(a, b)
-    @info setdiff(b, a)
-    @test sort(a) == sort(b)
+@testset "individual tokenizers" begin
+    @show text0
+    @test qgrams(text0, 1) == ["@", "u", "s", "e", "r", ";", ")", " ", "#", "j", "e", "l", "l", "o", ".", "w", "o", "r", "l", "d"] 
+    @test qgrams(text0, 3) == ["@us", "use", "ser", "er;", "r;)", ";) ", ") #", " #j", "#je", "jel", "ell", "llo", "lo.", "o.w", ".wo", "wor", "orl", "rld"]
+    @show text1
+    @test unigrams(text0) == ["@user", ";)", "#jello", ".", "world"]
+    @test unigrams(text1) == ["hello", "world", "!!", "@user", ";)", "#jello", ".", "world", ":)"]
 end
 
-@testset "Word n-grams" begin
-    config = TextConfig()
-    config.group_usr = false
-    config.nlist = [1, 2]
-    config.qlist = []
-    config.slist = []
-    a = [(p.first, p.second) for p in compute_bow(tokenize(config, text0))]
-    b = [(Symbol("#jello"), 1), (Symbol("#jello ."), 1), (:., 1), (Symbol(". world"), 1), (Symbol(";)"), 1), (Symbol(";) #jello"), 1), (Symbol("@user"), 1), (Symbol("@user ;)"), 1), (:world, 1)]
-    @test sort(a) == sort(b)
- end
-
-@testset "Skip-grams" begin
-    config = TextConfig()
-    config.nlist = []
-    config.qlist = []
-    config.del_punc = true
-    config.slist = [(2,1), (2, 2), (3, 1), (3, 2)]
-    #L = collect(compute_bow(text2, config))
-    #sort!(L)
-    a = [(p.first, p.second) for p in compute_bow(tokenize(config, text2))]
-    b = [(Symbol("a c"), 1), (Symbol("a c e"), 1), (Symbol("a d"), 1), (Symbol("a d g"), 1), (Symbol("b d"), 1), (Symbol("b d f"), 1), (Symbol("b e"), 1), (Symbol("b e h"), 1), (Symbol("c e"), 1), (Symbol("c e g"), 1), (Symbol("c f"), 1), (Symbol("c f i"), 1), (Symbol("d f"), 1), (Symbol("d f h"), 1), (Symbol("d g"), 1), (Symbol("d g j"), 1), (Symbol("e g"), 1), (Symbol("e g i"), 1), (Symbol("e h"), 1), (Symbol("e h k"), 1), (Symbol("f h"), 1), (Symbol("f h j"), 1), (Symbol("f i"), 1), (Symbol("f i l"), 1), (Symbol("g i"), 1), (Symbol("g i k"), 1), (Symbol("g j"), 1), (Symbol("g j m"), 1), (Symbol("h j"), 1), (Symbol("h j l"), 1), (Symbol("h k"), 1), (Symbol("h k n"), 1), (Symbol("i k"), 1), (Symbol("i k m"), 1), (Symbol("i l"), 1), (Symbol("i l o"), 1), (Symbol("j l"), 1), (Symbol("j l n"), 1), (Symbol("j m"), 1), (Symbol("j m p"), 1), (Symbol("k m"), 1), (Symbol("k m o"), 1), (Symbol("k n"), 1), (Symbol("k n q"), 1), (Symbol("l n"), 1), (Symbol("l n p"), 1), (Symbol("l o"), 1), (Symbol("m o"), 1), (Symbol("m o q"), 1), (Symbol("m p"), 1), (Symbol("n p"), 1), (Symbol("n q"), 1), (Symbol("o q"), 1)]
-    @test sort(a) == sort(b)
+@testset "Normalize and tokenize" begin
+    config = TextConfig(del_punc=true, group_usr=true, nlist=Int8[1, 2, 3])
+    t = TextSearch.normalize(config, text1)
+    @test t == [' ', 'h', 'e', 'l', 'l', 'o', ' ', 'w', 'o', 'r', 'l', 'd', ' ', ' ', '_', 'u', 's', 'r', ' ', ' ', '#', 'j', 'e', 'l', 'l', 'o', ' ', 'w', 'o', 'r', 'l', 'd', ' ', ' ']
+    @test tokenize(config, t) == ["hello", "world", "_usr", "#jello", "world", "hello world", "world _usr", "_usr #jello", "#jello world", "hello world _usr", "world _usr #jello", "_usr #jello world"]
 end
+
+@testset "Tokenize skipgrams" begin
+    config = TextConfig(del_punc=true, group_usr=true, slist=[Skipgram(2,1)])
+    t = TextSearch.normalize(config, text1)
+    @test t == [' ', 'h', 'e', 'l', 'l', 'o', ' ', 'w', 'o', 'r', 'l', 'd', ' ', ' ', '_', 'u', 's', 'r', ' ', ' ', '#', 'j', 'e', 'l', 'l', 'o', ' ', 'w', 'o', 'r', 'l', 'd', ' ', ' ']
+    @info join(t)
+    @test tokenize(config, t) == ["hello", "world", "_usr", "#jello", "world", "hello _usr", "world #jello", "_usr world"]
+end
+exit(0)
 
 @testset "Tokenizer, DVEC, and vectorize" begin # test_vmodel
     config = TextConfig()
