@@ -15,67 +15,63 @@ const corpus = ["hello world :)", "@user;) excellent!!", "#jello world."]
     @show text1
     @test unigrams(text0) == ["@user", ";)", "#jello", ".", "world"]
     @test unigrams(text1) == ["hello", "world", "!!", "@user", ";)", "#jello", ".", "world", ":)"]
+    @test unigrams(corpus[1]) == ["hello", "world", ":)"]
+    @test unigrams(corpus[2]) == ["@user", ";)", "excellent", "!!"]
+    @test unigrams(corpus[3]) == ["#jello", "world", "."]
+    @show corpus
 end
 
 @testset "Normalize and tokenize" begin
     config = TextConfig(del_punc=true, group_usr=true, nlist=Int8[1, 2, 3])
-    t = TextSearch.normalize(config, text1)
+    t = normalize_text(config, text1)
     @test t == [' ', 'h', 'e', 'l', 'l', 'o', ' ', 'w', 'o', 'r', 'l', 'd', ' ', ' ', '_', 'u', 's', 'r', ' ', ' ', '#', 'j', 'e', 'l', 'l', 'o', ' ', 'w', 'o', 'r', 'l', 'd', ' ', ' ']
     @test tokenize(config, t) == ["hello", "world", "_usr", "#jello", "world", "hello world", "world _usr", "_usr #jello", "#jello world", "hello world _usr", "world _usr #jello", "_usr #jello world"]
 end
 
 @testset "Tokenize skipgrams" begin
     config = TextConfig(del_punc=true, group_usr=true, slist=[Skipgram(2,1)])
-    t = TextSearch.normalize(config, text1)
+    t = normalize_text(config, text1)
     @test t == [' ', 'h', 'e', 'l', 'l', 'o', ' ', 'w', 'o', 'r', 'l', 'd', ' ', ' ', '_', 'u', 's', 'r', ' ', ' ', '#', 'j', 'e', 'l', 'l', 'o', ' ', 'w', 'o', 'r', 'l', 'd', ' ', ' ']
     @info join(t)
     @test tokenize(config, t) == ["hello", "world", "_usr", "#jello", "world", "hello _usr", "world #jello", "_usr world"]
 end
-exit(0)
 
 @testset "Tokenizer, DVEC, and vectorize" begin # test_vmodel
-    config = TextConfig()
-    config.nlist = [1]
-    config.qlist = []
-    config.slist = []
-    config.group_usr = false
-
-    @test tokenize(config, text1) == [Symbol(h) for h in ["hello", "world", "!!",  "@user", ";)", "#jello", ".", "world", ":)"]]
-    model = fit(VectorModel, config, corpus)
-    x = vectorize(model, TfModel, text1)
+    config = TextConfig(group_usr=true, nlist=Int8[1])
+    #t = normalize_text(config, text1)
+    #tokenize(config, t)
+    model = VectorModel(FreqWeighting, compute_bow_multimessage(config, corpus))
+    x = vectorize(model, compute_bow(config, text1))
+    @show corpus
+    @show text1
     @test nnz(x) == 8
-    x = vectorize(model, TfModel, text2)
+    x = vectorize(model, compute_bow(config, text2))
     @test nnz(x) == 0
 end
 
-    
 const sentiment_corpus = ["me gusta", "me encanta", "lo odio", "odio esto", "me encanta esto LOL!"]
 const sentiment_labels = categorical(["pos", "pos", "neg", "neg", "pos"])
 const sentiment_msg = "lol, esto me encanta"
 
 @testset "DistModel tests" begin
-    config = TextConfig()
-    config.nlist = [1]
-    
-    dmodel = fit(DistModel, config, sentiment_corpus, sentiment_labels)
+    config = TextConfig(nlist=Int8[1])
+    corpus_ = compute_bow_list(config, sentiment_corpus)
+    @show corpus_
+    dmodel = DistModel(corpus_, sentiment_labels)
     @show sentiment_msg
     @show dmodel
-    #a = vectorize(dmodel, TfIdf, sentiment_msg)
-    #b = [(:me1,1.0),(:me2,0.0),(:encanta1,1.0),(:encanta2,0.0),(:esto1,0.4),(:esto2,0.6),(:lol1,1.0),(:lol2,0.0)]
-    #@test string(a) == string(b)
-
+    # test?
 end
 
 @testset "EntModel tests" begin
-    config = TextConfig()
-    config.nlist = [1]
-    dmodel = fit(DistModel, config, sentiment_corpus, sentiment_labels, weights=:balance, smooth=1, minocc=1)
-    emodel = fit(EntModel, dmodel)
-    emodel_ = fit(EntModel, config, sentiment_corpus, sentiment_labels, weights=:balance, smooth=1, minocc=1)
-    a = vectorize(emodel, sentiment_corpus)
-    b = vectorize(emodel_, sentiment_corpus)
+    config = TextConfig(nlist=Int8[1])
+    dmodel = DistModel(compute_bow_list(config, sentiment_corpus), sentiment_labels, weights=:balance, smooth=1, minocc=1)
+    emodel = EntModel(dmodel, EntWeighting)
+    emodel_ = EntModel(EntWeighting, compute_bow_list(config, sentiment_corpus), sentiment_labels, weights=:balance, smooth=1, minocc=1)
+    a = vectorize(emodel, compute_bow_multimessage(config, sentiment_corpus))
+    b = vectorize(emodel_, compute_bow_multimessage(config, sentiment_corpus))
     @test 0.999 < dot(a, b)
- end
+end
 
 
 @testset "distances" begin
@@ -102,6 +98,8 @@ end
     @test (1/9) * u == y
     @test dot(normalize!(u + v - v), normalize!(u)) > 0.99
 end
+
+exit(0)
 
 _corpus = [
     "la casa roja",

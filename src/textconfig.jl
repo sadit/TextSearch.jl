@@ -1,7 +1,7 @@
 # This file is a part of TextSearch.jl
 # License is Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0.txt
 
-export TextConfig, WeightingType, TfidfModel, TfModel, IdfModel, FreqModel, Skipgram
+export TextConfig, WeightingType, Skipgram
 
 # SKIP_WORDS = set(["…", "..", "...", "...."])
 
@@ -12,7 +12,7 @@ struct Skipgram
     skip::Int8
 end
 
-struct TextConfig{WeightingType_<:WeightingType}
+struct TextConfig
     del_diac::Bool
     del_dup::Bool
     del_punc::Bool
@@ -24,7 +24,6 @@ struct TextConfig{WeightingType_<:WeightingType}
     qlist::Vector{Int8}
     nlist::Vector{Int8}
     slist::Vector{Skipgram}
-    weighting::Type{WeightingType_}
 end
 
 function TextConfig(;
@@ -38,27 +37,26 @@ function TextConfig(;
         lc::Bool=true,
         qlist::Vector{Int8}=Int8[],
         nlist::Vector{Int8}=Int8[1],
-        slist::Vector{Skipgram}=Skipgram[],
-        weighting=TfidfModel
+        slist::Vector{Skipgram}=Skipgram[]
     )
     TextConfig(del_diac, del_dup, del_punc, group_num, group_url, group_usr, group_emo, lc,
-        qlist, nlist, slist, weighting)
+        qlist, nlist, slist)
 end
 
 function Base.copy(c;
-    del_diac=c.del_diac,
-    del_dup=c.del_dup,
-    del_punc=c.del_punc,
-    group_num=c.group_num,
-    group_url=c.group_url,
-    group_usr=c.group_usr,
-    group_emo=c.group_emo,
-    lc=c.lc,
-    qlist=c.qlist,
-    nlist=c.nlist,
-    slist=c.slist,
-    weighting=c.weighting)
+        del_diac=c.del_diac,
+        del_dup=c.del_dup,
+        del_punc=c.del_punc,
+        group_num=c.group_num,
+        group_url=c.group_url,
+        group_usr=c.group_usr,
+        group_emo=c.group_emo,
+        lc=c.lc,
+        qlist=c.qlist,
+        nlist=c.nlist,
+        slist=c.slist
+    )
     
     TextConfig(del_diac, del_dup, del_punc, group_num, group_url, group_usr, group_emo,
-        lc, qlist, nlist, slist, weighting)
+        lc, qlist, nlist, slist)
 end

@@ -1,25 +1,24 @@
 # This file is a part of TextSearch.jl
 # License is Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0.txt
 using CategoricalArrays
-export DistModel, feed!, fix!, prune
+export DistModel, push!, fix!, prune
 
 const DistVocabulary = Dict{Symbol, Vector{Float64}}
 
 mutable struct DistModel <: TextModel
-    config::TextConfig
     tokens::DistVocabulary
     sizes::Vector{Int}
     initial_dist::Vector{Float64}
-    m::Int
-    n::Int
+    m::Int  # vocabulary size (preserved after vocabulary pruning)   
+    n::Int  # collection size
 end
 
 const EMPTY_TOKEN_DIST = Int[]
 
 """
-    fit(::Type{DistModel}, config::TextConfig, corpus, y::CategoricalArray; nclasses=0, weights=nothing, minocc=1, fix=true)
+    DistModel(tokenized_corpus, y::CategoricalArray; nclasses=0, weights=nothing, minocc=1, fix=true)
 
-Creates a DistModel object using the specified `corpus` (an array of strings or an array of arrays of strings);
+Creates a DistModel object using the specified `tokenized_corpus`
 and its associated labels `y`. Optional parameters:
 - `nclasses`: the number of classes
 - `weights`: It has three different kind of values
@@ -30,14 +29,16 @@ and its associated labels `y`. Optional parameters:
 - `minocc`: minimum population to consider a token (without considering the smoothing factor).
 - `fix`: if true, it stores the empirical probabilities instead of frequencies
 """
-function fit(::Type{DistModel}, config::TextConfig, corpus, y::CategoricalArray; nclasses=0, weights=:balance, smooth::Real=0, minocc::Integer=1, fix=false)
+function DistModel(corpus::AbstractVector{BOW}, y::CategoricalArray; nclasses=0, weights=:balance, smooth::Real=0, minocc::Integer=1, fix=false)
     if nclasses == 0
         nclasses = levels(y) |> length
     end
 	
     smooth = fill(convert(Float64, smooth), nclasses)
-    model = DistModel(config, DistVocabulary(), zeros(Int, nclasses), smooth, 0, 0)
-    feed!(model, corpus, y)
+    model = DistModel(DistVocabulary(), zeros(Int, nclasses), smooth, 0, 0)
+    for (bow, label) in zip(corpus, y.refs)
+        push!(model, bow, label)
+    end
 
 	prune(model, first(smooth) * nclasses + minocc)
 
@@ -56,9 +57,7 @@ function fit(::Type{DistModel}, config::TextConfig, corpus, y::CategoricalArray;
         normalize!(model, weights)
     end
 
-    if fix
-        fix!(model)
-    end
+    fix && fix!(model)
 
     model
 end
@@ -79,28 +78,25 @@ end
 
 
 """
-    feed!(model::DistModel, corpus, y)
+    push!(model::DistModel, bow::BOW, y)
 
-DistModel objects support for incremental feed if `fix!` method is not called on `fit`
+Adds an example to the model
 """
-function feed!(model::DistModel, corpus, y::CategoricalArray)
-    config = model.config
+function Base.push!(model::DistModel, bow::BOW, label::Integer)
     nclasses = length(model.sizes)
 
-    for (klass, text) in zip(y.refs, corpus)
-        for token in tokenize(config, text)
-            token_dist = get(model.tokens, token, EMPTY_TOKEN_DIST)
-            if length(token_dist) == 0
-                token_dist = copy(model.initial_dist)
-                model.tokens[token] = token_dist
-            end
-            token_dist[klass] += 1
+    for (sym, freq) in bow
+        token_dist = get(model.tokens, sym, EMPTY_TOKEN_DIST)
+        if length(token_dist) == 0
+            token_dist = copy(model.initial_dist)
+            model.tokens[sym] = token_dist
         end
 
-        model.sizes[klass] += 1
+        token_dist[label] += freq
     end
-    
-    model.n += length(corpus)
+
+    model.sizes[label] += 1
+    model.n += 1
     model.m = length(model.tokens)
     model
 end
@@ -142,7 +138,6 @@ function fix!(model::DistModel, use_soft_max=false)
 			for i in 1:nclasses
 				dist[i] /= s
 			end
-
 		end
 	end
     model

@@ -1,12 +1,12 @@
 # This file is a part of TextSearch.jl
 # License is Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0.txt
 
-export TextModel, VectorModel, fit, vectorize, prune, prune_select_top
+export TextModel, VectorModel, TfidfWeighting, TfWeighting, IdfWeighting, FreqWeighting, fit, vectorize, prune, prune_select_top
 
-abstract type TfidfModel <: WeightingType end
-abstract type TfModel <: WeightingType end
-abstract type IdfModel <: WeightingType end
-abstract type FreqModel <: WeightingType end
+abstract type TfidfWeighting <: WeightingType end
+abstract type TfWeighting <: WeightingType end
+abstract type IdfWeighting <: WeightingType end
+abstract type FreqWeighting <: WeightingType end
 
 """
     abstract type Model
@@ -27,8 +27,8 @@ const Vocabulary = Dict{Symbol, IdFreq}
 
 Models a text through a vector space
 """
-mutable struct VectorModel <: TextModel
-    config::TextConfig
+mutable struct VectorModel{W<:WeightingType} <: TextModel
+    weighting::Type{W}
     tokens::Vocabulary
     id2token::Dict{Int,Symbol}
     maxfreq::Int
@@ -36,46 +36,20 @@ mutable struct VectorModel <: TextModel
     n::Int  # collection size
 end
 
-## function corpus_bow(config, corpus; batch_size=128)
-##     m = nworkers()
-##     n = length(corpus)
-## 
-##     L = []
-##     for _corpus in Iterators.partition(corpus, batch_size)
-##         b = @spawn begin
-##             bow = BOW()
-##             for text in _corpus
-##                 compute_bow(tokenize(config, text), bow)
-##             end
-##             bow
-##         end
-##         push!(L, b)
-##     end
-## 
-##     sum(fetch.(L))
-## end
-
-function corpus_bow(config::TextConfig, corpus::AbstractVector)
-    bow = BOW()
-    for text in corpus
-        compute_bow(tokenize(config, text), bow)
-    end
-
-    bow
-end
+Base.copy(e::VectorModel; weighting=e.weighting, tokens=e.tokens, id2token=e.id2token, maxfreq=e.maxfreq, m=e.m, n=e.n) =
+    VectorModel(weighting, tokens, id2token, maxfreq, m, n)
 
 """
-    VectorModel(config::TextConfig, corpus::AbstractVector)
+    VectorModel(weighting::Type{W}, corpus::BOW; minocc::Integer=1) where {W<:WeightingType}
 
-Trains a vector model using the text preprocessing configuration `config` and the input corpus. 
+Trains a vector model using the input corpus. 
 """
-function VectorModel(config::TextConfig, corpus::AbstractVector; minocc::Integer=1)
-    bow = corpus_bow(config, corpus)
+function VectorModel(weighting::Type{W}, corpus::BOW; minocc::Integer=1) where {W<:WeightingType}
     tokens = Vocabulary()
     id2token = Dict{Int,Symbol}()
     i = 0
     maxfreq = 0
-    for (t, freq) in bow
+    for (t, freq) in corpus
 		freq < minocc && continue
         i += 1
         id2token[i] = t
@@ -83,7 +57,7 @@ function VectorModel(config::TextConfig, corpus::AbstractVector; minocc::Integer
         maxfreq = max(maxfreq, freq)
     end
 
-    VectorModel(config, tokens, id2token, Int(maxfreq), length(tokens), length(corpus))
+    VectorModel(weighting, tokens, id2token, Int(maxfreq), length(tokens), length(corpus))
 end
 
 """
@@ -102,20 +76,20 @@ function prune(model::VectorModel, minfreq::Integer, rank::Integer)
     end
 
     id2token = Dict(idfreq.id => t for (t, idfreq) in tokens)
-    VectorModel(model.config, tokens, id2token, model.maxfreq, model.m, model.n)
+    VectorModel(model.weighting, tokens, id2token, model.maxfreq, model.m, model.n)
 end
 
 """
-    prune_select_top(model::VectorModel, k::Integer, kind::Type{T}=IdfModel)
-    prune_select_top(model::VectorModel, ratio::AbstractFloat, kind::Type{T}=IdfModel)
+    prune_select_top(model::VectorModel, k::Integer, kind::Type{T}=IdfWeighting)
+    prune_select_top(model::VectorModel, ratio::AbstractFloat, kind::Type{T}=IdfWeighting)
 
-Creates a new model with the best `k` tokens from `model` based on the `kind` scheme; kind must be either `IdfModel` or `FreqModel`.
+Creates a new model with the best `k` tokens from `model` based on the `kind` scheme; kind must be either `IdfWeighting` or `FreqWeighting`.
 `ratio` is a floating point between 0 and 1 indicating the ratio of the vocabulary to be kept
 """
-function prune_select_top(model::VectorModel, k::Integer, kind::Type{T}=IdfModel) where T <: Union{IdfModel,FreqModel}
+function prune_select_top(model::VectorModel, k::Integer, kind::Type{T}=IdfWeighting) where T <: Union{IdfWeighting,FreqWeighting}
     tokens = Vocabulary()
     maxfreq = 0
-    if kind == IdfModel
+    if kind == IdfWeighting
         X = [(t, idfreq, _weight(kind, 0, 0, model.n, idfreq.freq)) for (t, idfreq) in model.tokens]
         sort!(X, by=x->x[end], rev=true)
         for i in 1:k
@@ -124,7 +98,7 @@ function prune_select_top(model::VectorModel, k::Integer, kind::Type{T}=IdfModel
             maxfreq = max(maxfreq, idfreq.freq)
         end
 
-    else kind == FreqModel
+    else kind == FreqWeighting
         X = [(t, idfreq) for (t, idfreq) in model.tokens]
         sort!(X, by=x->x[end].freq, rev=true)
         for i in 1:k
@@ -135,44 +109,23 @@ function prune_select_top(model::VectorModel, k::Integer, kind::Type{T}=IdfModel
     end
 
     id2token = Dict(idfreq.id => t for (t, idfreq) in tokens)
-    VectorModel(model.config, tokens, id2token, maxfreq, model.m, model.n)
+    VectorModel(model.weigthing, tokens, id2token, maxfreq, model.m, model.n)
 end
 
-prune_select_top(model::VectorModel, ratio::AbstractFloat, kind=IdfModel) = prune_select_top(model, floor(Int, length(model.tokens) * ratio), kind)
+prune_select_top(model::VectorModel, ratio::AbstractFloat, kind=IdfWeighting) = prune_select_top(model, floor(Int, length(model.tokens) * ratio), kind)
 
 """
-    vectorize(model::VectorModel, weighting::Type, data; normalize=true)::Dict{Int, Float64}
-
-Computes `data`'s weighted bow of words using the given model and weighting scheme;
-the vector is normalized to the unit normed vector if normalize is true
-"""
-function vectorize(model::VectorModel, weighting::Type, data::DataType; normalize=true) where DataType <: Union{AbstractString, AbstractVector{S}} where S <: AbstractString
-    bow = compute_bow(tokenize(model.config, data))
-    vectorize(model, weighting, bow, maximum(bow), normalize=normalize)
-end
-
-"""
-    vectorize(model::VectorModel, weighting::Type, bow::BOW, maxfreq=0; normalize=true) where Tv<:Real
+    vectorize(model::VectorModel, bow::BOW, maxfreq::Integer=maximum(bow); normalize=true) where Tv<:Real
 
 Computes a weighted vector using the given bag of words and the specified weighting scheme.
 """
-function vectorize(model::VectorModel, weighting::Type, bow::BOW, maxfreq=0; normalize=true)
-    if maxfreq == 0
-        for v in values(bow)
-            maxfreq = max(maxfreq, v)
-        end
-    end
-
+function vectorize(model::VectorModel, bow::BOW, maxfreq::Integer=maximum(bow); normalize=true)
     vec = SVEC()
     for (token, freq) in bow
         t = get(model.tokens, token, nothing)
+        t === nothing && continue
 
-        if t === nothing
-            continue
-        end
-
-        w = _weight(weighting, freq, maxfreq, model.n, t.freq)
-
+        w = _weight(model.weighting, freq, maxfreq, model.n, t.freq)
         if w > 1e-6
             vec[t.id] = w
         end
@@ -181,13 +134,6 @@ function vectorize(model::VectorModel, weighting::Type, bow::BOW, maxfreq=0; nor
     normalize && normalize!(vec)
     vec
 end
-
-"""
-    vectorize(model::VectorModel, data; normalize=true)
-
-Computes the vector of data using TfidfModel as default
-"""
-vectorize(model::VectorModel, data; normalize=true) = vectorize(model, TfidfModel, data, normalize=normalize)
 
 function broadcastable(model::VectorModel)
     (model,)
@@ -198,18 +144,18 @@ end
 
 Computes a weight for the given stats using scheme T
 """
-function _weight(::Type{TfidfModel}, freq::Real, maxfreq::Real, n::Real, global_freq::Real)::Float64
+function _weight(::Type{TfidfWeighting}, freq::Real, maxfreq::Real, n::Real, global_freq::Real)::Float64
     (freq / maxfreq) * log(2, 1 + n / global_freq)
 end
 
-function _weight(::Type{TfModel}, freq::Real, maxfreq::Real, n::Real, global_freq::Real)::Float64
+function _weight(::Type{TfWeighting}, freq::Real, maxfreq::Real, n::Real, global_freq::Real)::Float64
     freq / maxfreq
 end
 
-function _weight(::Type{IdfModel}, freq::Real, maxfreq::Real, n::Real, global_freq::Real)::Float64
+function _weight(::Type{IdfWeighting}, freq::Real, maxfreq::Real, n::Real, global_freq::Real)::Float64
     log(2, n / global_freq)
 end
 
-function _weight(::Type{FreqModel}, freq::Real, maxfreq::Real, n::Real, global_freq::Real)::Float64
+function _weight(::Type{FreqWeighting}, freq::Real, maxfreq::Real, n::Real, global_freq::Real)::Float64
     freq
 end

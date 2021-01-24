@@ -16,6 +16,7 @@ module TextSearch
     include("normalize.jl")
     include("tokenize.jl")
     include("dvec.jl")
+    include("bow.jl")
     include("vmodel.jl")
     include("distmodel.jl")
     include("entmodel.jl")

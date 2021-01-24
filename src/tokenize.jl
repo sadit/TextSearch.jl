@@ -1,76 +1,55 @@
 # This file is a part of TextSearch.jl
 # License is Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0.txt
 
-export tokenize, qgrams, unigrams
+export tokenize_multimessage, tokenize, qgrams, unigrams
 
-"""
-    tokenize(config::TextConfig, arr::AbstractVector)::Vector{Symbol}
+tokenize(config::TextConfig, text::AbstractString) = tokenize(config, normalize_text(config, text))
 
-Tokenizes an array of strings
-"""
-function tokenize(config::TextConfig, arr::AbstractVector{S})::Vector{Symbol} where S <: AbstractString
-    L = Symbol[]
-    n = length(arr)
-    sizehint!(L, (length(config.nlist) + length(config.slist)) * (div(n, 2) + 1) + length(config.qlist) * n)
-    buff = IOBuffer(Vector{UInt8}(undef, 16), write=true)
-    for text in arr
-        if config.group_url
-            text = replace(text, RE_URL => "_url")
-        end
 
-        t = normalize(config, text)
-        tokenize_(config, t, L, buff)
-    end
-
-    L
-end
-
-tokenize(config::TextConfig, text::AbstractString) = tokenize(config, Vector{Char}(text))
-
-function tokenize(config::TextConfig, text::Vector{Char})
-    L = String[]
-    n = length(text)
-    sizehint!(L, (length(config.nlist) + length(config.slist)) * (div(n, 2) + 1) + length(config.qlist) * n)
-    buff = IOBuffer(Vector{UInt8}(undef, 16), write=true)
-    tokenize(config, Vector{Char}(text), L, buff)
-end
-
-function tokenize(config::TextConfig, textlist::AbstractVector)
-    L = String[]
+function tokenize_multimessage(config::TextConfig, textlist::AbstractVector;
+        output=String[],
+        normalizebuffer=Char[],
+        buff=IOBuffer(Vector{UInt8}(undef, 16), write=true)
+    )
     n = length(textlist) * length(first(textlist))
-    sizehint!(L, (length(config.nlist) + length(config.slist)) * (div(n, 2) + 1) + length(config.qlist) * n)
-    buff = IOBuffer(Vector{UInt8}(undef, 16), write=true)
+    sizehint!(output, (length(config.nlist) + length(config.slist)) * (div(n, 2) + 1) + length(config.qlist) * n)
+
     for text in textlist
         if text isa AbstractString
-            tokenize(config, Vector{Char}(text), L, buff)
+            empty!(normalizebuffer)
+            normalize_text(config, text, output)
+            tokenize(config, normalizebuffer; output=output, buff=buff)
         else
-            tokenize(config, text, L, buff)
+            tokenize(config, text, output=output, buff=buff)
         end
     end
-    
-    L
+
+    output
 end
 
-function tokenize(config::TextConfig, text::Vector{Char}, L::Vector{String}, buff::IOBuffer)
+function tokenize(config::TextConfig, text::Vector{Char};
+        output::Vector{String}=String[],
+        buff::IOBuffer=IOBuffer(Vector{UInt8}(undef, 16), write=true)
+    )
     for q in config.qlist
-        qgrams(text, q, L)
+        qgrams(text, q, output)
     end
 
     if length(config.nlist) > 0 || length(config.slist) > 0
-        n1 = length(L)
-        unigrams(text, L, buff)  # unigrams are always activated if any |nlist| > 0 or |slist| > 0
-        word_list = @view L[n1+1:length(L)]
+        n1 = length(output)
+        unigrams(text, output, buff)  # unigrams are always activated if any |nlist| > 0 or |slist| > 0
+        word_list = @view output[n1+1:length(output)]
 
         for q in config.nlist
-            q != 1 && nwords(word_list, q, L, buff)
+            q != 1 && nwords(word_list, q, output, buff)
         end
 
         for q in config.slist
-            skipgrams(word_list, q, L)
+            skipgrams(word_list, q, output)
         end
     end
 
-    L
+    output
 end
 
 qgrams(text::AbstractString, q::Integer) = qgrams(Vector{Char}(text), q, String[])
@@ -109,20 +88,24 @@ Performs the word tokenization
 """
 function unigrams(text::Vector{Char}, L::Vector{String}, buff::IOBuffer)
     n = length(text)
+    ## write(buff, '~')
     @inbounds for i in 1:n
         c = text[i]
 
         if c == BLANK
             push_token!(L, buff)
+            ## write(buff, '~')
         elseif i > 1
             if text[i-1] in PUNCTUACTION && !(c in PUNCTUACTION) 
                 # flushing from punctuaction to non punctuaction
                 push_token!(L, buff)
+                ## write(buff, '~')
                 write(buff, c)
                 continue
             elseif !(text[i-1] in PUNCTUACTION_BLANK) && c in PUNCTUACTION
                 # flushing from neither punctuaction nor blank to some punctuaction symbol
                 push_token!(L, buff)
+                ## write(buff, '~')
                 write(buff, c)
                 continue
             else
@@ -134,7 +117,6 @@ function unigrams(text::Vector{Char}, L::Vector{String}, buff::IOBuffer)
     end
 
     push_token!(L, buff)
-
     L
 end
 

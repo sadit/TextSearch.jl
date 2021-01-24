@@ -2,17 +2,24 @@
 # License is Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0.txt
 
 import Base: push!, append!
-export EntModel, EntTfModel, EntTpModel
+export EntModel, EntWeighting, EntTfWeighting, EntTpWeighting
+
+abstract type EntWeighting <: WeightingType end
+abstract type EntTfWeighting <: WeightingType end
+abstract type EntTpWeighting <: WeightingType end
 
 const WeightedVocabulary = Dict{Symbol,IdWeight}
 
-mutable struct EntModel <: TextModel
-    config::TextConfig
+mutable struct EntModel{WeightingType_<:WeightingType} <: TextModel
+    weighting::Type{WeightingType_}
     tokens::WeightedVocabulary
     id2token::Dict{Int32,Symbol}
     m::Int
     n::Int
 end
+
+Base.copy(e::EntModel; weighting=e.weighting, tokens=e.tokens, id2token=e.id2token, m=e.m, n=e.n) =
+    EntModel(weighting, tokens, id2token, m, n)
 
 function push!(model::EntModel, p::Pair)
     model.m += 1
@@ -27,8 +34,8 @@ function append!(model::EntModel, weighted_words)
 end
 
 """
-    fit(::Type{EntModel}, model::DistModel; lower=0.0)
-    fit(::Type{EntModel}, config::TextConfig, corpus, y; smooth=3, minocc=1, weights=:balance, lower=0.0, nclasses=0)
+    EntModel(model::DistModel, weighting::Type{W}; lower=0.0) where {W<:WeightingType}
+    EntModel(config::TextConfig, weighting::Type{W}, corpus, y; smooth=3, minocc=1, weights=:balance, lower=0.0, nclasses=0)
 
 Fits an EntModel using the already fitted DistModel. It accepts only symbols with a final weight higher or equal than `lower`.
 Parameters:
@@ -40,7 +47,7 @@ Parameters:
     - `nclasses` specifies the number of classes
 	- `minocc`: minimum population to consider a token (without considering the smoothing factor).
 """
-function fit(::Type{EntModel}, model::DistModel; lower=0.0)
+function EntModel(model::DistModel, weighting::Type{W}; lower=0.0) where {W<:WeightingType}
     tokens = WeightedVocabulary()
     nclasses = length(model.sizes)
     maxent = log2(nclasses)
@@ -67,12 +74,12 @@ function fit(::Type{EntModel}, model::DistModel; lower=0.0)
     end
 
     id2token = Dict(w.id => t for (t, w) in tokens)
-    EntModel(model.config, tokens, id2token, model.m, model.n)
+    EntModel(weighting, tokens, id2token, model.m, model.n)
 end
 
-function fit(::Type{EntModel}, config::TextConfig, corpus, y; smooth=3, minocc=3, weights=:balance, lower=0.0, nclasses=0)
-    dmodel = fit(DistModel, config, corpus, y, nclasses=nclasses, weights=weights, fix=false, smooth=smooth, minocc=minocc)
-    fit(EntModel, dmodel, lower=lower)
+function EntModel(weigthing::Type{W}, corpus, y; smooth=3, minocc=3, weights=:balance, lower=0.0, nclasses=0) where {W<:WeightingType}
+    dmodel = DistModel(corpus, y, nclasses=nclasses, weights=weights, fix=false, smooth=smooth, minocc=minocc)
+    EntModel(dmodel, weigthing, lower=lower)
 end
 
 """
@@ -90,7 +97,7 @@ function prune(model::EntModel, lower::Float64)
     end
     
     id2token = Dict(w.id => t for (t, w) in tokens)
-    EntModel(model.config, tokens, id2token, model.m, model.n)
+    EntModel(model.weigthing, tokens, id2token, model.m, model.n)
 end
 
 """
@@ -109,39 +116,20 @@ function prune_select_top(model::EntModel, k::Int)
     end
 
     id2token = Dict(w.id => t for (t, w) in tokens)
-    EntModel(model.config, tokens, id2token, model.m, model.n)
+    EntModel(model, model.weighting, tokens, id2token, model.m, model.n)
 end
 
 prune_select_top(model::EntModel, ratio::AbstractFloat) = prune_select_top(model, floor(Int, length(model.tokens) * ratio))
 
-abstract type EntTfModel end
-abstract type EntTpModel end
 
 """
-    vectorize(model::EntModel, data)
-    vectorize(model::EntModel, scheme::Type, data)
+    vectorize(model::EntModel, bow::BOW; normalize=true)
 
 Computes a weighted bow for the given `data`; the vector is scaled to the unit if `normalize` is true;
-`data` is an string or an array of strings. The weighting scheme may be any of `EntTfModel`, `EntTpModel`, or `EntModel`;
-the default scheme is EntTpModel
-"""
-function vectorize(model::EntModel, scheme::Type{T}, data::DataType; normalize=true) where
-        T <: Union{EntTfModel,EntTpModel,EntModel} where
-        DataType <: Union{AbstractString, AbstractVector{S}} where
-        S <: AbstractString
-
-    bow = compute_bow(tokenize(model.config, data))
-    vectorize(model, scheme, bow, normalize=normalize)
-end
+`data` is a bag of words.
 
 """
-    vectorize(model::EntModel, scheme::Type{T}, bow::BOW; normalize=true)
-
-Computes a weighted bow for the given `data`; the vector is scaled to the unit if `normalize` is true;
-`data` is an bag of words. The weighting scheme may be any of `EntTfModel`, `EntTpModel`, or `EntModel`
-
-"""
-function vectorize(model::EntModel, scheme::Type{T}, bow::BOW; normalize=true) where T <: Union{EntTfModel,EntTpModel,EntModel} where Tv<:Real
+function vectorize(model::EntModel, bow::BOW; normalize=true)
     len = 0
 
     for v in values(bow)
@@ -155,7 +143,7 @@ function vectorize(model::EntModel, scheme::Type{T}, bow::BOW; normalize=true) w
             continue
         end
     
-        w = _weight(scheme, t.weight, freq,  len)
+        w = _weight(model.weighting, t.weight, freq,  len)
         if w > 1e-6
             vec[t.id] = w
         end
@@ -165,11 +153,9 @@ function vectorize(model::EntModel, scheme::Type{T}, bow::BOW; normalize=true) w
     vec    
 end
 
-vectorize(model::EntModel, data; normalize=true) = vectorize(model, EntTpModel, data, normalize=normalize)
-
-_weight(::Type{EntTpModel}, ent, freq, n) = ent * freq / n
-_weight(::Type{EntTfModel}, ent, freq, n) = ent * freq
-_weight(::Type{EntModel}, ent, freq, n) = ent
+_weight(::Type{EntTpWeighting}, ent, freq, n) = ent * freq / n
+_weight(::Type{EntTfWeighting}, ent, freq, n) = ent * freq
+_weight(::Type{EntWeighting}, ent, freq, n) = ent
 
 function broadcastable(model::EntModel)
     (model,)

@@ -47,7 +47,7 @@ end
 
 Inserts a weighted bag of words (BOW) into the index.
 
-See [compute_bow](@ref) to compute a BOW from a text
+See [docbow](@ref) to compute a BOW from a text
 """
 function push!(index::InvIndex, p::Pair{Int,SVEC})
     index.n += 1

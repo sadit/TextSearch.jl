@@ -6,7 +6,7 @@ import LinearAlgebra: dot, norm, normalize!
 import SparseArrays: nnz
 using SimilaritySearch
 import SimilaritySearch: evaluate
-export DVEC, compute_bow, centroid, evaluate, NormalizedAngleDistance, NormalizedCosineDistance, AngleDistance, NormalizedAngleDistance
+export DVEC, centroid, evaluate, NormalizedAngleDistance, NormalizedCosineDistance, AngleDistance, NormalizedAngleDistance
 
 const DVEC{Ti,Tv<:Real} = Dict{Ti,Tv}
 const BOW = DVEC{Symbol,Int}
@@ -29,24 +29,6 @@ function Base.maximum(voc::DVEC)
 
     m
 end
-
-"""
-    compute_bow(tokenlist::AbstractVector{Symbol}, voc::BOW)
-
-Updates a DVEC using the given list of tokens; returns `voc`
-"""
-function compute_bow(tokenlist::AbstractVector{Symbol}, voc::BOW)
-    for sym in tokenlist
-        m = get(voc, sym, 0) + 1
-        voc[sym] = m
-    end
-
-    voc
-end
-
-
-# these are needed to call `compute_bow` for symbol's list but also for simplicity of the API
-compute_bow(tokenlist::AbstractVector{Symbol}) = compute_bow(tokenlist, BOW())
 
 """
     normalize!(bow::DVEC)
