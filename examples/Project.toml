@@ -1,0 +1,10 @@
+[deps]
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
+CodecZlib = "944b1d66-785c-5afd-91f1-9de20f533193"
+JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
+MLDataUtils = "cc2ba9b6-d476-5e6d-8eaf-a92d5412d41d"
+Pluto = "c3e4b0f8-55cb-11ea-2926-15256bba5781"
+PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
+SimilaritySearch = "053f045d-5466-53fd-b400-a066f88fe02a"
+StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
+TextSearch = "7f6f6c8a-3b03-11e9-223d-e7d88259bd6c"
