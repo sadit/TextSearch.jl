@@ -29,7 +29,7 @@ julia -e 'using Pkg; pkg"test TextSearch"'
 The directory [examples](https://github.com/sadit/TextSearch.jl/tree/master/src) contains a few examples of how to use it, based on [Pluto.jl](https://github.com/fonsp/Pluto.jl)
 
 
-After cloning the repository, you must intantiate the directory.
+After cloning the repository, you must intantiate the directory. 
 
 ```julia
 using Pkg
@@ -41,3 +41,4 @@ once you instantiated your environment, just run Pluto notebook and explore the 
 using Pluto
 Pluto.run()
 ```
+

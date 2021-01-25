@@ -16,17 +16,11 @@ end
 # ╔═╡ 11f6ef4a-5f08-11eb-0ba1-05a1a1ff205a
 using SimilaritySearch, TextSearch, JSON, CodecZlib, PlutoUI, StatsBase
 
-# ╔═╡ fb25ee14-5f4e-11eb-1c8e-6d292c20388a
+# ╔═╡ aeb6bb3a-5f4e-11eb-3b36-070b3356e64d
 md"""
-# Construction of an inverted index for searching in a message dataset
+# Creating a generic similarity search index with text based vectors
 
-
-Firstly, we need to add the required packages, SimilaritySearch and TextSearch are the core for use, but others are required to show a full demostration.
-"""
-
-# ╔═╡ 0c25b8a2-5f4f-11eb-3410-f5560725ed17
-md"""
-## Loading thre dataset
+This example shows how to perform knn searches using a `SearchGraph` index (defined in `SimilaritySearch.jl`) over a text dataset.
 """
 
 # ╔═╡ 547e44b2-5f08-11eb-128c-61c32cdb2ee7
@@ -36,39 +30,32 @@ begin
 	db = open(basename(url)) do stream
 		[JSON.parse(line) for line in eachline(GzipDecompressorStream(stream))]
 	end
-end
-
-
-# ╔═╡ 545269a4-5f4f-11eb-0f7d-01adcaf452a0
-md"""
-## Preprocessing and creating a text model
-"""
-
-# ╔═╡ 52bbc1a8-5f4f-11eb-1308-39c8a8a651b0
-begin
 	
 	# you can use a number of tokenizers, here we use character q-grams to improve support for informal writing
 	config = TextConfig(qlist=[3], nlist=[1], group_usr=true, group_url=true)
 	corpus = [t["text"] for t in db]
 	model = VectorModel(TfidfWeighting, compute_bow_multimessage(config, corpus))
+	X = [vectorize(model, compute_bow(config, text)) for text in corpus]
 end
 
-# ╔═╡ 7cf28d6c-5f4f-11eb-0101-63bc0ff84e94
+# ╔═╡ 67fa1b66-5f4d-11eb-01b8-0d9b99c60386
 md"""
-## Encoding messages as vectors
+## Creating the index
+
+This example uses a different index, `SearchGraph` which has an slower construction but it is much more versatile than InvIndex. Here, we use it just as an example.
 """
 
-# ╔═╡ 6cceec0a-5f4f-11eb-0727-6d333d16196c
-X = [vectorize(model, compute_bow(config, text)) for text in corpus];
+# ╔═╡ f8bb66c4-5f4c-11eb-1f2e-4100b9d49eb1
+index = SearchGraph(CosineDistance(), X;
+	search_algo=BeamSearch(),
+	neighborhood_algo=LogNeighborhood(2),
+	automatic_optimization=false
+)
 
-# ╔═╡ 95ea6094-5f4f-11eb-0d62-5b0407fb63a3
-md"## Construction of the dataset"
-
-# ╔═╡ 8dc9b872-5f4f-11eb-254d-2ddb4b4b53e7
-invindex = InvIndex(X);
-
-# ╔═╡ 9f6f6568-5f4f-11eb-2a25-8d5c2aa35f76
-md"## Searching (with some Pluto controls)"
+# ╔═╡ a873c5de-5f4d-11eb-3b7c-69b56d88d7ef
+md"""
+In my computer, an icore 7 processor, it requires close to 3 min. (single core construction).
+"""
 
 # ╔═╡ 010ec74a-5f0b-11eb-1c3a-f327bad5b02f
 begin
@@ -81,15 +68,12 @@ $(inputquery) k: $(inputk)
 """
 end
 
-# ╔═╡ b32bfc10-5f4f-11eb-3e9c-05de9cc7d34f
-md"## Results "
-
 # ╔═╡ 92d0c64e-5f09-11eb-0d65-05a484984b63
 begin
 	q = vectorize(model, compute_bow(config, querytext))
 	
 	with_terminal() do
-		res = search(invindex, q, ksearch)
+		res = search(index, q, ksearch)
 		freqs = countmap([db[p.id]["klass"] for p in res]) |> collect
 		sort!(freqs, by=x -> x[2], rev=true)
 		println("emojis: ", join(["$(p[1]):$(p[2])" for p in freqs], ", "), "\n")
@@ -103,17 +87,11 @@ begin
 end
 
 # ╔═╡ Cell order:
-# ╠═fb25ee14-5f4e-11eb-1c8e-6d292c20388a
+# ╠═aeb6bb3a-5f4e-11eb-3b36-070b3356e64d
 # ╠═11f6ef4a-5f08-11eb-0ba1-05a1a1ff205a
-# ╠═0c25b8a2-5f4f-11eb-3410-f5560725ed17
 # ╠═547e44b2-5f08-11eb-128c-61c32cdb2ee7
-# ╠═545269a4-5f4f-11eb-0f7d-01adcaf452a0
-# ╠═52bbc1a8-5f4f-11eb-1308-39c8a8a651b0
-# ╠═7cf28d6c-5f4f-11eb-0101-63bc0ff84e94
-# ╠═6cceec0a-5f4f-11eb-0727-6d333d16196c
-# ╠═95ea6094-5f4f-11eb-0d62-5b0407fb63a3
-# ╠═8dc9b872-5f4f-11eb-254d-2ddb4b4b53e7
-# ╠═9f6f6568-5f4f-11eb-2a25-8d5c2aa35f76
+# ╠═67fa1b66-5f4d-11eb-01b8-0d9b99c60386
+# ╠═f8bb66c4-5f4c-11eb-1f2e-4100b9d49eb1
+# ╠═a873c5de-5f4d-11eb-3b7c-69b56d88d7ef
 # ╠═010ec74a-5f0b-11eb-1c3a-f327bad5b02f
-# ╠═b32bfc10-5f4f-11eb-3e9c-05de9cc7d34f
 # ╠═92d0c64e-5f09-11eb-0d65-05a484984b63
