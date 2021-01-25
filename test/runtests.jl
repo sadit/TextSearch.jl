@@ -22,7 +22,7 @@ const corpus = ["hello world :)", "@user;) excellent!!", "#jello world."]
 end
 
 @testset "Normalize and tokenize" begin
-    config = TextConfig(del_punc=true, group_usr=true, nlist=Int8[1, 2, 3])
+    config = TextConfig(del_punc=true, group_usr=true, nlist=[1, 2, 3])
     t = normalize_text(config, text1)
     @test t == [' ', 'h', 'e', 'l', 'l', 'o', ' ', 'w', 'o', 'r', 'l', 'd', ' ', ' ', '_', 'u', 's', 'r', ' ', ' ', '#', 'j', 'e', 'l', 'l', 'o', ' ', 'w', 'o', 'r', 'l', 'd', ' ', ' ']
     @test tokenize(config, t) == ["hello", "world", "_usr", "#jello", "world", "hello world", "world _usr", "_usr #jello", "#jello world", "hello world _usr", "world _usr #jello", "_usr #jello world"]
@@ -37,7 +37,7 @@ end
 end
 
 @testset "Tokenizer, DVEC, and vectorize" begin # test_vmodel
-    config = TextConfig(group_usr=true, nlist=Int8[1])
+    config = TextConfig(group_usr=true, nlist=[1])
     #t = normalize_text(config, text1)
     #tokenize(config, t)
     model = VectorModel(FreqWeighting, compute_bow_multimessage(config, corpus))
@@ -54,7 +54,7 @@ const sentiment_labels = categorical(["pos", "pos", "neg", "neg", "pos"])
 const sentiment_msg = "lol, esto me encanta"
 
 @testset "DistModel tests" begin
-    config = TextConfig(nlist=Int8[1])
+    config = TextConfig(nlist=[1])
     corpus_ = compute_bow_list(config, sentiment_corpus)
     @show corpus_
     dmodel = DistModel(corpus_, sentiment_labels)
@@ -64,7 +64,7 @@ const sentiment_msg = "lol, esto me encanta"
 end
 
 @testset "EntModel tests" begin
-    config = TextConfig(nlist=Int8[1])
+    config = TextConfig(nlist=[1])
     dmodel = DistModel(compute_bow_list(config, sentiment_corpus), sentiment_labels, weights=:balance, smooth=1, minocc=1)
     emodel = EntModel(dmodel, EntWeighting)
     emodel_ = EntModel(EntWeighting, compute_bow_list(config, sentiment_corpus), sentiment_labels, weights=:balance, smooth=1, minocc=1)
@@ -99,7 +99,6 @@ end
     @test dot(normalize!(u + v - v), normalize!(u)) > 0.99
 end
 
-exit(0)
 
 _corpus = [
     "la casa roja",
@@ -112,12 +111,9 @@ _corpus = [
 ]
 
 @testset "transpose bow" begin
-    config = TextConfig()
-    config.nlist = [1]
-    config.qlist = []
-    config.slist = []
-    model = fit(VectorModel, config, _corpus)
-    X = [vectorize(model, FreqModel, x) for x in _corpus]
+    config = TextConfig(nlist=[1])
+    model = VectorModel(FreqWeighting, compute_bow_multimessage(config, _corpus))
+    X = [vectorize(model, compute_bow(config, msg)) for msg in _corpus]
     dX = transpose(X)
 end
 
@@ -139,26 +135,17 @@ end
         C = intersection([A, B])
         C_ = sort!(intersect(A, B))
         @test C == C_
-        if C != C_
-            @info A
-            @info B
-            @info C C_
-            exit(-1)
-        end
     end
 end
 
 @testset "invindex" begin
-    config = TextConfig()
-    #config.qlist = [3, 4]
-    #config.nlist = [1, 2, 3]
-    config.nlist = [1]
-
-    model = fit(VectorModel, config, _corpus)
-    invindex = InvIndex([vectorize(model, TfidfModel, text) for text in _corpus])
+    config = TextConfig(nlist=[1])
+    model = VectorModel(TfidfWeighting, compute_bow_multimessage(config, _corpus))
+    ψ(text) = vectorize(model, compute_bow(config, text))
+    invindex = InvIndex([ψ(text) for text in _corpus])
     @test are_posting_lists_sorted(invindex)
     begin # searching
-        q = vectorize(model, TfidfModel, "la casa roja")
+        q = ψ("la casa roja")
         res = search_with_union(invindex, q, KnnResult(4))
         @test sort([r.id for r in res]) == [1, 2, 3, 4]
 
@@ -167,14 +154,14 @@ end
         res = search_with_intersection(invindex, q, KnnResult(4))
         @test [r.id for r in res] == [1]
 
-        q = vectorize(model, TfidfModel, "esta rica")
+        q = ψ("esta rica")
         res = search_with_intersection(invindex, q, KnnResult(4))
         @test [5, 6] == sort!([r.id for r in res])
     end
 
     shortindex = prune(invindex, 3)
     @test are_posting_lists_sorted(invindex)
-    q = vectorize(model, TfidfModel, "la casa roja")
+    q = ψ("la casa roja")
     res = search_with_union(shortindex, q, KnnResult(4))
     @test sort!([r.id for r in res]) == [1, 2, 3, 4]
 
@@ -182,7 +169,7 @@ end
         res = search_with_intersection(shortindex, q, KnnResult(4))
         @test [r.id for r in res] == [1]
 
-        q = vectorize(model, TfidfModel, "esta rica")
+        q = ψ("esta rica")
         res = search_with_intersection(shortindex, q, KnnResult(4))
         @info res
         @test [5, 6] == sort!([r.id for r in res])
@@ -190,24 +177,17 @@ end
 end
 
 @testset "centroid computing" begin
-    config = TextConfig()
-    config.nlist = [1]
-    config.qlist = []
-    config.slist = []
-    model = fit(VectorModel, config, _corpus)
-    X = [vectorize(model, FreqModel, x) for x in _corpus]
+    config = TextConfig(nlist=[1])
+    model = VectorModel(FreqWeighting, compute_bow_multimessage(config, _corpus))
+    X = [vectorize(model, compute_bow(config, x)) for x in _corpus]
     x = sum(X) |> normalize!
     vec = bow(model, x)
     expected = Dict(:la => 0.7366651330405098,:verde => 0.39921969741172364,:azul => 0.11248181187626208,:pera => 0.08712803682959973,:esta => 0.17425607365919946,:roja => 0.22496362375252416,:hoja => 0.11248181187626208,:casa => 0.33744543562878626,:rica => 0.17425607365919946,:manzana => 0.19960984870586182)
     @test 0.999 < dot(vec, expected)
 end
 
-
 @testset "neardup" begin
-    config = TextConfig()
-    config.nlist = [1]
-    config.qlist = []
-    config.slist = []
+    config = TextConfig(nlist=[1])
 
     function create_corpus()
         alphabet = Char.(97:100)
@@ -226,10 +206,10 @@ end
         corpus
     end
 
-    corpus = create_corpus()
-    model = fit(VectorModel, config, corpus)
-    @show corpus[1:10]
-    X = [vectorize(model, TfModel, x) for x in corpus]
+    randcorpus = create_corpus()
+    model = VectorModel(TfWeighting, compute_bow_multimessage(config, randcorpus))
+    @show randcorpus[1:10]
+    X = [vectorize(model, compute_bow(config, x)) for x in randcorpus]
     L, D  = neardup(X, 0.2)
     @test length(X) > length(unique(L))
 end

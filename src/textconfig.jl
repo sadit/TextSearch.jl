@@ -35,12 +35,12 @@ function TextConfig(;
         group_usr::Bool=false,
         group_emo::Bool=false,
         lc::Bool=true,
-        qlist::Vector{Int8}=Int8[],
-        nlist::Vector{Int8}=Int8[1],
+        qlist::Vector=Int8[],
+        nlist::Vector=Int8[1],
         slist::Vector{Skipgram}=Skipgram[]
     )
     TextConfig(del_diac, del_dup, del_punc, group_num, group_url, group_usr, group_emo, lc,
-        qlist, nlist, slist)
+        Vector{Int8}(qlist), Vector{Int8}(nlist), slist)
 end
 
 function Base.copy(c;
