@@ -6,7 +6,7 @@ import LinearAlgebra: dot, norm, normalize!
 import SparseArrays: nnz
 using SimilaritySearch
 import SimilaritySearch: evaluate
-export DVEC, centroid, evaluate, NormalizedAngleDistance, NormalizedCosineDistance, AngleDistance, NormalizedAngleDistance
+export DVEC, SVEC, BOW, centroid, evaluate, NormalizedAngleDistance, NormalizedCosineDistance, AngleDistance, NormalizedAngleDistance
 
 const DVEC{Ti,Tv<:Real} = Dict{Ti,Tv}
 const BOW = DVEC{Symbol,Int}
@@ -29,6 +29,8 @@ function Base.maximum(voc::DVEC)
 
     m
 end
+
+
 
 """
     normalize!(bow::DVEC)
@@ -121,6 +123,16 @@ function add!(a::DVEC{Ti,Tv}, b::Pair{Ti,Tv}) where {Ti,Tv<:Real}
     k, w = b
     a[k] = get(a, k, zero(Tv)) + w
     a
+end
+
+
+function Base.sum(col::AbstractVector{T}) where {T<:DVEC}
+    v = copy(col[1])
+    for i in 2:length(col)
+        add!(v, col[i])
+    end
+
+    v
 end
 
 function +(a::DVEC{Ti,Tv}, b::DVEC{Ti,Tv}) where {Ti,Tv<:Real}
