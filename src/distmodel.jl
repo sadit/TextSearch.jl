@@ -50,8 +50,8 @@ function DistModel(corpus::AbstractVector{BOW}, y::CategoricalArray; nclasses=0,
 			weights = [s / x for x in model.sizes]  ## this produces nicer numbers, but it is the same than weights = [1 / x for x in model.sizes]
 		elseif weights == :rand
 			weights = [rand() for x in model.sizes]
-		elseif weights isa Symbol
-			error("Unknown symbol '$weights' for weights parameter")
+		else
+			error("Unknown '$weights' for weights parameter")
 		end
 		
         normalize!(model, weights)

@@ -187,23 +187,24 @@ function *(a::DVEC{Ti,Tv}, b::DVEC{Ti,Tv}) where {Ti,Tv<:Real}
     c
 end
 
-function *(a::DVEC, b::F) where F<:Real
+function *(a::DVEC{K, V}, b::F) where K where {V<:Real} where {F<:Real}
     c = copy(a)
     for (k, v) in a
-        c[k] = convert(F, v * b)
+        c[k] = convert(V, v * b)
     end
 
     c
 end
 
-function *(b::F, a::DVEC) where F<:Real
+function *(b::F, a::DVEC) where {F<:Real}
     a * b
 end
 
-function /(a::DVEC, b::F) where F<:Real
+function /(a::DVEC{K,V}, b::F) where K where {V<:Real} where {F<:Real}
     c = copy(a)
+    inv = 1.0/b
     for (k, v) in a
-        c[k] = convert(F, v / b)
+        c[k] = convert(V, v * inv)
     end
 
     c
