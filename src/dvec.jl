@@ -2,16 +2,18 @@
 # License is Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0.txt
 
 import Base: +, -, *, /, ==, transpose, zero
+using LinearAlgebra, SparseArrays
 import LinearAlgebra: dot, norm, normalize!
 import SparseArrays: nnz
 using SimilaritySearch
 import SimilaritySearch: evaluate
-export DVEC, SVEC, BOW, centroid, evaluate, NormalizedAngleDistance, NormalizedCosineDistance, AngleDistance, NormalizedAngleDistance
+export centroid, evaluate, NormalizedAngleDistance, NormalizedCosineDistance, AngleDistance, NormalizedAngleDistance
 
 const DVEC{Ti,Tv<:Real} = Dict{Ti,Tv}
 const BOW = DVEC{Symbol,Int}
 const SVEC = DVEC{Int,Float64}
 
+export  DVEC, SVEC, BOW
 nnz(dvec::DVEC) = length(dvec)
 
 """

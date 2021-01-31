@@ -13,6 +13,8 @@ mutable struct DistModel <: TextModel
     n::Int  # collection size
 end
 
+StructTypes.StructType(::Type{DistModel}) = StructTypes.Struct()
+
 const EMPTY_TOKEN_DIST = Int[]
 
 """

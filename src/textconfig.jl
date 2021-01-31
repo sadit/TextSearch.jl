@@ -26,6 +26,10 @@ struct TextConfig
     slist::Vector{Skipgram}
 end
 
+StructTypes.StructType(::Type{Skipgram}) = StructTypes.Struct()
+StructTypes.StructType(::Type{TextConfig}) = StructTypes.Struct()
+
+
 function TextConfig(;
         del_diac::Bool=true,
         del_dup::Bool=false,
@@ -45,7 +49,7 @@ function TextConfig(;
         slist)
 end
 
-function Base.copy(c;
+function Base.copy(c::TextConfig;
         del_diac=c.del_diac,
         del_dup=c.del_dup,
         del_punc=c.del_punc,

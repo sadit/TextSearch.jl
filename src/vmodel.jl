@@ -3,10 +3,10 @@
 
 export TextModel, VectorModel, TfidfWeighting, TfWeighting, IdfWeighting, FreqWeighting, fit, vectorize, prune, prune_select_top
 
-abstract type TfidfWeighting <: WeightingType end
-abstract type TfWeighting <: WeightingType end
-abstract type IdfWeighting <: WeightingType end
-abstract type FreqWeighting <: WeightingType end
+struct TfidfWeighting <: WeightingType end
+struct TfWeighting <: WeightingType end
+struct IdfWeighting <: WeightingType end
+struct FreqWeighting <: WeightingType end
 
 """
     abstract type Model
@@ -20,7 +20,9 @@ struct IdFreq
     freq::Int32
 end
 
+
 const Vocabulary = Dict{Symbol, IdFreq}
+const IdTokenMap = Dict{Int32, Symbol}
 
 """
     mutable struct VectorModel
@@ -28,25 +30,32 @@ const Vocabulary = Dict{Symbol, IdFreq}
 Models a text through a vector space
 """
 mutable struct VectorModel{W<:WeightingType} <: TextModel
-    weighting::Type{W}
+    weighting::W
     tokens::Vocabulary
-    id2token::Dict{Int,Symbol}
+    id2token::IdTokenMap
     maxfreq::Int
     m::Int  # vocsize
     n::Int  # collection size
 end
 
+StructTypes.construct(::Type{Int64}, s::String) = parse(Int64, s)
+StructTypes.construct(::Type{Int32}, s::String) = parse(Int32, s)
+StructTypes.construct(::Type{Int16}, s::String) = parse(Int16, s)
+StructTypes.StructType(::Type{IdFreq}) = StructTypes.Struct()
+StructTypes.StructType(::Type{<:WeightingType}) = StructTypes.Struct()
+StructTypes.StructType(::Type{<:VectorModel}) = StructTypes.Struct()
+
 Base.copy(e::VectorModel; weighting=e.weighting, tokens=e.tokens, id2token=e.id2token, maxfreq=e.maxfreq, m=e.m, n=e.n) =
     VectorModel(weighting, tokens, id2token, maxfreq, m, n)
 
 """
-    VectorModel(weighting::Type{W}, corpus::BOW; minocc::Integer=1) where {W<:WeightingType}
+    VectorModel(weighting::WeightingType, corpus::BOW; minocc::Integer=1)
 
 Trains a vector model using the input corpus. 
 """
-function VectorModel(weighting::Type{W}, corpus::BOW; minocc::Integer=1) where {W<:WeightingType}
+function VectorModel(weighting::WeightingType, corpus::BOW; minocc::Integer=1)
     tokens = Vocabulary()
-    id2token = Dict{Int,Symbol}()
+    id2token = IdTokenMap()
     i = 0
     maxfreq = 0
     for (t, freq) in corpus
@@ -75,21 +84,21 @@ function prune(model::VectorModel, minfreq::Integer, rank::Integer)
         tokens[w[1]] = w[2]
     end
 
-    id2token = Dict(idfreq.id => t for (t, idfreq) in tokens)
+    id2token = IdTokenMap(idfreq.id => t for (t, idfreq) in tokens)
     VectorModel(model.weighting, tokens, id2token, model.maxfreq, model.m, model.n)
 end
 
 """
-    prune_select_top(model::VectorModel, k::Integer, kind::Type{T}=IdfWeighting)
-    prune_select_top(model::VectorModel, ratio::AbstractFloat, kind::Type{T}=IdfWeighting)
+    prune_select_top(model::VectorModel, k::Integer)
+    prune_select_top(model::VectorModel, ratio::AbstractFloat)
 
 Creates a new model with the best `k` tokens from `model` based on the `kind` scheme; kind must be either `IdfWeighting` or `FreqWeighting`.
 `ratio` is a floating point between 0 and 1 indicating the ratio of the vocabulary to be kept
 """
-function prune_select_top(model::VectorModel, k::Integer, kind::Type{T}=IdfWeighting) where T <: Union{IdfWeighting,FreqWeighting}
+function prune_select_top(model::VectorModel, k::Integer)
     tokens = Vocabulary()
     maxfreq = 0
-    if kind == IdfWeighting
+    if model.weighting isa Union{TfidfWeighting, IdfWeighting}
         X = [(t, idfreq, _weight(kind, 0, 0, model.n, idfreq.freq)) for (t, idfreq) in model.tokens]
         sort!(X, by=x->x[end], rev=true)
         for i in 1:k
@@ -98,7 +107,7 @@ function prune_select_top(model::VectorModel, k::Integer, kind::Type{T}=IdfWeigh
             maxfreq = max(maxfreq, idfreq.freq)
         end
 
-    else kind == FreqWeighting
+    else model.weighting isa Union{FreqWeighting,TfWeighting}
         X = [(t, idfreq) for (t, idfreq) in model.tokens]
         sort!(X, by=x->x[end].freq, rev=true)
         for i in 1:k
@@ -140,22 +149,22 @@ function broadcastable(model::VectorModel)
 end
 
 """
-    _weight(::Type{T}, freq::Integer, maxfreq::Integer, n::Integer, global_freq::Integer)::Float64
+    _weight(::WeightingType, freq::Integer, maxfreq::Integer, n::Integer, global_freq::Integer)::Float64
 
 Computes a weight for the given stats using scheme T
 """
-function _weight(::Type{TfidfWeighting}, freq::Real, maxfreq::Real, n::Real, global_freq::Real)::Float64
+function _weight(::TfidfWeighting, freq::Real, maxfreq::Real, n::Real, global_freq::Real)::Float64
     (freq / maxfreq) * log(2, 1 + n / global_freq)
 end
 
-function _weight(::Type{TfWeighting}, freq::Real, maxfreq::Real, n::Real, global_freq::Real)::Float64
+function _weight(::TfWeighting, freq::Real, maxfreq::Real, n::Real, global_freq::Real)::Float64
     freq / maxfreq
 end
 
-function _weight(::Type{IdfWeighting}, freq::Real, maxfreq::Real, n::Real, global_freq::Real)::Float64
+function _weight(::IdfWeighting, freq::Real, maxfreq::Real, n::Real, global_freq::Real)::Float64
     log(2, n / global_freq)
 end
 
-function _weight(::Type{FreqWeighting}, freq::Real, maxfreq::Real, n::Real, global_freq::Real)::Float64
+function _weight(::FreqWeighting, freq::Real, maxfreq::Real, n::Real, global_freq::Real)::Float64
     freq
 end

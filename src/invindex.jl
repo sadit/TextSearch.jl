@@ -21,6 +21,9 @@ mutable struct InvIndex <: AbstractSearchContext
     InvIndex(lists, n) = new(lists, n, KnnResult(10))
 end
 
+StructTypes.StructType(::Type{InvIndex}) = StructTypes.Struct()
+
+
 # useful constant for searching
 const EMPTY_POSTING_LIST = PostList()
 

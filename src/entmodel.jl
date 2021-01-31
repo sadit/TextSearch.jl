@@ -4,19 +4,23 @@
 import Base: push!, append!
 export EntModel, EntWeighting, EntTfWeighting, EntTpWeighting
 
-abstract type EntWeighting <: WeightingType end
-abstract type EntTfWeighting <: WeightingType end
-abstract type EntTpWeighting <: WeightingType end
+struct EntWeighting <: WeightingType end
+struct EntTfWeighting <: WeightingType end
+struct EntTpWeighting <: WeightingType end
 
 const WeightedVocabulary = Dict{Symbol,IdWeight}
 
-mutable struct EntModel{WeightingType_<:WeightingType} <: TextModel
-    weighting::Type{WeightingType_}
+
+mutable struct EntModel{W_<:WeightingType} <: TextModel
+    weighting::W_
     tokens::WeightedVocabulary
-    id2token::Dict{Int32,Symbol}
+    id2token::IdTokenMap
     m::Int
     n::Int
 end
+
+StructTypes.StructType(::Type{<:EntModel}) = StructTypes.Struct()
+
 
 Base.copy(e::EntModel; weighting=e.weighting, tokens=e.tokens, id2token=e.id2token, m=e.m, n=e.n) =
     EntModel(weighting, tokens, id2token, m, n)
@@ -34,8 +38,8 @@ function append!(model::EntModel, weighted_words)
 end
 
 """
-    EntModel(model::DistModel, weighting::Type{W}; lower=0.0) where {W<:WeightingType}
-    EntModel(config::TextConfig, weighting::Type{W}, corpus, y; smooth=3, minocc=1, weights=:balance, lower=0.0, nclasses=0)
+    EntModel(model::DistModel, weighting::WeightingType; lower=0.0)
+    EntModel(config::TextConfig, weighting::WeightingType, corpus, y; smooth=3, minocc=1, weights=:balance, lower=0.0, nclasses=0)
 
 Fits an EntModel using the already fitted DistModel. It accepts only symbols with a final weight higher or equal than `lower`.
 Parameters:
@@ -47,7 +51,7 @@ Parameters:
     - `nclasses` specifies the number of classes
 	- `minocc`: minimum population to consider a token (without considering the smoothing factor).
 """
-function EntModel(model::DistModel, weighting::Type{W}; lower=0.0) where {W<:WeightingType}
+function EntModel(model::DistModel, weighting::WeightingType; lower=0.0)
     tokens = WeightedVocabulary()
     nclasses = length(model.sizes)
     maxent = log2(nclasses)
@@ -77,7 +81,7 @@ function EntModel(model::DistModel, weighting::Type{W}; lower=0.0) where {W<:Wei
     EntModel(weighting, tokens, id2token, model.m, model.n)
 end
 
-function EntModel(weigthing::Type{W}, corpus, y; smooth=3, minocc=3, weights=:balance, lower=0.0, nclasses=0) where {W<:WeightingType}
+function EntModel(weigthing::WeightingType, corpus, y; smooth=3, minocc=3, weights=:balance, lower=0.0, nclasses=0)
     dmodel = DistModel(corpus, y, nclasses=nclasses, weights=weights, fix=false, smooth=smooth, minocc=minocc)
     EntModel(dmodel, weigthing, lower=lower)
 end
@@ -115,7 +119,7 @@ function prune_select_top(model::EntModel, k::Int)
         tokens[t] = IdWeight(w.id, w.weight)
     end
 
-    id2token = Dict(w.id => t for (t, w) in tokens)
+    id2token = IdTokenMap(w.id => t for (t, w) in tokens)
     EntModel(model, model.weighting, tokens, id2token, model.m, model.n)
 end
 
@@ -153,9 +157,9 @@ function vectorize(model::EntModel, bow::BOW; normalize=true)
     vec    
 end
 
-_weight(::Type{EntTpWeighting}, ent, freq, n) = ent * freq / n
-_weight(::Type{EntTfWeighting}, ent, freq, n) = ent * freq
-_weight(::Type{EntWeighting}, ent, freq, n) = ent
+_weight(::EntTpWeighting, ent, freq, n) = ent * freq / n
+_weight(::EntTfWeighting, ent, freq, n) = ent * freq
+_weight(::EntWeighting, ent, freq, n) = ent
 
 function broadcastable(model::EntModel)
     (model,)
