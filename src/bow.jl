@@ -6,8 +6,12 @@ export compute_bow_multimessage, compute_bow_list, compute_bow
 """
     compute_bow(tokenlist::AbstractVector{S}, bow::BOW=BOW()) where {S<:AbstractString}
     compute_bow(config::TextConfig, text::AbstractString, bow::BOW=BOW())
+    compute_bow(config::TextConfig, text::AbstractVector, bow::BOW=BOW())
     
-Updates a DVEC using the given list of tokens; returns `bow`
+
+Creates a bag of words from the given text (a string or a list of strings).
+If bow is given then updates the bag with the text.
+When `config` is given, the text is parsed according to it.
 """
 function compute_bow(tokenlist::AbstractVector{S}, bow::BOW=BOW()) where {S<:AbstractString}
     for token in tokenlist
@@ -22,6 +26,14 @@ end
 compute_bow(config::TextConfig, text::AbstractString, bow::BOW=BOW()) = 
     compute_bow(tokenize(config, normalize_text(config, text)), bow)
 
+compute_bow(config::TextConfig, text::AbstractVector, bow::BOW=BOW()) = 
+    compute_bow_multimessage(config, text, bow)
+
+"""
+    compute_bow_multimessage(config::TextConfig, corpus::AbstractVector, bow=BOW())
+
+Computes a bag of words from a multimessage corpus
+"""
 function compute_bow_multimessage(config::TextConfig, corpus::AbstractVector, bow=BOW())
     normbuffer = Vector{Char}()
     tokenlist = Vector{String}()
@@ -43,6 +55,11 @@ function compute_bow_multimessage(config::TextConfig, corpus::AbstractVector, bo
     bow
 end
 
+"""
+    compute_bow_list(config::TextConfig, corpus::AbstractVector)
+
+Computes a list of bag of words from a corpus
+"""
 function compute_bow_list(config::TextConfig, corpus::AbstractVector)
     bow_vector = Vector{BOW}(undef, length(corpus))
     t = Char[]

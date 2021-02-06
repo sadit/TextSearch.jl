@@ -32,8 +32,6 @@ function Base.maximum(voc::DVEC)
     m
 end
 
-
-
 """
     normalize!(bow::DVEC)
 
@@ -63,6 +61,11 @@ function normalize!(matrix::AbstractVector{DVEC})
     end
 end
 
+"""
+    dot(a::DVEC, b::DVEC)::Float64 
+
+Computes the dot product for two DVEC vectors
+"""
 function dot(a::DVEC, b::DVEC)::Float64 
     if length(b) < length(a)
         a, b = b, a  # a must be the smallest bow
@@ -77,6 +80,11 @@ function dot(a::DVEC, b::DVEC)::Float64
     s
 end
 
+"""
+    norm(a::DVEC)::Float64
+
+Computes a normalized DVEC vector
+"""
 function norm(a::DVEC)::Float64
     s = 0.0
     for w in values(a)
@@ -86,21 +94,23 @@ function norm(a::DVEC)::Float64
     sqrt(s)
 end
 
+"""
+    zero(::Type{DVEC{Ti,Tv}}) where {Ti,Tv<:Real}
+
+Creates an empty DVEC vector
+"""
 function zero(::Type{DVEC{Ti,Tv}}) where {Ti,Tv<:Real}
     DVEC{Ti,Tv}()
 end
 
-function centroid(cluster::AbstractVector{DVEC{Ti,Tv}}) where {Ti,Tv<:Real}
-    u = zero(DVEC{Ti,Tv})
-
-    for v in cluster
-        add!(u, v)
-    end
-    
-    normalize!(u)
-end
-
 ## inplace sum
+"""
+    add!(a::DVEC{Ti,Tv}, b::DVEC{Ti,Tv}) where {Ti,Tv<:Real}
+    add!(a::DVEC{Ti,Tv}, b::AbstractSparseArray) where {Ti,Tv<:Real}
+    add!(a::DVEC{Ti,Tv}, b::Pair{Ti,Tv}) where {Ti,Tv<:Real}
+
+Updates `a` to the sum of `a+b`
+"""
 function add!(a::DVEC{Ti,Tv}, b::DVEC{Ti,Tv}) where {Ti,Tv<:Real}
     for (k, w) in b
         if w != 0
@@ -127,7 +137,11 @@ function add!(a::DVEC{Ti,Tv}, b::Pair{Ti,Tv}) where {Ti,Tv<:Real}
     a
 end
 
+"""
+    Base.sum(col::AbstractVector{T}) where {T<:DVEC}
 
+Computes the sum of the given list of vectors
+"""
 function Base.sum(col::AbstractVector{T}) where {T<:DVEC}
     v = copy(col[1])
     for i in 2:length(col)
@@ -137,6 +151,22 @@ function Base.sum(col::AbstractVector{T}) where {T<:DVEC}
     v
 end
 
+
+"""
+    centroid(cluster::AbstractVector{<:DVEC})
+
+Computes a centroid of the given list of DVEC vectors
+"""
+function centroid(cluster::AbstractVector{<:DVEC})
+    normalize!(sum(cluster))
+end
+
+"""
+    +(a::DVEC{Ti,Tv}, b::DVEC{Ti,Tv}) where {Ti,Tv<:Real}
+    +(a::DVEC, b::Pair)
+
+Computes the sum of `a` and `b`
+"""
 function +(a::DVEC{Ti,Tv}, b::DVEC{Ti,Tv}) where {Ti,Tv<:Real}
     if length(a) < length(b) 
         a, b = b, a  # a must be the largest bow
@@ -158,6 +188,12 @@ function +(a::DVEC, b::Pair)
 end
 
 ## definitions for substraction
+
+"""
+    -(a::DVEC{Ti,Tv}, b::DVEC{Ti,Tv}) where {Ti,Tv<:Real}
+
+Substracts of `b` of `a`
+"""
 function -(a::DVEC{Ti,Tv}, b::DVEC{Ti,Tv}) where {Ti,Tv<:Real}
     c = copy(a)
     for (k, w) in b
@@ -170,7 +206,12 @@ function -(a::DVEC{Ti,Tv}, b::DVEC{Ti,Tv}) where {Ti,Tv<:Real}
 end
 
 ## definitions for product
+"""
+    *(a::DVEC{Ti,Tv}, b::DVEC{Ti,Tv}) where {Ti,Tv<:Real}
+    *(a::DVEC{K, V}, b::F) where K where {V<:Real} where {F<:Real}
 
+Computes the element-wise product of a and b
+"""
 function *(a::DVEC{Ti,Tv}, b::DVEC{Ti,Tv}) where {Ti,Tv<:Real}
     if length(b) < length(a)
         a, b = b, a  # a must be the smallest bow
@@ -202,16 +243,14 @@ function *(b::F, a::DVEC) where {F<:Real}
     a * b
 end
 
+"""
+    /(a::DVEC{K, V}, b::F) where K where {V<:Real} where {F<:Real}
+
+Computes the element-wise division of a and b
+"""
 function /(a::DVEC{K,V}, b::F) where K where {V<:Real} where {F<:Real}
-    c = copy(a)
-    inv = 1.0/b
-    for (k, v) in a
-        c[k] = convert(V, v * inv)
-    end
-
-    c
+    a * (1.0/b)
 end
-
 
 
 """
@@ -281,9 +320,6 @@ function evaluate(::AngleDistance, a::DVEC, b::DVEC)::Float64
     end
 end
 
-function cosine(a::DVEC, b::DVEC)::Float64
-    return dot(a, b) # * a.invnorm * b.invnorm # it is already normalized
-end
 
 function full_cosine(a::DVEC, b::DVEC)::Float64
     return dot(a, b) / (norm(a) * norm(b))

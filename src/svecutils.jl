@@ -20,7 +20,7 @@ sparse2dvec(x) = dvec
 """
     sparsevec(vec::DVEC{Ti,Tv}, m=0) where {Ti<:Integer,Tv<:Number}
 
-Creates a sparse vector from a DVEC sparse vector
+Creates a sparse vector from a´ DVEC sparse vector
 """
 function sparsevec(vec::DVEC{Ti,Tv}, m=0) where {Ti<:Integer,Tv<:Number}
     I = Ti[]
@@ -49,8 +49,8 @@ function sparse(cols::AbstractVector{S}, m=0) where S<:DVEC{Ti,Tv} where {Ti<:In
     F = Tv[]
 
     for j in eachindex(cols)
-        for (t, weight) in cols[j]
-            push!(I, t)
+        for (term, weight) in cols[j]
+            push!(I, term)
             push!(J, j)
             push!(F, weight)
         end
