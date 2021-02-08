@@ -10,19 +10,33 @@ using SimilaritySearch
 const PostList = Vector{IdWeight}
 
 """
-Inverted index search structure
+    InvIndex(db::AbstractVector{SVEC})
+
+Creates an inverted index search structure
 
 """
 mutable struct InvIndex <: AbstractSearchContext
     lists::Dict{Int,PostList}
     n::Int
     res::KnnResult
-    InvIndex() = new(Dict{Int,PostList}(), 0, KnnResult(10))
-    InvIndex(lists, n) = new(lists, n, KnnResult(10))
 end
 
 StructTypes.StructType(::Type{InvIndex}) = StructTypes.Struct()
 
+InvIndex() = InvIndex(Dict{Int,PostList}(), 0, KnnResult(10))
+InvIndex(lists, n) = InvIndex(lists, n, KnnResult(10))
+
+function InvIndex(db::AbstractVector{SVEC})
+    invindex = InvIndex()
+    for (i, v) in enumerate(db)
+        push!(invindex, i => v)
+    end
+
+    invindex
+end
+
+Base.copy(invindex::InvIndex; lists=invindex.lists, n=invindex.n, res=KnnResult(maxlength(invindex.res))) =
+    InvIndex(lists, n, res)
 
 # useful constant for searching
 const EMPTY_POSTING_LIST = PostList()
@@ -52,7 +66,7 @@ Inserts a weighted bag of words (BOW) into the index.
 
 See [docbow](@ref) to compute a BOW from a text
 """
-function push!(index::InvIndex, p::Pair{Int,SVEC})
+function push!(index::InvIndex, p::Pair{I,SVEC}) where {I<:Integer}
     index.n += 1
     for (id, weight) in p.second
         if haskey(index.lists, id)
@@ -61,15 +75,6 @@ function push!(index::InvIndex, p::Pair{Int,SVEC})
             index.lists[id] = [IdWeight(p.first, weight)]
         end
     end
-end
-
-function InvIndex(db::AbstractVector{SVEC})
-    invindex = InvIndex()
-    for (i, v) in enumerate(db)
-        push!(invindex, i => v)
-    end
-
-    invindex
 end
 
 """
@@ -102,21 +107,21 @@ function optimize!(invindex::InvIndex; keep_k=3000, store_large_lists=true)
 end
 
 """
-    prune(invindex::InvIndex, k)
+    prune(invindex::InvIndex, keeptop::Integer)
 
-Creates a new inverted index using the given `invindex` discarding many entries with low weight.
-It keeps at most `k` entries for each posting list; it keeps those entries with more wight values.
+Creates a new inverted index using the given `invindex`; the idea is to discard document entries with low weight.
+It keeps at most `keeptop` entries for each posting list.
 """
-function prune(invindex::InvIndex, k)
+function prune(invindex::InvIndex, keeptop::Integer)
     I = InvIndex()
     I.n = invindex.n
     sizehint!(I.lists, length(invindex.lists))
 
     for (t, list) in invindex.lists
         I.lists[t] = l = deepcopy(list)
-        if length(list) > k
+        if length(list) > keeptop
             sort!(l, by=x -> -x.weight)
-            resize!(l, k)
+            resize!(l, keeptop)
             sort!(l, by=x -> x.id)         
         end
     end
@@ -146,7 +151,7 @@ function _norm_pruned!(I::InvIndex)
 end
 
 """
-    search(invindex::InvIndex, q::SVEC, res::KnnResult; ignore_lists_larger_than::Int=10_000)
+    search(invindex::InvIndex, q::SVEC, res::KnnResult; ignore_lists_larger_than::Int=typemax(Int))
 
 
 Seaches for the k-nearest neighbors of `q` inside the index `invindex`. The number of nearest
@@ -155,11 +160,11 @@ If `dist` is set to `angle_distance` then the angle is reported; otherwise the
 `cosine_distance` (i.e., 1 - cos) is computed.
 """
 
-function search(invindex::InvIndex, q::SVEC, res::KnnResult; ignore_lists_larger_than::Int=10_000)
+function search(invindex::InvIndex, q::SVEC, res::KnnResult; ignore_lists_larger_than::Int=typemax(Int))
     search_with_union(invindex, q, res, ignore_lists_larger_than=ignore_lists_larger_than)
 end
 
-function search(invindex::InvIndex, q::SVEC, ksearch::Integer; ignore_lists_larger_than::Int=10_000)
+function search(invindex::InvIndex, q::SVEC, ksearch::Integer; ignore_lists_larger_than::Int=typemax(Int))
     empty!(invindex.res, ksearch)
     search(invindex, q, invindex.res; ignore_lists_larger_than=ignore_lists_larger_than)
 end
