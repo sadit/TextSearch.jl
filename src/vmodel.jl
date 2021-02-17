@@ -99,7 +99,7 @@ function prune_select_top(model::VectorModel, k::Integer)
     tokens = Vocabulary()
     maxfreq = 0
     if model.weighting isa Union{TfidfWeighting, IdfWeighting}
-        X = [(t, idfreq, _weight(kind, 0, 0, model.n, idfreq.freq)) for (t, idfreq) in model.tokens]
+        X = [(t, idfreq, _weight(model.weighting, 0, 0, model.n, idfreq.freq)) for (t, idfreq) in model.tokens]
         sort!(X, by=x->x[end], rev=true)
         for i in 1:k
             t, idfreq, w = X[i]
@@ -118,10 +118,10 @@ function prune_select_top(model::VectorModel, k::Integer)
     end
 
     id2token = Dict(idfreq.id => t for (t, idfreq) in tokens)
-    VectorModel(model.weigthing, tokens, id2token, maxfreq, model.m, model.n)
+    VectorModel(model.weighting, tokens, id2token, maxfreq, model.m, model.n)
 end
 
-prune_select_top(model::VectorModel, ratio::AbstractFloat, kind=IdfWeighting) = prune_select_top(model, floor(Int, length(model.tokens) * ratio), kind)
+prune_select_top(model::VectorModel, ratio::AbstractFloat) = prune_select_top(model, floor(Int, length(model.tokens) * ratio))
 
 """
     vectorize(model::VectorModel, bow::BOW, maxfreq::Integer=maximum(bow); normalize=true) where Tv<:Real

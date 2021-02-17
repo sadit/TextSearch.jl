@@ -120,7 +120,7 @@ function prune_select_top(model::EntModel, k::Int)
     end
 
     id2token = IdTokenMap(w.id => t for (t, w) in tokens)
-    EntModel(model, model.weighting, tokens, id2token, model.m, model.n)
+    EntModel(model.weighting, tokens, id2token, model.m, model.n)
 end
 
 prune_select_top(model::EntModel, ratio::AbstractFloat) = prune_select_top(model, floor(Int, length(model.tokens) * ratio))
