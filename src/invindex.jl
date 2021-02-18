@@ -9,12 +9,6 @@ using SimilaritySearch
 
 const PostList = Vector{IdWeight}
 
-"""
-    InvIndex(db::AbstractVector{SVEC})
-
-Creates an inverted index search structure
-
-"""
 mutable struct InvIndex <: AbstractSearchContext
     lists::Dict{Int,PostList}
     n::Int
@@ -24,7 +18,14 @@ end
 StructTypes.StructType(::Type{InvIndex}) = StructTypes.Struct()
 
 InvIndex() = InvIndex(Dict{Int,PostList}(), 0, KnnResult(10))
-InvIndex(lists, n) = InvIndex(lists, n, KnnResult(10))
+InvIndex(lists, n; ksearch=10) = InvIndex(lists, n, KnnResult(ksearch))
+
+"""
+    InvIndex(db::AbstractVector{SVEC})
+
+Creates an inverted index search structure
+
+"""
 
 function InvIndex(db::AbstractVector{SVEC})
     invindex = InvIndex()
@@ -62,9 +63,8 @@ end
 """
     push!(index::InvIndex, p::Pair{Int,SVEC})
 
-Inserts a weighted bag of words (BOW) into the index.
+Inserts a weighted vector into the index.
 
-See [docbow](@ref) to compute a BOW from a text
 """
 function push!(index::InvIndex, p::Pair{I,SVEC}) where {I<:Integer}
     index.n += 1
@@ -156,8 +156,6 @@ end
 
 Seaches for the k-nearest neighbors of `q` inside the index `invindex`. The number of nearest
 neighbors is specified in `res`; it is also used to collect the results. Returns the object `res`.
-If `dist` is set to `angle_distance` then the angle is reported; otherwise the
-`cosine_distance` (i.e., 1 - cos) is computed.
 """
 
 function search(invindex::InvIndex, q::SVEC, res::KnnResult; ignore_lists_larger_than::Int=typemax(Int))
@@ -169,5 +167,4 @@ function search(invindex::InvIndex, q::SVEC, ksearch::Integer; ignore_lists_larg
     search(invindex, q, invindex.res; ignore_lists_larger_than=ignore_lists_larger_than)
 end
 
-include("invindexio.jl")
 include("setsearch.jl")
