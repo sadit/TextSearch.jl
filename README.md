@@ -36,7 +36,7 @@ using Pkg
 pkg"instantiate"
 ```
 
-once you instantiated your environment, just run Pluto notebook and explore the exampless.
+once you instantiated your environment, just run Pluto notebook and explore the examples
 ```julia
 using Pluto
 Pluto.run()
