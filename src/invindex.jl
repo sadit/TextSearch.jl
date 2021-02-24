@@ -108,6 +108,7 @@ end
 
 """
     prune(invindex::InvIndex, keeptop::Integer)
+    prune(invindex::InvIndex, keeptop_ratio::AbstractFloat)
 
 Creates a new inverted index using the given `invindex`; the idea is to discard document entries with low weight.
 It keeps at most `keeptop` entries for each posting list.
@@ -129,6 +130,8 @@ function prune(invindex::InvIndex, keeptop::Integer)
     # normalizing prunned vectors
     _norm_pruned!(I)
 end
+
+prune(invindex::InvIndex, ratio::AbstractFloat) = prune(invindex, max(1, ceil(Int, ratio * invindex.n)))
 
 function _norm_pruned!(I::InvIndex)
     D = SVEC()
