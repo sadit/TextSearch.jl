@@ -193,20 +193,20 @@ Dict{Int64,Float64} with 8 entries:
 
 julia&gt; vec = vectorize(modelenttf, b; normalize=false)
 Dict{Int64,Float64} with 8 entries:
-  5644  =&gt; 0.0064616
-  4287  =&gt; 0.00308074
-  5815  =&gt; 0.0217508
-  2807  =&gt; 0.00546302
-  973   =&gt; 0.0354869
-  5914  =&gt; 0.00227401
-  10666 =&gt; 0.0271384
-  3403  =&gt; 0.0188395</code></pre><h1 id="Inspecting-models"><a class="docs-heading-anchor" href="#Inspecting-models">Inspecting models</a><a id="Inspecting-models-1"></a><a class="docs-heading-anchor-permalink" href="#Inspecting-models" title="Permalink"></a></h1><p>Models have a <code>id2token</code> dictionary to map identifiers to symbols</p><pre><code class="language-julia-repl">julia&gt; Dict(modelenttf.id2token[k] =&gt; v for (k,v) in vec)
+  5644  =&gt; 0.0032308
+  4287  =&gt; 0.00154037
+  5815  =&gt; 0.0108754
+  2807  =&gt; 0.00273151
+  973   =&gt; 0.0177434
+  5914  =&gt; 0.001137
+  10666 =&gt; 0.0135692
+  3403  =&gt; 0.00941976</code></pre><h1 id="Inspecting-models"><a class="docs-heading-anchor" href="#Inspecting-models">Inspecting models</a><a id="Inspecting-models-1"></a><a class="docs-heading-anchor-permalink" href="#Inspecting-models" title="Permalink"></a></h1><p>Models have a <code>id2token</code> dictionary to map identifiers to symbols</p><pre><code class="language-julia-repl">julia&gt; Dict(modelenttf.id2token[k] =&gt; v for (k,v) in vec)
 Dict{Symbol,Float64} with 8 entries:
-  :la         =&gt; 0.00308074
-  Symbol(&quot;,&quot;) =&gt; 0.0064616
-  :las        =&gt; 0.00546302
-  :de         =&gt; 0.00227401
-  :siempre    =&gt; 0.0188395
-  :mejor      =&gt; 0.0217508
-  :musica     =&gt; 0.0354869
-  :!          =&gt; 0.0271384</code></pre></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../preprocessing/">« Preprocessing</a><a class="docs-footer-nextpage" href="../apitextconfig/">Preprocessing »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> on <span class="colophon-date" title="Thursday 25 February 2021 18:22">Thursday 25 February 2021</span>. Using Julia version 1.5.3.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+  :la         =&gt; 0.00154037
+  Symbol(&quot;,&quot;) =&gt; 0.0032308
+  :las        =&gt; 0.00273151
+  :de         =&gt; 0.001137
+  :siempre    =&gt; 0.00941976
+  :mejor      =&gt; 0.0108754
+  :musica     =&gt; 0.0177434
+  :!          =&gt; 0.0135692</code></pre></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../preprocessing/">« Preprocessing</a><a class="docs-footer-nextpage" href="../apitextconfig/">Preprocessing »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> on <span class="colophon-date" title="Thursday 25 February 2021 20:40">Thursday 25 February 2021</span>. Using Julia version 1.5.3.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
