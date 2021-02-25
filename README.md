@@ -1,9 +1,10 @@
-# TextSearch.jl
 
-[![Build Status](https://travis-ci.org/sadit/TextSearch.jl.svg?branch=master)](https://travis-ci.org/sadit/TextSearch.jl)
-[![Coverage Status](https://coveralls.io/repos/github/sadit/TextSearch.jl/badge.svg?branch=master)](https://coveralls.io/github/sadit/TextSearch.jl?branch=master)
-[![codecov](https://codecov.io/gh/sadit/TextSearch.jl/branch/master/graph/badge.svg)](https://codecov.io/gh/sadit/TextSearch.jl)
+[![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://sadit.github.io/TextSearch.jl/stable)
+[![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://sadit.github.io/TextSearch.jl/dev)
+[![Build Status](https://github.com/sadit/TextSearch.jl/workflows/CI/badge.svg)](https://github.com/sadit/TextSearch.jl/actions)
+[![Coverage](https://codecov.io/gh/sadit/TextSearch.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/sadit/TextSearch.jl)
 
+# TextSearch
 
 `TextSearch.jl` is a package to create vector representations of text, mostly, independently of the language. It is intended to be used with [SimilaritySearch.jl](https://github.com/sadit/SimilaritySearch.jl), but can be used independetly if needed.
 `TextSearch.jl` was renamed from `TextModel.jl` to reflect its capabilities and mission.
