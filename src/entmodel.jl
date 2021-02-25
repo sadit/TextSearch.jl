@@ -40,7 +40,7 @@ end
 
 """
     EntModel(model::DistModel, weighting::WeightingType; lower=0.0)
-    EntModel(config::TextConfig, weighting::WeightingType, corpus, y; smooth=3, minocc=1, weights=:balance, lower=0.0, nclasses=0)
+    EntModel(weigthing::WeightingType, corpus, y; smooth=3, minocc=3, weights=:balance, lower=0.0, nclasses=0)
 
 Fits an EntModel using the already fitted DistModel. It accepts only symbols with a final weight higher or equal than `lower`.
 Parameters:
@@ -137,7 +137,7 @@ Computes a weighted bow for the given `data`; the vector is scaled to the unit i
 function vectorize(model::EntModel{T}, bow::BOW; normalize=true) where T
     len = 0
 
-    if T === TpWeighting
+    if T === EntTpWeighting
         for v in values(bow)
             len += v
         end

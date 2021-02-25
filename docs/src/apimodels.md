@@ -18,6 +18,7 @@ prune_select_top(::VectorModel, f)
 ## Weighting methods for VectorModel
 ```@docs
 TfWeighting
+TpWeighting
 IdfWeighting
 TfidfWeighting
 FreqWeighthing
