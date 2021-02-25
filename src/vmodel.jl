@@ -1,7 +1,7 @@
 # This file is a part of TextSearch.jl
 # License is Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0.txt
 
-export TextModel, VectorModel, WeighthingType, TfidfWeighting, TfWeighting, IdfWeighting, TpWeighting
+export TextModel, VectorModel, WeighthingType, TfidfWeighting, TfWeighting, IdfWeighting, TpWeighting,
     FreqWeighting, fit, vectorize, prune, prune_select_top
 
 """
