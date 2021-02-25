@@ -141,7 +141,7 @@ function prune_select_top(model::VectorModel, k::Integer)
     tokens = Vocabulary()
     maxfreq = 0
     if model.weighting isa Union{TfidfWeighting, IdfWeighting}
-        X = [(t, idfreq, _weight(model.weighting, 0, 0, model.n, idfreq.freq)) for (t, idfreq) in model.tokens]
+        X = [(t, idfreq, _weight(model.weighting, 0, 0, model.n, idfreq.freq, 0)) for (t, idfreq) in model.tokens]
         sort!(X, by=x->x[end], rev=true)
         for i in 1:k
             t, idfreq, w = X[i]
