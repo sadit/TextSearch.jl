@@ -61,6 +61,43 @@ const sentiment_corpus = ["me gusta", "me encanta", "lo odio", "odio esto", "me 
 const sentiment_labels = categorical(["pos", "pos", "neg", "neg", "pos"])
 const sentiment_msg = "lol, esto me encanta"
 
+@testset "Weighting schemes" begin
+    config = TextConfig(group_usr=true, nlist=[1])
+    for p in [
+            FreqWeighting() => 0.5,
+            TfWeighting() => 0.5,
+            IdfWeighting() => 0.3922,
+            TfidfWeighting() => 0.4178,
+            TpWeighting() => 0.5
+        ]
+        model = VectorModel(p.first, compute_bow_multimessage(config, sentiment_corpus))
+        x = vectorize(model, compute_bow(config, sentiment_corpus[3]))
+        y = vectorize(model, compute_bow(config, sentiment_corpus[4]))
+        @test abs(dot(x, y) - p.second) < 1e-3
+    end
+
+    for p in [
+            EntFreqWeighting() => 0.70681,
+            EntTpWeighting() => 0.70681,
+            EntTfWeighting() => 0.70681,
+            EntWeighting() => 0.70681
+        ]
+        model = EntModel(
+            p.first,
+            compute_bow.(config, sentiment_corpus),
+            sentiment_labels,
+            smooth=0,
+            minocc=1
+        )
+        x = vectorize(model, compute_bow(config, sentiment_corpus[3]))
+        y = vectorize(model, compute_bow(config, sentiment_corpus[4]))
+        @test abs(dot(x, y) - p.second) < 1e-3
+    end
+
+end
+
+exit(0)
+
 @testset "DistModel tests" begin
     config = TextConfig(nlist=[1])
     corpus_ = compute_bow_list(config, sentiment_corpus)

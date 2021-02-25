@@ -170,15 +170,18 @@ prune_select_top(model::VectorModel, ratio::AbstractFloat) = prune_select_top(mo
 
 Computes a weighted vector using the given bag of words and the specified weighting scheme.
 """
-function vectorize(model::VectorModel{T}, bow::BOW, maxfreq::Integer=maximum(bow); normalize=true) where T
+function vectorize(model::VectorModel{T}, bow::BOW; normalize=true) where T
+#function vectorize(model::VectorModel{T}, bow::BOW, maxfreq::Integer=maximum(bow); normalize=true) where T
     vec = SVEC()
     
-    doctokens = 0
+    doctokens = 0.0
     if T === TpWeighting
         for (token, freq) in bow
             doctokens += freq
         end
     end
+    
+    maxfreq = (T === TfWeighting || T === TfidfWeighting) ? maximum(bow) : 0.0
 
     for (token, freq) in bow
         t = get(model.tokens, token, nothing)
@@ -199,26 +202,26 @@ function broadcastable(model::VectorModel)
 end
 
 """
-    _weight(::WeightingType, freq::Integer, maxfreq::Integer, n::Integer, global_freq::Integer, doctokens)::Float64
+    _weight(::WeightingType, freq::Integer, maxfreq::Integer, n::Integer, global_freq::Integer, doctokens::Real)::Float64
 
 Computes a weight for the given stats using scheme T
 """
-function _weight(::TfidfWeighting, freq::Real, maxfreq::Real, n::Real, global_freq::Real, doctokens)::Float64
+function _weight(::TfidfWeighting, freq::Real, maxfreq::Real, n::Real, global_freq::Real, doctokens::Real)::Float64
     (freq / maxfreq) * log(2, 1 + n / global_freq)
 end
 
-function _weight(::TfWeighting, freq::Real, maxfreq::Real, n::Real, global_freq::Real, doctokens)::Float64
+function _weight(::TfWeighting, freq::Real, maxfreq::Real, n::Real, global_freq::Real, doctokens::Real)::Float64
     freq / maxfreq
 end
 
-function _weight(::IdfWeighting, freq::Real, maxfreq::Real, n::Real, global_freq::Real, doctokens)::Float64
+function _weight(::IdfWeighting, freq::Real, maxfreq::Real, n::Real, global_freq::Real, doctokens::Real)::Float64
     log(2, n / global_freq)
 end
 
-function _weight(::FreqWeighting, freq::Real, maxfreq::Real, n::Real, global_freq::Real, doctokens)::Float64
+function _weight(::FreqWeighting, freq::Real, maxfreq::Real, n::Real, global_freq::Real, doctokens::Real)::Float64
     freq
 end
 
-function _weight(::TpWeighting, freq::Real, maxfreq::Real, n::Real, global_freq::Real, doctokens)::Float64
+function _weight(::TpWeighting, freq::Real, maxfreq::Real, n::Real, global_freq::Real, doctokens::Real)::Float64
     freq / doctokens
 end

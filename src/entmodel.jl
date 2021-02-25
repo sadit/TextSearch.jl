@@ -2,14 +2,14 @@
 # License is Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0.txt
 
 import Base: push!, append!
-export EntModel, EntWeighting, EntTfWeighting, EntTpWeighting
+export EntModel, EntWeighting, EntFreqWeighting, EntTpWeighting, EntTfWeighting
 
 struct EntWeighting <: WeightingType end
-struct EntTfWeighting <: WeightingType end
+struct EntFreqWeighting <: WeightingType end
 struct EntTpWeighting <: WeightingType end
+struct EntTfWeighting <: WeightingType end
 
 const WeightedVocabulary = Dict{Symbol,IdWeight}
-
 
 mutable struct EntModel{W_<:WeightingType} <: TextModel
     weighting::W_
@@ -143,6 +143,8 @@ function vectorize(model::EntModel{T}, bow::BOW; normalize=true) where T
         end
     end
 
+    maxfreq = T === EntTfWeighting ? maximum(bow) : 0.0
+
     vec = SVEC()
     for (token, freq) in bow
         t = get(model.tokens, token, nothing)
@@ -150,7 +152,7 @@ function vectorize(model::EntModel{T}, bow::BOW; normalize=true) where T
             continue
         end
     
-        w = _weight(model.weighting, t.weight, freq, len)
+        w = _weight(model.weighting, t.weight, freq, maxfreq, len)
         if w > 1e-6
             vec[t.id] = w
         end
@@ -160,9 +162,10 @@ function vectorize(model::EntModel{T}, bow::BOW; normalize=true) where T
     vec    
 end
 
-_weight(::EntTpWeighting, ent, freq, n) = ent * freq / n
-_weight(::EntTfWeighting, ent, freq, n) = ent * freq
-_weight(::EntWeighting, ent, freq, n) = ent
+_weight(::EntTpWeighting, ent, freq, maxfreq, n) = ent * freq / n
+_weight(::EntFreqWeighting, ent, freq, maxfreq, n) = ent * freq
+_weight(::EntTfWeighting, ent, freq, maxfreq, n) = ent * freq / maxfreq
+_weight(::EntWeighting, ent, freq, maxfreq, n) = ent
 
 function broadcastable(model::EntModel)
     (model,)
