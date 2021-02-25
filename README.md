@@ -13,15 +13,15 @@ For generic text analysis you should use other packages like [TextAnalysis.jl](h
 It supports a number of simple text preprocessing functions, and three different kinds of tokenizers, i.e., word n-grams, character q-grams, and skip-grams. It supports creating multisets of tokens, commonly named bag of words (BOW).
 `TextSearch.jl` can produce sparse vector representations based on term-weighting schemes like TF, IDF, and TFIDF. It also supports term-weighting schemes designed to cope text classification tasks, mostly based on distributional representations.
 
-# Installing SimilaritySearch
+# Installing 
 
 You may install the package as follows
-```bash
-julia -e 'using Pkg; pkg"add TextSearch.jl"'
+```julia
+] add TextSearch
 ```
 also, you can run the set of tests as follows
-```bash
-julia -e 'using Pkg; pkg"test TextSearch"'
+```julia
+] test TextSearch
 ```
 
 ## Using the library

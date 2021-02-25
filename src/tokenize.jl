@@ -3,8 +3,12 @@
 
 export tokenize_multimessage, tokenize, qgrams, unigrams
 
-tokenize(config::TextConfig, text::AbstractString) = tokenize(config, normalize_text(config, text))
+"""
+    tokenize(config::TextConfig, text::AbstractString)
 
+Tokenizes `text` using the given configuration
+"""
+tokenize(config::TextConfig, text::AbstractString) = tokenize(config, normalize_text(config, text))
 
 function tokenize_multimessage(config::TextConfig, textlist::AbstractVector;
         output=String[],
@@ -52,6 +56,12 @@ function tokenize(config::TextConfig, text::Vector{Char};
     output
 end
 
+"""
+    qgrams(text::AbstractString, q::Integer)
+    qgrams(text::Vector{Char}, q::Integer, L::Vector{String})
+
+Computes character q-grams for the given input
+"""
 qgrams(text::AbstractString, q::Integer) = qgrams(Vector{Char}(text), q, String[])
 
 function qgrams(text::Vector{Char}, q::Integer, L::Vector{String})
@@ -122,9 +132,8 @@ end
 
 
 """
-    tokenize_(config::TextConfig, text::Vector{Char}, L::Vector{Symbol}, buff)::Vector{Symbol}
+    nwords(word_list::AbstractVector, q, L::Vector{String}, buff)
 
-Tokenizes a vector of characters (internal method)
 """
 function nwords(word_list::AbstractVector, q, L::Vector{String}, buff)
     n = length(word_list)
@@ -144,7 +153,11 @@ function nwords(word_list::AbstractVector, q, L::Vector{String}, buff)
     L
 end
 
+"""
+    skipgrams(word_list::AbstractVector, q::Skipgram, L::Vector{String})
 
+Tokenizes using skipgrams
+"""
 function skipgrams(word_list::AbstractVector, q::Skipgram, L::Vector{String})
     n = length(word_list)
 

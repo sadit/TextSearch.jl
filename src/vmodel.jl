@@ -3,32 +3,71 @@
 
 export TextModel, VectorModel, TfidfWeighting, TfWeighting, IdfWeighting, FreqWeighting, fit, vectorize, prune, prune_select_top
 
-struct TfidfWeighting <: WeightingType end
-struct TfWeighting <: WeightingType end
-struct IdfWeighting <: WeightingType end
-struct FreqWeighting <: WeightingType end
+"""
+    WeightingType
+
+Abstract type for weighting schemes
+"""
+abstract type WeightingType end
 
 """
-    abstract type Model
+    TfWeighting()
+
+Term frequency weighting
+"""
+struct TfWeighting <: WeightingType end
+
+"""
+    IdfWeighting()
+
+Inverse document frequency weighting
+"""
+struct IdfWeighting <: WeightingType end
+
+"""
+    TfidfWeighting()
+
+TFIDF weighting
+"""
+struct TfidfWeighting <: WeightingType end
+
+
+"""
+    TpWeighting()
+
+Term probability weighting
+"""
+struct TpWeighting <: WeightingType end
+
+"""
+    FreqWeighting()
+
+Frequency weighting
+"""
+struct FreqWeighting <: WeightingType end
+
+
+"""
+    Model
 
 An abstract type that represents a weighting model
 """
 abstract type TextModel end
 
+"""
+    IdFreq(id, freq)
+
+Stores a document identifier and its frequency
+"""
 struct IdFreq
     id::Int32
     freq::Int32
 end
 
-
 const Vocabulary = Dict{Symbol, IdFreq}
 const IdTokenMap = Dict{Int32, Symbol}
 
-"""
-    mutable struct VectorModel
 
-Models a text through a vector space
-"""
 mutable struct VectorModel{W<:WeightingType} <: TextModel
     weighting::W
     tokens::Vocabulary
@@ -69,6 +108,8 @@ function VectorModel(weighting::WeightingType, corpus::BOW; minocc::Integer=1)
     VectorModel(weighting, tokens, id2token, Int(maxfreq), length(tokens), length(corpus))
 end
 
+Base.show(io::IO, model::VectorModel) = print(io, "{VectorModel weighthing=$(model.weighting), vocsize=$(model.m), maxfreq=$(model.maxfreq)}")
+
 """
     prune(model::VectorModel, minfreq, rank)
 
@@ -107,7 +148,7 @@ function prune_select_top(model::VectorModel, k::Integer)
             maxfreq = max(maxfreq, idfreq.freq)
         end
 
-    else model.weighting isa Union{FreqWeighting,TfWeighting}
+    else model.weighting isa Union{FreqWeighting,TfWeighting,TpWeighting}
         X = [(t, idfreq) for (t, idfreq) in model.tokens]
         sort!(X, by=x->x[end].freq, rev=true)
         for i in 1:k
@@ -128,13 +169,21 @@ prune_select_top(model::VectorModel, ratio::AbstractFloat) = prune_select_top(mo
 
 Computes a weighted vector using the given bag of words and the specified weighting scheme.
 """
-function vectorize(model::VectorModel, bow::BOW, maxfreq::Integer=maximum(bow); normalize=true)
+function vectorize(model::VectorModel{T}, bow::BOW, maxfreq::Integer=maximum(bow); normalize=true) where T
     vec = SVEC()
+    
+    doctokens = 0
+    if T === TpWeighting
+        for (token, freq) in bow
+            doctokens += freq
+        end
+    end
+
     for (token, freq) in bow
         t = get(model.tokens, token, nothing)
         t === nothing && continue
 
-        w = _weight(model.weighting, freq, maxfreq, model.n, t.freq)
+        w = _weight(model.weighting, freq, maxfreq, model.n, t.freq, doctokens)
         if w > 1e-6
             vec[t.id] = w
         end
@@ -149,22 +198,26 @@ function broadcastable(model::VectorModel)
 end
 
 """
-    _weight(::WeightingType, freq::Integer, maxfreq::Integer, n::Integer, global_freq::Integer)::Float64
+    _weight(::WeightingType, freq::Integer, maxfreq::Integer, n::Integer, global_freq::Integer, doctokens)::Float64
 
 Computes a weight for the given stats using scheme T
 """
-function _weight(::TfidfWeighting, freq::Real, maxfreq::Real, n::Real, global_freq::Real)::Float64
+function _weight(::TfidfWeighting, freq::Real, maxfreq::Real, n::Real, global_freq::Real, doctokens)::Float64
     (freq / maxfreq) * log(2, 1 + n / global_freq)
 end
 
-function _weight(::TfWeighting, freq::Real, maxfreq::Real, n::Real, global_freq::Real)::Float64
+function _weight(::TfWeighting, freq::Real, maxfreq::Real, n::Real, global_freq::Real, doctokens)::Float64
     freq / maxfreq
 end
 
-function _weight(::IdfWeighting, freq::Real, maxfreq::Real, n::Real, global_freq::Real)::Float64
+function _weight(::IdfWeighting, freq::Real, maxfreq::Real, n::Real, global_freq::Real, doctokens)::Float64
     log(2, n / global_freq)
 end
 
-function _weight(::FreqWeighting, freq::Real, maxfreq::Real, n::Real, global_freq::Real)::Float64
+function _weight(::FreqWeighting, freq::Real, maxfreq::Real, n::Real, global_freq::Real, doctokens)::Float64
     freq
+end
+
+function _weight(::TpWeighting, freq::Real, maxfreq::Real, n::Real, global_freq::Real, doctokens)::Float64
+    freq / doctokens
 end

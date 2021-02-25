@@ -4,7 +4,6 @@
 export dvec, bow
 import SparseArrays: sparsevec, sparse
 
-
 """
     dvec(x::AbstractSparseVector)
 

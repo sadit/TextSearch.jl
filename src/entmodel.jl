@@ -20,6 +20,7 @@ mutable struct EntModel{W_<:WeightingType} <: TextModel
 end
 
 StructTypes.StructType(::Type{<:EntModel}) = StructTypes.Struct()
+Base.show(io::IO, model::EntModel) = print(io, "{EntModel weighthing=$(model.weighting), vocsize=$(model.m)}")
 
 
 Base.copy(e::EntModel; weighting=e.weighting, tokens=e.tokens, id2token=e.id2token, m=e.m, n=e.n) =
@@ -133,11 +134,13 @@ Computes a weighted bow for the given `data`; the vector is scaled to the unit i
 `data` is a bag of words.
 
 """
-function vectorize(model::EntModel, bow::BOW; normalize=true)
+function vectorize(model::EntModel{T}, bow::BOW; normalize=true) where T
     len = 0
 
-    for v in values(bow)
-        len += v
+    if T === TpWeighting
+        for v in values(bow)
+            len += v
+        end
     end
 
     vec = SVEC()
@@ -147,7 +150,7 @@ function vectorize(model::EntModel, bow::BOW; normalize=true)
             continue
         end
     
-        w = _weight(model.weighting, t.weight, freq,  len)
+        w = _weight(model.weighting, t.weight, freq, len)
         if w > 1e-6
             vec[t.id] = w
         end
