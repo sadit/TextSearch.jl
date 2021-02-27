@@ -58,6 +58,12 @@ end
     tokens = tokenize(config, normalize_text(config, text1))
     @info text1 tokens
     @test tokens == ["hello !! ;)", "world @user #jello", "!! ;) .", "@user #jello world", ";) . :)"]
+
+    config = TextConfig(del_punc=false, group_usr=false, nlist=[], slist=[Skipgram(3,1), Skipgram(2, 1)])
+    tokens = tokenize(config, normalize_text(config, text1))
+    @info text1 tokens
+    @test tokens == ["hello !!", "world @user", "!! ;)", "@user #jello", ";) .", "#jello world", ". :)", "hello !! ;)", "world @user #jello", "!! ;) .", "@user #jello world", ";) . :)"]
+
 end
 
 @testset "Tokenizer, DVEC, and vectorize" begin # test_vmodel

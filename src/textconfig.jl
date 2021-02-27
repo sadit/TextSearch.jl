@@ -16,6 +16,8 @@ struct Skipgram
     skip::Int8
 end
 
+Base.isless(a::Skipgram, b::Skipgram) = isless((a.qsize, a.skip), (b.qsize, b.skip))
+
 """
     TextConfig(;
         del_diac::Bool=true,
