@@ -7,3 +7,4 @@
 .ipynb*
 emotions.csv
 Manifest.toml
+docs/build/*
