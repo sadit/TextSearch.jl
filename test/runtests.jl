@@ -34,12 +34,30 @@ end
 
 end
 
-@testset "Tokenize skipgrams" begin
-    config = TextConfig(del_punc=true, group_usr=true, slist=[Skipgram(2,1)])
+@testset "Normalize and tokenize bigrams and trigrams" begin
+    config = TextConfig(del_punc=true, group_usr=true, nlist=[2, 3])
     t = normalize_text(config, text1)
-    @test t == [' ', 'h', 'e', 'l', 'l', 'o', ' ', 'w', 'o', 'r', 'l', 'd', ' ', ' ', '_', 'u', 's', 'r', ' ', ' ', '#', 'j', 'e', 'l', 'l', 'o', ' ', 'w', 'o', 'r', 'l', 'd', ' ', ' ']
-    @info join(t)
-    @test tokenize(config, t) == ["hello", "world", "_usr", "#jello", "world", "hello _usr", "world #jello", "_usr world"]
+    @test tokenize(config, t) == ["hello world", "world _usr", "_usr #jello", "#jello world", "hello world _usr", "world _usr #jello", "_usr #jello world"]
+end
+
+@testset "Tokenize skipgrams" begin
+    config = TextConfig(del_punc=false, group_usr=false, nlist=[1], slist=[])
+    tokens = tokenize(config, normalize_text(config, text1))
+    @info tokens
+    @test tokens == ["hello", "world", "!!", "@user", ";)", "#jello", ".", "world", ":)"]
+
+    config = TextConfig(del_punc=false, group_usr=false, nlist=[], slist=[Skipgram(2,1)])
+    t = normalize_text(config, text1)
+    @test tokenize(config, t) == ["hello !!", "world @user", "!! ;)", "@user #jello", ";) .", "#jello world", ". :)"]
+
+    config = TextConfig(del_punc=false, group_usr=false, nlist=[], slist=[Skipgram(2,2)])
+    tokens = tokenize(config, normalize_text(config, text1))
+    @test tokens ==  ["hello @user", "world ;)", "!! #jello", "@user .", ";) world", "#jello :)"]
+
+    config = TextConfig(del_punc=false, group_usr=false, nlist=[], slist=[Skipgram(3,1)])
+    tokens = tokenize(config, normalize_text(config, text1))
+    @info text1 tokens
+    @test tokens == ["hello !! ;)", "world @user #jello", "!! ;) .", "@user #jello world", ";) . :)"]
 end
 
 @testset "Tokenizer, DVEC, and vectorize" begin # test_vmodel
@@ -48,9 +66,10 @@ end
     x = vectorize(model, compute_bow(config, text1))
     @show corpus
     @show text1
+    @show text2
     @test nnz(x) == 8
     x = vectorize(model, compute_bow(config, text2))
-    @test nnz(x) == 0
+    @test nnz(x) == 1 && first(keys(x)) < 0
 
     model_ = JSON3.read(JSON3.write(model), typeof(model))
     x = vectorize(model_, compute_bow(config, text1))
@@ -96,7 +115,6 @@ const sentiment_msg = "lol, esto me encanta"
 
 end
 
-exit(0)
 
 @testset "DistModel tests" begin
     config = TextConfig(nlist=[1])

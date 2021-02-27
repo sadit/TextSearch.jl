@@ -51,7 +51,7 @@ function compute_bow_multimessage(config::TextConfig, corpus::AbstractVector, bo
         
         compute_bow(tokenlist, bow)
     end
-
+    
     bow
 end
 

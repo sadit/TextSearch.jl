@@ -157,6 +157,10 @@ function vectorize(model::EntModel{T}, bow::BOW; normalize=true) where T
             vec[t.id] = w
         end
     end
+
+    if length(vec) == 0
+        vec[rand(typemin(Int32):-1)] = 1e-6
+    end
  
     normalize && normalize!(vec)
     vec    

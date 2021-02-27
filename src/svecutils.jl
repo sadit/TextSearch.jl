@@ -26,8 +26,10 @@ function sparsevec(vec::DVEC{Ti,Tv}, m=0) where {Ti<:Integer,Tv<:Number}
     F = Tv[]
 
     for (t, weight) in vec
-        push!(I, t)
-        push!(F, weight)
+        if t > 0
+            push!(I, t)
+            push!(F, weight)
+        end
     end
 
     if m == 0
@@ -49,9 +51,11 @@ function sparse(cols::AbstractVector{S}, m=0) where S<:DVEC{Ti,Tv} where {Ti<:In
 
     for j in eachindex(cols)
         for (term, weight) in cols[j]
-            push!(I, term)
-            push!(J, j)
-            push!(F, weight)
+            if term > 0
+                push!(I, term)
+                push!(J, j)
+                push!(F, weight)
+            end
         end
     end
     if m == 0

@@ -36,20 +36,25 @@ function tokenize(config::TextConfig, text::Vector{Char};
         buff::IOBuffer=IOBuffer(Vector{UInt8}(undef, 16), write=true)
     )
     for q in config.qlist
-        qgrams(text, q, output)
+        qgrams(text, q, output, buff)
     end
-
+    
     if length(config.nlist) > 0 || length(config.slist) > 0
         n1 = length(output)
         unigrams(text, output, buff)  # unigrams are always activated if any |nlist| > 0 or |slist| > 0
         word_list = @view output[n1+1:length(output)]
 
-        for q in config.nlist
+        if length(config.nlist) == 0 || config.nlist[1] != 1 # always sorted
+            word_list = copy(word_list)
+            resize!(output, n1)
+        end
+
+        for q in config.nlist 
             q != 1 && nwords(word_list, q, output, buff)
         end
 
         for q in config.slist
-            skipgrams(word_list, q, output)
+            skipgrams(word_list, q, output, buff)
         end
     end
 
@@ -58,23 +63,25 @@ end
 
 """
     qgrams(text::AbstractString, q::Integer)
-    qgrams(text::Vector{Char}, q::Integer, L::Vector{String})
+    qgrams(text::Vector{Char}, q::Integer, L::Vector{String}, buff)
 
 Computes character q-grams for the given input
 """
-qgrams(text::AbstractString, q::Integer) = qgrams(Vector{Char}(text), q, String[])
+qgrams(text::AbstractString, q::Integer) = qgrams(Vector{Char}(text), q, String[], IOBuffer(Vector{UInt8}(undef, 16), write=true))
 
-function qgrams(text::Vector{Char}, q::Integer, L::Vector{String})
+function qgrams(text::Vector{Char}, q::Integer, L::Vector{String}, buff)
     n = length(text)
 
     @inbounds for i in 1:(n - q + 1)
-        last = i + q - 1
-        push!(L, String(text[i:last]))
+        for j in i:i+q-1
+            write(buff, text[j])
+        end
+
+        push_token!(L, buff)
     end
 
     L
 end
-
 
 """
     push_token!(output::Vector{Symbol}, buff::IOBuffer)
@@ -154,21 +161,29 @@ function nwords(word_list::AbstractVector, q, L::Vector{String}, buff)
 end
 
 """
-    skipgrams(word_list::AbstractVector, q::Skipgram, L::Vector{String})
+    skipgrams(word_list::AbstractVector, q::Skipgram, L::Vector{String}, buff)
 
 Tokenizes using skipgrams
 """
-function skipgrams(word_list::AbstractVector, q::Skipgram, L::Vector{String})
+function skipgrams(word_list::AbstractVector, q::Skipgram, L::Vector{String}, buff)
     n = length(word_list)
 
     for start in 1:(n - (q.qsize + (q.qsize - 1) * q.skip) + 1)
         if q.qsize == 2
-            t = string(word_list[start], BLANK, word_list[start + 1 + q.skip])
+            write(buff, word_list[start])
+            write(buff, BLANK)
+            write(buff, word_list[start + 1 + q.skip])
         else
-            t = string(join([word_list[start + i * (1+q.skip)] for i in 0:(q.qsize-1)], BLANK))
+            ep = q.qsize-2
+            for i in 0:ep
+                write(buff, word_list[start + i * (1+q.skip)])
+                write(buff, BLANK)
+            end
+            ep += 1
+            write(buff, word_list[start + ep * (1+q.skip)])
         end
-        
-        push!(L, t)
+
+        push_token!(L, buff)
     end
 
 

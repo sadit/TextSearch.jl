@@ -45,7 +45,6 @@ Defines a preprocessing and tokenization pipeline
 - `nlist`: a list of words n-grams to use
 - `slist`: a list of skip-grams tokenizers to use
 
-Note that if at least one tokenizer must be specified and that if `nlist` and `slist` are not empty, unigrams are also forced if they are not included in the list
 """
 struct TextConfig
     del_diac::Bool
@@ -59,11 +58,18 @@ struct TextConfig
     qlist::Vector{Int8}
     nlist::Vector{Int8}
     slist::Vector{Skipgram}
+
+    function TextConfig(del_diac, del_dup, del_punc, group_num, group_url, group_usr, group_emo, lc, qlist, nlist, slist)
+        qlist = sort!(Vector{Int8}(qlist))
+        nlist = sort!(Vector{Int8}(nlist))
+        slist = sort!(Vector{Skipgram}(slist))
+
+        new(del_diac, del_dup, del_punc, group_num, group_url, group_usr, group_emo, lc, qlist, nlist, slist)
+    end
 end
 
 StructTypes.StructType(::Type{Skipgram}) = StructTypes.Struct()
 StructTypes.StructType(::Type{TextConfig}) = StructTypes.Struct()
-
 
 function TextConfig(;
         del_diac::Bool=true,
@@ -74,14 +80,12 @@ function TextConfig(;
         group_usr::Bool=false,
         group_emo::Bool=false,
         lc::Bool=true,
-        qlist::Vector=Int8[],
-        nlist::Vector=Int8[1],
-        slist::Vector{Skipgram}=Skipgram[]
+        qlist::AbstractVector=[],
+        nlist::AbstractVector=[1],
+        slist::AbstractVector=[]
     )
-    TextConfig(del_diac, del_dup, del_punc, group_num, group_url, group_usr, group_emo, lc,
-        eltype(qlist) <: Int8 ? qlist : Vector{Int8}(qlist),
-        eltype(nlist) <: Int8 ? nlist : Vector{Int8}(nlist),
-        slist)
+ 
+    TextConfig(del_diac, del_dup, del_punc, group_num, group_url, group_usr, group_emo, lc, qlist, nlist, slist)
 end
 
 function Base.copy(c::TextConfig;

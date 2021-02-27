@@ -96,8 +96,9 @@ Trains a vector model using the input corpus.
 function VectorModel(weighting::WeightingType, corpus::BOW; minocc::Integer=1)
     tokens = Vocabulary()
     id2token = IdTokenMap()
-    i = 0
     maxfreq = 0
+    i = 0
+
     for (t, freq) in corpus
 		freq < minocc && continue
         i += 1
@@ -105,6 +106,7 @@ function VectorModel(weighting::WeightingType, corpus::BOW; minocc::Integer=1)
         tokens[t] = IdFreq(i, freq)
         maxfreq = max(maxfreq, freq)
     end
+    
 
     VectorModel(weighting, tokens, id2token, Int(maxfreq), length(tokens), length(corpus))
 end
@@ -171,7 +173,6 @@ prune_select_top(model::VectorModel, ratio::AbstractFloat) = prune_select_top(mo
 Computes a weighted vector using the given bag of words and the specified weighting scheme.
 """
 function vectorize(model::VectorModel{T}, bow::BOW; normalize=true) where T
-#function vectorize(model::VectorModel{T}, bow::BOW, maxfreq::Integer=maximum(bow); normalize=true) where T
     vec = SVEC()
     
     doctokens = 0.0
@@ -192,7 +193,11 @@ function vectorize(model::VectorModel{T}, bow::BOW; normalize=true) where T
             vec[t.id] = w
         end
     end
-    
+
+    if length(vec) == 0
+        vec[rand(typemin(Int32):-1)] = 1e-6
+    end
+
     normalize && normalize!(vec)
     vec
 end

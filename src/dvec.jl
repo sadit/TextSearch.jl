@@ -11,9 +11,9 @@ export centroid, evaluate, NormalizedAngleDistance, NormalizedCosineDistance, An
 
 const DVEC{Ti,Tv<:Real} = Dict{Ti,Tv}
 const BOW = DVEC{Symbol,Int}
-const SVEC = DVEC{Int,Float64}
+const SVEC = DVEC{Int32,Float32}
 
-export  DVEC, SVEC, BOW
+export DVEC, SVEC, BOW
 nnz(dvec::DVEC) = length(dvec)
 
 """
@@ -59,6 +59,8 @@ function normalize!(matrix::AbstractVector{DVEC})
     for bow in matrix
         normalize!(bow)
     end
+
+    matrix
 end
 
 """
@@ -262,7 +264,7 @@ It supposes that bags are normalized (see `normalize!` function)
 
 """
 function evaluate(::NormalizedCosineDistance, a::DVEC, b::DVEC)::Float64
-    return 1.0 - dot(a, b)
+    1.0 - dot(a, b)
 end
 
 """
@@ -272,7 +274,7 @@ Computes the cosine distance between two DVEC sparse vectors
 
 """
 function evaluate(::CosineDistance, a::DVEC, b::DVEC)::Float64
-    return 1.0 - full_cosine(a, b)
+    1.0 - full_cosine(a, b)
 end
 
 const π_2 = π / 2
@@ -289,13 +291,13 @@ function evaluate(::NormalizedAngleDistance, a::DVEC, b::DVEC)::Float64
     d = dot(a, b)
 
     if d <= -1.0
-        return π
+        π
     elseif d >= 1.0
-        return 0.0
+        0.0
     elseif d == 0  # turn around for zero vectors, in particular for denominator=0
-        return π_2
+        π_2
     else
-        return acos(d)
+        acos(d)
     end
 end
 
@@ -310,13 +312,13 @@ function evaluate(::AngleDistance, a::DVEC, b::DVEC)::Float64
     d = full_cosine(a, b)
 
     if d <= -1.0
-        return π
+        π
     elseif d >= 1.0
-        return 0.0
+        0.0
     elseif d == 0  # turn around for zero vectors, in particular for denominator=0
-        return π_2
+        π_2
     else
-        return acos(d)
+        acos(d)
     end
 end
 
