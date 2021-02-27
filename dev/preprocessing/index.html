@@ -19,19 +19,13 @@ Dict{Symbol,Int64} with 5 entries:
   :_url =&gt; 1
 
 julia&gt; compute_bow(TextConfig(nlist=[2]), &quot;HI!! this is fun!! http://something&quot;)
-Dict{Symbol,Int64} with 12 entries:
-  :this             =&gt; 1
-  :fun              =&gt; 1
-  Symbol(&quot;!! _url&quot;) =&gt; 1
-  :hi               =&gt; 1
+Dict{Symbol,Int64} with 6 entries:
   Symbol(&quot;!! this&quot;) =&gt; 1
   Symbol(&quot;this is&quot;) =&gt; 1
-  Symbol(&quot;!!&quot;)      =&gt; 2
-  :is               =&gt; 1
-  :_url             =&gt; 1
-  Symbol(&quot;hi !!&quot;)   =&gt; 1
   Symbol(&quot;is fun&quot;)  =&gt; 1
-  Symbol(&quot;fun !!&quot;)  =&gt; 1</code></pre><p><code>TextSearch.jl</code> relies on the concept of bag of words, implemented as a dictionary of <code>Symbol =&gt; Int</code> (with a convenient type alias of <code>BOW</code>). Please observe that it is possible to indicate combination of tokenizers.</p><p>This set may be manipulated to remove, conflated or whatever is needed for a task. Internally <code>compute_bow</code> preprocess and tokenizes the text and then creates the bag of words.</p><pre><code class="language-julia-repl">julia&gt; tokens = tokenize(TextConfig(), &quot;HI!! this is fun!! http://something&quot;)
+  Symbol(&quot;hi !!&quot;)   =&gt; 1
+  Symbol(&quot;fun !!&quot;)  =&gt; 1
+  Symbol(&quot;!! _url&quot;) =&gt; 1</code></pre><p><code>TextSearch.jl</code> relies on the concept of bag of words, implemented as a dictionary of <code>Symbol =&gt; Int</code> (with a convenient type alias of <code>BOW</code>). Please observe that it is possible to indicate combination of tokenizers.</p><p>This set may be manipulated to remove, conflated or whatever is needed for a task. Internally <code>compute_bow</code> preprocess and tokenizes the text and then creates the bag of words.</p><pre><code class="language-julia-repl">julia&gt; tokens = tokenize(TextConfig(), &quot;HI!! this is fun!! http://something&quot;)
 7-element Array{String,1}:
  &quot;hi&quot;
  &quot;!!&quot;
@@ -48,4 +42,4 @@ Dict{Symbol,Int64} with 6 entries:
   Symbol(&quot;!!&quot;) =&gt; 2
   :fun         =&gt; 1
   :is          =&gt; 1
-  :_url        =&gt; 1</code></pre></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../searching/">« Searching</a><a class="docs-footer-nextpage" href="../modeling/">Models »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> on <span class="colophon-date" title="Thursday 25 February 2021 20:41">Thursday 25 February 2021</span>. Using Julia version 1.5.3.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+  :_url        =&gt; 1</code></pre></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../searching/">« Searching</a><a class="docs-footer-nextpage" href="../modeling/">Models »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> on <span class="colophon-date" title="Saturday 27 February 2021 14:43">Saturday 27 February 2021</span>. Using Julia version 1.5.3.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
