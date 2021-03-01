@@ -5,7 +5,7 @@ module TextSearch
     import StatsBase: fit, predict
     using LinearAlgebra
     using StructTypes
-
+    
     struct IdWeight
         id::Int32
         weight::Float32

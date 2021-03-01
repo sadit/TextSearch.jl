@@ -5,7 +5,18 @@
 using CategoricalArrays
 export EntropyWeighting
 
-struct EntropyWeighting <: GlobalWeighting end
+"""
+    EntropyWeighting(; smooth=0.0, lowerweight=0.0, weights=:balance)
+
+Entropy weighting uses the empirical entropy of the vocabulary along classes to produce a notion of importance for each token
+"""
+struct EntropyWeighting <: GlobalWeighting
+    smooth::Float64
+    lowerweight::Float64
+    weights
+end
+
+EntropyWeighting(; smooth=0.0, lowerweight=0.0, weights=:balance) = EntropyWeighting(smooth, lowerweight, weights)
 
 function entropy(dist)
     popsize = sum(dist)
@@ -24,15 +35,17 @@ function entropy(dist)
 end
 
 """
-    VectorModel(weighting::WeightingType, corpus::BOW; minocc::Integer=1)
+    VectorModel(lw::LocalWeighting, ent::EntropyWeighting, corpus::BOW, labels; minocc::Integer=1)
 
-Trains a vector model using the input corpus. 
+Creates a vector model using the input corpus. 
 """
-function VectorModel(local_weighting::LocalWeighting, global_weighting::EntropyWeighting, corpus::AbstractVector{BOW}, labels; minocc::Integer=1, lowerweight=0.0, smooth=0.0)
+function VectorModel(lw::LocalWeighting, ent::EntropyWeighting, corpus::AbstractVector{BOW}, labels=nothing; minocc::Integer=1)
+    labels === nothing && error("EntropyWeighting requires labels as a categorical array to work")
+
     tokens = Vocabulary()
     id2token = IdTokenMap()
     nclasses = length(levels(labels))
-    smooth = Float64(smooth)
+    smooth = Float64(ent.smooth)
 
     D = Dict{Symbol,Vector{Float64}}()
     V = Vocabulary()
@@ -51,12 +64,21 @@ function VectorModel(local_weighting::LocalWeighting, global_weighting::EntropyW
         end
     end
 
-    weights = sum(Vector{Float64}, values(D))
-    weights .= sum(weights) ./ weights
+    if ent.weights === :balance
+        weights = sum(Vector{Float64}, values(D))
+        weights .= sum(weights) ./ weights
+    elseif ent.weights === :none
+        weights = ones(Float64, nclasses)
+    else
+        weights = ent.weights
+    end
+
     tokens = Vocabulary()
     tokenID = 0
     maxfreq = 0
     maxent = log2(nclasses)
+
+    lowerweight = ent.lowerweight
 
     for (t, s) in V
         s.occs < minocc && continue
@@ -72,7 +94,7 @@ function VectorModel(local_weighting::LocalWeighting, global_weighting::EntropyW
         maxfreq = max(maxfreq, s.occs)
     end
     
-    VectorModel(local_weighting, global_weighting, tokens, id2token, maxfreq, length(tokens), length(corpus))
+    VectorModel(lw, ent, tokens, id2token, maxfreq, length(tokens), length(corpus))
 end
 
 global_weighting(::EntropyWeighting, s::TokenStats, m::TextModel) = s.weight

@@ -147,7 +147,7 @@ end
 """
     VectorModel(local_weighting::LocalWeighting, global_weighting::GlobalWeighting, corpus::BOW; minocc::Integer=1)
 
-Trains a vector model using the input corpus. 
+Creates a vector model using the input corpus. 
 """
 function VectorModel(local_weighting::LocalWeighting, global_weighting::GlobalWeighting, corpus::AbstractVector{BOW}; minocc::Integer=1)
     tokens = Vocabulary()
