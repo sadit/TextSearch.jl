@@ -1,8 +1,11 @@
 # This file is a part of TextSearch.jl
 # License is Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0.txt
 
-export TextModel, VectorModel, TfWeighting, IdfWeighting, TpWeighting,
-    FreqWeighting, BinaryLocalWeighting, BinaryGlobalWeighting, fit, vectorize, prune, prune_select_top
+export TextModel, VectorModel,
+    TfWeighting, IdfWeighting, TpWeighting,
+    FreqWeighting, BinaryLocalWeighting, BinaryGlobalWeighting,
+    LocalWeighting, GlobalWeighting,
+    fit, vectorize, prune, prune_select_top
 
 #####
 ##
@@ -207,15 +210,15 @@ function prune_select_top(model::VectorModel, k::Integer)
         for i in 1:k
             t, s, w = X[i]
             tokens[t] = s
-            maxfreq = max(maxfreq, s.freq)
+            maxfreq = max(maxfreq, s.occs)
         end
     elseif model.global_weighting isa EntropyWeighting
         X = [(t, s) for (t, s) in model.tokens]
         sort!(X, by=x->x[end].weight, rev=true)
         for i in 1:k
-            t, s, w = X[i]
+            t, s = X[i]
             tokens[t] = s
-            maxfreq = max(maxfreq, s.freq)
+            maxfreq = max(maxfreq, s.occs)
         end
     else
         X = [(t, s) for (t, s) in model.tokens]
@@ -223,7 +226,7 @@ function prune_select_top(model::VectorModel, k::Integer)
         for i in 1:k
             t, s = X[i]
             tokens[t] = s
-            maxfreq = max(maxfreq, s.freq)
+            maxfreq = max(maxfreq, s.occs)
         end
     end
 
