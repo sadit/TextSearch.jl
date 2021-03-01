@@ -34,7 +34,7 @@ begin
 	# you can use a number of tokenizers, here we use character q-grams to improve support for informal writing
 	config = TextConfig(qlist=[3], nlist=[1], group_usr=true, group_url=true)
 	corpus = [t["text"] for t in db]
-	model = VectorModel(TfidfWeighting(), compute_bow_multimessage(config, corpus))
+	model = VectorModel(TfWeighting(), IdfWeighting(), compute_bow.(config, corpus))
 	X = [vectorize(model, compute_bow(config, text)) for text in corpus]
 end
 

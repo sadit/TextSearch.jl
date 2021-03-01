@@ -16,26 +16,18 @@ prune_select_top(::VectorModel, f)
 ```
 
 ## Weighting methods for VectorModel
+
+### Local
 ```@docs
 TfWeighting
 TpWeighting
-IdfWeighting
-TfidfWeighting
 FreqWeighthing
+BinaryLocalWeighting
 ```
 
-# EntModel
+### Global
 ```@docs
-
-EntModel
-vectorize(::EntModel, a, b)
-prune(::EntModel, a, b)
-prune_select_top(::EntModel, f)
-```
-
-## Weighting methods for EntModel
-```@docs
-EntTfWeighting
-EntTpWeighting
-EntWeighting
+IdfWeighting
+EntropyWeighting
+BinaryGlobalWeighting
 ```

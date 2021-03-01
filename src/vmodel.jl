@@ -1,53 +1,82 @@
 # This file is a part of TextSearch.jl
 # License is Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0.txt
 
-export TextModel, VectorModel, WeightingType, TfidfWeighting, TfWeighting, IdfWeighting, TpWeighting,
-    FreqWeighting, fit, vectorize, prune, prune_select_top
+export TextModel, VectorModel, TfWeighting, IdfWeighting, TpWeighting,
+    FreqWeighting, BinaryLocalWeighting, BinaryGlobalWeighting, fit, vectorize, prune, prune_select_top
 
+#####
+##
+## LocalWeighting
+##
+#####
 """
-    WeightingType
+    LocalWeighting
 
-Abstract type for weighting schemes
+Abstract type for local weighting
 """
-abstract type WeightingType end
+abstract type LocalWeighting end
 
 """
     TfWeighting()
 
 Term frequency weighting
 """
-struct TfWeighting <: WeightingType end
-
-"""
-    IdfWeighting()
-
-Inverse document frequency weighting
-"""
-struct IdfWeighting <: WeightingType end
-
-"""
-    TfidfWeighting()
-
-TFIDF weighting
-"""
-struct TfidfWeighting <: WeightingType end
-
+struct TfWeighting <: LocalWeighting end
 
 """
     TpWeighting()
 
 Term probability weighting
 """
-struct TpWeighting <: WeightingType end
+struct TpWeighting <: LocalWeighting end
 
 """
     FreqWeighting()
 
 Frequency weighting
 """
-struct FreqWeighting <: WeightingType end
+struct FreqWeighting <: LocalWeighting end
+
+"""
+    BinaryLocalWeighting()
+
+The weight is 1 for known tokens, 0 for out of vocabulary tokens
+"""
+struct BinaryLocalWeighting <: LocalWeighting end
+
+#####
+##
+## GlobalWeighting
+##
+#####
+"""
+    GlobalWeighting
+
+Abstract type for global weighting
+"""
+abstract type GlobalWeighting end
 
 
+"""
+    IdfWeighting()
+
+Inverse document frequency weighting
+"""
+struct IdfWeighting <: GlobalWeighting end
+
+
+"""
+    BinaryGlobalWeighting()
+
+The weight is 1 for known tokens, 0 for out of vocabulary tokens
+"""
+struct BinaryGlobalWeighting <: GlobalWeighting end
+
+#####
+##
+## TextModels
+##
+#####
 """
     Model
 
@@ -56,71 +85,99 @@ An abstract type that represents a weighting model
 abstract type TextModel end
 
 """
-    IdFreq(id, freq)
+    TokenStats(occs, ndocs)
 
-Stores a document identifier and its frequency
+Stores useful information for a token; i.e., the number of occurrences in the collection, the number of documents having that token
 """
-struct IdFreq
+struct TokenStats
     id::Int32
-    freq::Int32
+    occs::Int32
+    ndocs::Int32
+    weight::Float32
 end
 
-const Vocabulary = Dict{Symbol, IdFreq}
+const UnknownTokenStats = TokenStats(0, 0, 0, 0f0)
+
+const Vocabulary = Dict{Symbol, TokenStats}
 const IdTokenMap = Dict{Int32, Symbol}
 
-
-mutable struct VectorModel{W<:WeightingType} <: TextModel
-    weighting::W
+mutable struct VectorModel{_L<:LocalWeighting, _G<:GlobalWeighting} <: TextModel
+    local_weighting::_L
+    global_weighting::_G
     tokens::Vocabulary
     id2token::IdTokenMap
     maxfreq::Int
-    m::Int  # vocsize
-    n::Int  # collection size
+    m::Int  # vocabulary size
+    n::Int  # training collection size
 end
 
 StructTypes.construct(::Type{Int64}, s::String) = parse(Int64, s)
 StructTypes.construct(::Type{Int32}, s::String) = parse(Int32, s)
 StructTypes.construct(::Type{Int16}, s::String) = parse(Int16, s)
-StructTypes.StructType(::Type{IdFreq}) = StructTypes.Struct()
-StructTypes.StructType(::Type{<:WeightingType}) = StructTypes.Struct()
+StructTypes.StructType(::Type{TokenStats}) = StructTypes.Struct()
+StructTypes.StructType(::Type{<:LocalWeighting}) = StructTypes.Struct()
+StructTypes.StructType(::Type{<:GlobalWeighting}) = StructTypes.Struct()
 StructTypes.StructType(::Type{<:VectorModel}) = StructTypes.Struct()
 
-Base.copy(e::VectorModel; weighting=e.weighting, tokens=e.tokens, id2token=e.id2token, maxfreq=e.maxfreq, m=e.m, n=e.n) =
-    VectorModel(weighting, tokens, id2token, maxfreq, m, n)
+function Base.copy(
+        e::VectorModel;
+        local_weighting=e.local_weighting,
+        global_weighting=e.global_weighting,
+        tokens=e.tokens,
+        id2token=e.id2token,
+        maxfreq=e.maxfreq,
+        m=e.m,
+        n=e.n
+    )
+    VectorModel(local_weighting, global_weighting, tokens, id2token, maxfreq, m, n)
+end
+
+function create_vocabulary(corpus)
+    V = Vocabulary()
+    for vec in corpus
+        for (t, occ) in vec
+            s = get(V, t, UnknownTokenStats)
+            V[t] = TokenStats(0, s.occs + occ, s.ndocs + 1, 0f0)
+        end
+    end
+
+    V
+end
 
 """
-    VectorModel(weighting::WeightingType, corpus::BOW; minocc::Integer=1)
+    VectorModel(local_weighting::LocalWeighting, global_weighting::GlobalWeighting, corpus::BOW; minocc::Integer=1)
 
 Trains a vector model using the input corpus. 
 """
-function VectorModel(weighting::WeightingType, corpus::BOW; minocc::Integer=1)
+function VectorModel(local_weighting::LocalWeighting, global_weighting::GlobalWeighting, corpus::AbstractVector{BOW}; minocc::Integer=1)
     tokens = Vocabulary()
     id2token = IdTokenMap()
-    maxfreq = 0
-    i = 0
 
-    for (t, freq) in corpus
-		freq < minocc && continue
-        i += 1
-        id2token[i] = t
-        tokens[t] = IdFreq(i, freq)
-        maxfreq = max(maxfreq, freq)
+    V = create_vocabulary(corpus)
+    tokens = Vocabulary()
+    tokenID = 0
+    maxfreq = 0
+    for (t, s) in V
+        s.occs < minocc && continue
+        tokenID += 1
+        id2token[tokenID] = t
+        tokens[t] = TokenStats(tokenID, s.occs, s.ndocs, 0.0f0)
+        maxfreq = max(maxfreq, s.occs)
     end
     
-
-    VectorModel(weighting, tokens, id2token, Int(maxfreq), length(tokens), length(corpus))
+    VectorModel(local_weighting, global_weighting, tokens, id2token, maxfreq, length(tokens), length(corpus))
 end
 
-Base.show(io::IO, model::VectorModel) = print(io, "{VectorModel weighthing=$(model.weighting), vocsize=$(model.m), maxfreq=$(model.maxfreq)}")
+Base.show(io::IO, model::VectorModel) = print(io, "{VectorModel local_weighting=$(model.local_weighting), global_weighting=$(model.global_weighting) vocsize=$(model.m), maxfreq=$(model.maxfreq)}")
 
 """
-    prune(model::VectorModel, minfreq, rank)
+    prune(model::VectorModel, minocc, rank)
 
 Cuts the vocabulary by frequency using lower and higher filter;
 All tokens with frequency below `minfreq` are ignored; top `rank` tokens are also removed.
 """
-function prune(model::VectorModel, minfreq::Integer, rank::Integer)
-    W = [(token, idfreq) for (token, idfreq) in model.tokens if idfreq.freq >= minfreq]
+function prune(model::VectorModel{_L,_G}, minocc::Integer, rank::Integer) where {_L,_G}
+    W = [(token, s) for (token, s) in model.tokens if s.occs >= minocc]
     sort!(W, by=x->x[2])
     tokens = Vocabulary()
     for i in 1:length(W)-rank+1
@@ -128,8 +185,8 @@ function prune(model::VectorModel, minfreq::Integer, rank::Integer)
         tokens[w[1]] = w[2]
     end
 
-    id2token = IdTokenMap(idfreq.id => t for (t, idfreq) in tokens)
-    VectorModel(model.weighting, tokens, id2token, model.maxfreq, model.m, model.n)
+    id2token = IdTokenMap(s.id => t for (t, s) in tokens)
+    VectorModel(_L, _G, tokens, id2token, model.maxfreq, model.m, model.n)
 end
 
 """
@@ -142,27 +199,36 @@ Creates a new model with the best `k` tokens from `model` based on the `kind` sc
 function prune_select_top(model::VectorModel, k::Integer)
     tokens = Vocabulary()
     maxfreq = 0
-    if model.weighting isa Union{TfidfWeighting, IdfWeighting}
-        X = [(t, idfreq, _weight(model.weighting, 0, 0, model.n, idfreq.freq, 0)) for (t, idfreq) in model.tokens]
+    
+    if model.global_weighting isa IdfWeighting
+        idf = IdfWeighting()
+        X = [(t, s, global_weighting(idf, s, model)) for (t, s) in model.tokens]
         sort!(X, by=x->x[end], rev=true)
         for i in 1:k
-            t, idfreq, w = X[i]
-            tokens[t] = idfreq
-            maxfreq = max(maxfreq, idfreq.freq)
+            t, s, w = X[i]
+            tokens[t] = s
+            maxfreq = max(maxfreq, s.freq)
         end
-
-    else model.weighting isa Union{FreqWeighting,TfWeighting,TpWeighting}
-        X = [(t, idfreq) for (t, idfreq) in model.tokens]
-        sort!(X, by=x->x[end].freq, rev=true)
+    elseif model.global_weighting isa EntropyWeighting
+        X = [(t, s) for (t, s) in model.tokens]
+        sort!(X, by=x->x[end].weight, rev=true)
         for i in 1:k
-            t, idfreq = X[i]
-            tokens[t] = idfreq
-            maxfreq = max(maxfreq, idfreq.freq)
+            t, s, w = X[i]
+            tokens[t] = s
+            maxfreq = max(maxfreq, s.freq)
+        end
+    else
+        X = [(t, s) for (t, s) in model.tokens]
+        sort!(X, by=x->x[end].occs, rev=true)
+        for i in 1:k
+            t, s = X[i]
+            tokens[t] = s
+            maxfreq = max(maxfreq, s.freq)
         end
     end
 
-    id2token = Dict(idfreq.id => t for (t, idfreq) in tokens)
-    VectorModel(model.weighting, tokens, id2token, maxfreq, model.m, model.n)
+    id2token = Dict(s.id => t for (t, s) in tokens)
+    VectorModel(model.local_weighting, model.global_weighting, tokens, id2token, maxfreq, model.m, model.n)
 end
 
 prune_select_top(model::VectorModel, ratio::AbstractFloat) = prune_select_top(model, floor(Int, length(model.tokens) * ratio))
@@ -172,25 +238,25 @@ prune_select_top(model::VectorModel, ratio::AbstractFloat) = prune_select_top(mo
 
 Computes a weighted vector using the given bag of words and the specified weighting scheme.
 """
-function vectorize(model::VectorModel{T}, bow::BOW; normalize=true) where T
-    vec = SVEC()
-    
-    doctokens = 0.0
-    if T === TpWeighting
+function vectorize(model::VectorModel{_L, _G}, bow::BOW; normalize=true) where {_L,_G}
+    numtokens = 0.0
+    if _L === TpWeighting
         for (token, freq) in bow
-            doctokens += freq
+            numtokens += freq
         end
     end
     
-    maxfreq = (T === TfWeighting || T === TfidfWeighting) ? maximum(bow) : 0.0
+    maxfreq = (_L === TfWeighting) ? maximum(bow) : 0.0
+    vec = SVEC()
 
     for (token, freq) in bow
-        t = get(model.tokens, token, nothing)
-        t === nothing && continue
+        s = get(model.tokens, token, nothing)
+        s === nothing && continue
 
-        w = _weight(model.weighting, freq, maxfreq, model.n, t.freq, doctokens)
+        lw = local_weighting(model.local_weighting, freq, maxfreq, numtokens)
+        w = lw * global_weighting(model.global_weighting, s, model)
         if w > 1e-6
-            vec[t.id] = w
+            vec[s.id] = w
         end
     end
 
@@ -206,27 +272,12 @@ function broadcastable(model::VectorModel)
     (model,)
 end
 
-"""
-    _weight(::WeightingType, freq::Integer, maxfreq::Integer, n::Integer, global_freq::Integer, doctokens::Real)::Float64
+# local weightings: TfWeighting, TpWeighting, FreqWeighting, BinaryLocalWeighting
+# global weightings: IdfWeighting, BinaryGlobalWeighting
 
-Computes a weight for the given stats using scheme T
-"""
-function _weight(::TfidfWeighting, freq::Real, maxfreq::Real, n::Real, global_freq::Real, doctokens::Real)::Float64
-    (freq / maxfreq) * log(2, 1 + n / global_freq)
-end
-
-function _weight(::TfWeighting, freq::Real, maxfreq::Real, n::Real, global_freq::Real, doctokens::Real)::Float64
-    freq / maxfreq
-end
-
-function _weight(::IdfWeighting, freq::Real, maxfreq::Real, n::Real, global_freq::Real, doctokens::Real)::Float64
-    log(2, n / global_freq)
-end
-
-function _weight(::FreqWeighting, freq::Real, maxfreq::Real, n::Real, global_freq::Real, doctokens::Real)::Float64
-    freq
-end
-
-function _weight(::TpWeighting, freq::Real, maxfreq::Real, n::Real, global_freq::Real, doctokens::Real)::Float64
-    freq / doctokens
-end
+local_weighting(::TfWeighting, occs, maxfreq, numtokens) = occs / maxfreq
+local_weighting(::FreqWeighting, occs, maxfreq, numtokens) = occs
+local_weighting(::TpWeighting, occs, maxfreq, numtokens) = occs / numtokens
+local_weighting(::BinaryLocalWeighting, occs, maxfreq, numtokens) = 1.0
+global_weighting(::IdfWeighting, s::TokenStats, m::TextModel) = log(2, 1 + m.n / s.ndocs)
+global_weighting(::BinaryGlobalWeighting, s::TokenStats, m::TextModel) = 1.0

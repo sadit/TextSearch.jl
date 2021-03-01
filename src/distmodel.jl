@@ -49,7 +49,7 @@ function DistModel(corpus::AbstractVector{BOW}, y::CategoricalArray; nclasses=0,
 	else
 		if weights == :balance
 			s = sum(model.sizes)
-			weights = [s / x for x in model.sizes]  ## this produces nicer numbers, but it is the same than weights = [1 / x for x in model.sizes]
+			weights = [s / x for x in model.sizes]  ## this produces nicer numbers, but it is eq. to weights = [1 / x for x in model.sizes]
 		elseif weights == :rand
 			weights = [rand() for x in model.sizes]
 		else

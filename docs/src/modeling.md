@@ -35,22 +35,14 @@ Once a `TextConfig` is define, we need to create
 We need to create a model for the text, we select a typical vector model. The model constructor needs to know the weighthing scheme and some stats about the corpus' vocabulary:
 ```@repl Model
 corpus_bow = compute_bow(config, corpus)
-modeltp = VectorModel(TpWeighting(), corpus_bow)
-modelfreq = VectorModel(FreqWeighting(), corpus_bow)
-modeltf = VectorModel(TfWeighting(), corpus_bow)
-modelidf = VectorModel(IdfWeighting(), corpus_bow)
-modeltfidf = VectorModel(TfidfWeighting(), corpus_bow)
+model = VectorModel(TfWeighting(), IdfWeighting(), corpus_bow)
 ```
 
 Now we can vectorize a text
 ```@repl Model
 text = "las mejor música, la música de siempre!"
 b = compute_bow(config, text)
-vectorize(modeltp, b; normalize=false)
-vectorize(modelfreq, b; normalize=false)
-vectorize(modeltf, b; normalize=false)
-vectorize(modelidf, b; normalize=false)
-vectorize(modeltfidf, b; normalize=false)
+vectorize(model, b; normalize=false)
 ```
 
 Note: typically, you may to set `normalize=true` to allow the vector normalization.
@@ -63,23 +55,19 @@ Note: typically, you may to set `normalize=true` to allow the vector normalizati
 ```@repl Model
 labels
 vcorpus = compute_bow.(config, corpus)
-modelent = EntModel(EntWeighting(), vcorpus, labels)
-modelenttp = EntModel(EntTpWeighting(), vcorpus, labels)
-modelenttf = EntModel(EntTfWeighting(), vcorpus, labels)
+model = EntModel(TfWeighting(), EntWeighting(), vcorpus, labels)
 ```
 
 Now we can vectorize a text
 ```@repl Model
 text = "las mejor música, la música de siempre!"
 b = compute_bow(config, text)
-vectorize(modelent, b; normalize=false)
-vectorize(modelenttp, b; normalize=false)
-vec = vectorize(modelenttf, b; normalize=false)
+vec = vectorize(model, b; normalize=false)
 
 ```
 
 # Inspecting models
 Models have a `id2token` dictionary to map identifiers to symbols
 ```@repl Model
-Dict(modelenttf.id2token[k] => v for (k,v) in vec)
+Dict(model.id2token[k] => v for (k,v) in vec)
 ```

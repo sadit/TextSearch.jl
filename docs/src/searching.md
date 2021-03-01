@@ -35,7 +35,7 @@ config = TextConfig(group_emo=false, group_num=false, group_url=false, group_usr
 
 We need to create a model for the text, we select a typical vector model. The model constructor needs to know the weighthing scheme and some stats about the corpus' vocabulary:
 ```@repl Search
-model = VectorModel(TfidfWeighting(), compute_bow(config, corpus))
+model = VectorModel(TfWeighting, IdfWeighting(), compute_bow(config, corpus))
 ```
 
 This model is used to vectorize the corpus, and then, create the Inverted Index search structure.
