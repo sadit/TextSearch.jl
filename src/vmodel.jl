@@ -171,7 +171,7 @@ function VectorModel(local_weighting::LocalWeighting, global_weighting::GlobalWe
     VectorModel(local_weighting, global_weighting, tokens, id2token, maxfreq, length(tokens), length(corpus))
 end
 
-Base.show(io::IO, model::VectorModel) = print(io, "{VectorModel local_weighting=$(model.local_weighting), global_weighting=$(model.global_weighting) vocsize=$(model.m), maxfreq=$(model.maxfreq)}")
+Base.show(io::IO, model::VectorModel) = print(io, "{VectorModel local_weighting=$(model.local_weighting), global_weighting=$(model.global_weighting) train-voc=$(model.m), train-n=$(model.n), maxfreq=$(model.maxfreq)}")
 
 """
     prune(model::VectorModel, minocc, rank)

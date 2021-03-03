@@ -17,6 +17,7 @@ struct Skipgram
 end
 
 Base.isless(a::Skipgram, b::Skipgram) = isless((a.qsize, a.skip), (b.qsize, b.skip))
+Base.isequal(a::Skipgram, b::Skipgram) = a.qsize == b.qsize && a.skip == b.skip
 
 """
     TextConfig(;
