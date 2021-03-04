@@ -104,9 +104,9 @@ const UnknownTokenStats = TokenStats(0, 0, 0, 0f0)
 const Vocabulary = Dict{Symbol, TokenStats}
 const IdTokenMap = Dict{Int32, Symbol}
 
-mutable struct VectorModel{_L<:LocalWeighting, _G<:GlobalWeighting} <: TextModel
-    local_weighting::_L
+mutable struct VectorModel{_G<:GlobalWeighting, _L<:LocalWeighting} <: TextModel
     global_weighting::_G
+    local_weighting::_L
     tokens::Vocabulary
     id2token::IdTokenMap
     maxfreq::Int
@@ -132,7 +132,7 @@ function Base.copy(
         m=e.m,
         n=e.n
     )
-    VectorModel(local_weighting, global_weighting, tokens, id2token, maxfreq, m, n)
+    VectorModel(global_weighting, local_weighting, tokens, id2token, maxfreq, m, n)
 end
 
 function create_vocabulary(corpus)
@@ -148,11 +148,11 @@ function create_vocabulary(corpus)
 end
 
 """
-    VectorModel(local_weighting::LocalWeighting, global_weighting::GlobalWeighting, corpus::BOW; minocc::Integer=1)
+    VectorModel(global_weighting::GlobalWeighting, local_weighting::LocalWeighting, corpus::BOW)
 
 Creates a vector model using the input corpus. 
 """
-function VectorModel(local_weighting::LocalWeighting, global_weighting::GlobalWeighting, corpus::AbstractVector{BOW}; minocc::Integer=1)
+function VectorModel(global_weighting::GlobalWeighting, local_weighting::LocalWeighting, corpus::AbstractVector{BOW})
     tokens = Vocabulary()
     id2token = IdTokenMap()
 
@@ -161,77 +161,49 @@ function VectorModel(local_weighting::LocalWeighting, global_weighting::GlobalWe
     tokenID = 0
     maxfreq = 0
     for (t, s) in V
-        s.occs < minocc && continue
         tokenID += 1
         id2token[tokenID] = t
         tokens[t] = TokenStats(tokenID, s.occs, s.ndocs, 0.0f0)
         maxfreq = max(maxfreq, s.occs)
     end
     
-    VectorModel(local_weighting, global_weighting, tokens, id2token, maxfreq, length(tokens), length(corpus))
+    VectorModel(global_weighting, local_weighting, tokens, id2token, maxfreq, length(tokens), length(corpus))
 end
 
-Base.show(io::IO, model::VectorModel) = print(io, "{VectorModel local_weighting=$(model.local_weighting), global_weighting=$(model.global_weighting) train-voc=$(model.m), train-n=$(model.n), maxfreq=$(model.maxfreq)}")
+Base.show(io::IO, model::VectorModel) = print(io, "{VectorModel global_weighting=$(model.global_weighting), local_weighting=$(model.local_weighting), train-voc=$(model.m), train-n=$(model.n), maxfreq=$(model.maxfreq)}")
+
 
 """
-    prune(model::VectorModel, minocc, rank)
+    prune(model::VectorModel, lowerweight::AbstractFloat)
 
-Cuts the vocabulary by frequency using lower and higher filter;
-All tokens with frequency below `minfreq` are ignored; top `rank` tokens are also removed.
+Creates a new vector model without terms with smaller global weights than `lowerweight`.
 """
-function prune(model::VectorModel{_L,_G}, minocc::Integer, rank::Integer) where {_L,_G}
-    W = [(token, s) for (token, s) in model.tokens if s.occs >= minocc]
-    sort!(W, by=x->x[2])
+function prune(model::VectorModel, lowerweight::AbstractFloat)
     tokens = Vocabulary()
-    for i in 1:length(W)-rank+1
-        w = W[i]
-        tokens[w[1]] = w[2]
+    id2token = IdTokenMap()
+    i = 0
+    for (token, s) in model.tokens
+        if prune_global_weighting(model, s) >= lowerweight
+            i += 1
+            tokens[token] = TokenStats(i, s.occs, s.ndocs, s.weight)
+            id2token[i] = token
+        end
     end
 
-    id2token = IdTokenMap(s.id => t for (t, s) in tokens)
-    VectorModel(_L, _G, tokens, id2token, model.maxfreq, model.m, model.n)
+    VectorModel(model.global_weighting, model.local_weighting, tokens, id2token, model.maxfreq, model.m, model.n)
 end
 
 """
     prune_select_top(model::VectorModel, k::Integer)
     prune_select_top(model::VectorModel, ratio::AbstractFloat)
 
-Creates a new model with the best `k` tokens from `model` based on the `kind` scheme; kind must be either `IdfWeighting` or `FreqWeighting`.
+Creates a new vector model with the best `k` tokens from `model` based on global weighting.
 `ratio` is a floating point between 0 and 1 indicating the ratio of the vocabulary to be kept
 """
 function prune_select_top(model::VectorModel, k::Integer)
-    tokens = Vocabulary()
-    maxfreq = 0
-    
-    if model.global_weighting isa IdfWeighting
-        idf = IdfWeighting()
-        X = [(t, s, global_weighting(idf, s, model)) for (t, s) in model.tokens]
-        sort!(X, by=x->x[end], rev=true)
-        for i in 1:k
-            t, s, w = X[i]
-            tokens[t] = s
-            maxfreq = max(maxfreq, s.occs)
-        end
-    elseif model.global_weighting isa EntropyWeighting
-        X = [(t, s) for (t, s) in model.tokens]
-        sort!(X, by=x->x[end].weight, rev=true)
-        for i in 1:k
-            t, s = X[i]
-            tokens[t] = s
-            maxfreq = max(maxfreq, s.occs)
-        end
-    else
-        X = [(t, s) for (t, s) in model.tokens]
-        sort!(X, by=x->x[end].occs, rev=true)
-        for i in 1:k
-            t, s = X[i]
-            tokens[t] = s
-            maxfreq = max(maxfreq, s.occs)
-        end
-    end
-
-    id2token = Dict(s.id => t for (t, s) in tokens)
-    VectorModel(model.local_weighting, model.global_weighting, tokens, id2token, maxfreq, model.m, model.n)
+    w = [prune_global_weighting(model, s) for (token, s) in model.tokens]
+    sort!(w, rev=true)
+    prune(model, w[k])
 end
 
 prune_select_top(model::VectorModel, ratio::AbstractFloat) = prune_select_top(model, floor(Int, length(model.tokens) * ratio))
@@ -241,7 +213,7 @@ prune_select_top(model::VectorModel, ratio::AbstractFloat) = prune_select_top(mo
 
 Computes a weighted vector using the given bag of words and the specified weighting scheme.
 """
-function vectorize(model::VectorModel{_L, _G}, bow::BOW; normalize=true) where {_L,_G}
+function vectorize(model::VectorModel{_G, _L}, bow::BOW; normalize=true) where {_L,_G}
     numtokens = 0.0
     if _L === TpWeighting
         for (token, freq) in bow
@@ -257,7 +229,9 @@ function vectorize(model::VectorModel{_L, _G}, bow::BOW; normalize=true) where {
         s === nothing && continue
 
         lw = local_weighting(model.local_weighting, freq, maxfreq, numtokens)
-        w = lw * global_weighting(model.global_weighting, s, model)
+        gw = global_weighting(model, s)
+        # @info (token, _G => gw, _L => lw)
+        w = Float64(lw * gw)
         if w > 1e-6
             vec[s.id] = w
         end
@@ -282,5 +256,7 @@ local_weighting(::TfWeighting, occs, maxfreq, numtokens) = occs / maxfreq
 local_weighting(::FreqWeighting, occs, maxfreq, numtokens) = occs
 local_weighting(::TpWeighting, occs, maxfreq, numtokens) = occs / numtokens
 local_weighting(::BinaryLocalWeighting, occs, maxfreq, numtokens) = 1.0
-global_weighting(::IdfWeighting, s::TokenStats, m::TextModel) = log(2, 1 + m.n / s.ndocs)
-global_weighting(::BinaryGlobalWeighting, s::TokenStats, m::TextModel) = 1.0
+global_weighting(m::VectorModel{IdfWeighting}, s::TokenStats) = log(2, 1 + m.n / s.ndocs)
+global_weighting(m::VectorModel{BinaryGlobalWeighting}, s::TokenStats) = 1.0
+prune_global_weighting(m::VectorModel, s) = global_weighting(m, s)
+prune_global_weighting(m::VectorModel{BinaryGlobalWeighting}, s) = log(2, 1 + m.n / s.ndocs) * log2(s.occs)

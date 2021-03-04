@@ -30,8 +30,8 @@ function entropy(dist)
 end
 
 """
-    VectorModel(lw::LocalWeighting, ent::EntropyWeighting, corpus::BOW, labels;
-        minocc::Integer=1,
+    VectorModel(ent::EntropyWeighting, lw::LocalWeighting, corpus::BOW, labels;
+        mindocs::Integer=1,
         smooth::Float64=0.0,
         weights=:balance,
         lowerweight=0.0
@@ -39,11 +39,9 @@ end
 
 Creates a vector model using the input corpus. 
 """
-function VectorModel(lw::LocalWeighting, ent::EntropyWeighting, corpus::AbstractVector{BOW}, labels=nothing;
-        minocc::Integer=1,
+function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, corpus::AbstractVector{BOW}, labels=nothing;
         smooth::Float64=0.0,
-        weights=:balance,
-        lowerweight=0.0
+        weights=:balance
     )
     labels === nothing && error("EntropyWeighting requires labels as a categorical array to work")
 
@@ -62,7 +60,7 @@ function VectorModel(lw::LocalWeighting, ent::EntropyWeighting, corpus::Abstract
                 dist = D[t] = fill(smooth, nclasses)
             end
             
-            dist[labels.refs[i]] += 1
+            dist[labels.refs[i]] += occ
         end
     end
 
@@ -77,12 +75,12 @@ function VectorModel(lw::LocalWeighting, ent::EntropyWeighting, corpus::Abstract
         weights = ones(Float64, nclasses)
     end
 
-    tokens, id2token, maxfreq = _create_vocabulary_with_entropy(V, D, weights, nclasses, minocc, lowerweight)
+    tokens, id2token, maxfreq = _create_vocabulary_with_entropy(V, D, weights, nclasses)
     
-    VectorModel(lw, ent, tokens, id2token, maxfreq, length(tokens), length(corpus))
+    VectorModel(ent, lw, tokens, id2token, maxfreq, length(tokens), length(corpus))
 end
 
-function _create_vocabulary_with_entropy(V, D, weights, nclasses, minocc, lowerweight)
+function _create_vocabulary_with_entropy(V, D, weights, nclasses)
     tokens = Vocabulary()
     id2token = IdTokenMap()
 
@@ -91,12 +89,10 @@ function _create_vocabulary_with_entropy(V, D, weights, nclasses, minocc, lowerw
     maxent = log2(nclasses)
 
     for (t, s) in V
-        s.occs < minocc && continue
         dist = D[t]
         dist .= dist .* weights
 
         e = 1.0 - entropy(dist) / maxent
-        e < lowerweight && continue
 
         tokenID += 1
         id2token[tokenID] = t
@@ -107,4 +103,4 @@ function _create_vocabulary_with_entropy(V, D, weights, nclasses, minocc, lowerw
     tokens, id2token, maxfreq
 end
 
-global_weighting(::EntropyWeighting, s::TokenStats, m::TextModel) = s.weight
+global_weighting(::VectorModel{EntropyWeighting}, s::TokenStats) = s.weight

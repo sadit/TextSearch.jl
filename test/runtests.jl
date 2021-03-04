@@ -68,7 +68,7 @@ end
 
 @testset "Tokenizer, DVEC, and vectorize" begin
     config = TextConfig(group_usr=true, nlist=[1])
-    model = VectorModel(FreqWeighting(), BinaryGlobalWeighting(), compute_bow.(config, corpus))
+    model = VectorModel(BinaryGlobalWeighting(), FreqWeighting(), compute_bow.(config, corpus))
     x = vectorize(model, compute_bow(config, text1))
     @show corpus
     @show text1
@@ -88,41 +88,57 @@ const sentiment_msg = "lol, esto me encanta"
 
 @testset "Tokenizer, DVEC, and vectorize" begin
     config = TextConfig(group_usr=true, nlist=[1])
-    model = VectorModel(BinaryLocalWeighting(), EntropyWeighting(), compute_bow.(config, sentiment_corpus), sentiment_labels)
-    @test (7.1095085 - sum(t.weight for t in values(model.tokens))) < 1e-5
+    model = VectorModel(EntropyWeighting(), BinaryLocalWeighting(), compute_bow.(config, sentiment_corpus), sentiment_labels)
+    @info model.tokens
+    @info sum(t.weight for t in values(model.tokens))
+    @test (7.059714 - sum(t.weight for t in values(model.tokens))) < 1e-5
 end
 
 @testset "Weighting schemes" begin
     config = TextConfig(group_usr=true, nlist=[1])
-    for p in [
-            (FreqWeighting(), BinaryGlobalWeighting(), 0.3162),
-            (TfWeighting(), BinaryGlobalWeighting(), 0.3162),
-            (TpWeighting(), BinaryGlobalWeighting(), 0.3162),
-            (BinaryLocalWeighting(), IdfWeighting(), 0.40518),
-            (TfWeighting(), IdfWeighting(), 0.23334),
+    for (gw, lw, dot_) in [
+            (BinaryGlobalWeighting(), FreqWeighting(), 0.3162),
+            (BinaryGlobalWeighting(), TfWeighting(), 0.3162),
+            (BinaryGlobalWeighting(), TpWeighting(), 0.3162),
+            (IdfWeighting(), BinaryLocalWeighting(), 0.40518),
+            (IdfWeighting(), TfWeighting(), 0.23334),
+
+            (EntropyWeighting(), FreqWeighting(), 0.44641),
+            (EntropyWeighting(), TfWeighting(), 0.44641),
+            (EntropyWeighting(), TpWeighting(), 0.44641),
+            (EntropyWeighting(), BinaryLocalWeighting(), 0.70585)
         ]
-        model = VectorModel(p[1], p[2], compute_bow.(config, sentiment_corpus))
+
+        if gw isa EntropyWeighting
+            model = VectorModel(gw, lw, compute_bow.(config, sentiment_corpus), sentiment_labels)
+        else
+            model = VectorModel(gw, lw, compute_bow.(config, sentiment_corpus))
+        end
+
         x = vectorize(model, compute_bow(config, sentiment_corpus[3]))
         y = vectorize(model, compute_bow(config, sentiment_corpus[4]))
-        @info p, dot(x, y)
-        @test abs(dot(x, y) - p[end]) < 1e-3
+        @show gw, lw, dot_, dot(x, y), x, y
+        @test abs(dot(x, y) - dot_) < 1e-3
     end
 
-    for p in [
-            (FreqWeighting(), EntropyWeighting(), 0.44455),
-            (TfWeighting(), EntropyWeighting(), 0.44455),
-            (TpWeighting(), EntropyWeighting(), 0.44455),
-            (BinaryLocalWeighting(), EntropyWeighting(), 0.70290),
+    for (gw, lw, dot_, p) in [
+            (EntropyWeighting(), BinaryLocalWeighting(), 0.70711, 0.9),
+            (IdfWeighting(), TfWeighting(), 0.23334, 0.9),
         ]
-        model = VectorModel(p[1], p[2], compute_bow.(config, sentiment_corpus), sentiment_labels)
+        if gw isa EntropyWeighting
+            model = VectorModel(gw, lw, compute_bow.(config, sentiment_corpus), sentiment_labels)
+        else
+            model = VectorModel(gw, lw, compute_bow.(config, sentiment_corpus))
+        end
+
+        model = prune_select_top(model, p)
+
         x = vectorize(model, compute_bow(config, sentiment_corpus[3]))
         y = vectorize(model, compute_bow(config, sentiment_corpus[4]))
-        @info p, dot(x, y)
-        @test abs(dot(x, y) - p[end]) < 1e-3
+        @show gw, lw, dot_, dot(x, y), x, y
+        @test abs(dot(x, y) - dot_) < 1e-3
     end
-
 end
-
 
 @testset "distances" begin
     u = Dict(:el => 0.9, :hola => 0.1, :mundo => 0.2) |> normalize!
@@ -162,7 +178,7 @@ _corpus = [
 
 @testset "transpose bow" begin
     config = TextConfig(nlist=[1])
-    model = VectorModel(FreqWeighting(), BinaryGlobalWeighting(), compute_bow.(config, _corpus))
+    model = VectorModel(BinaryGlobalWeighting(), FreqWeighting(), compute_bow.(config, _corpus))
     X = [vectorize(model, compute_bow(config, msg)) for msg in _corpus]
     dX = transpose(X)
 end
@@ -190,7 +206,7 @@ end
 
 @testset "invindex" begin
     config = TextConfig(nlist=[1])
-    model = VectorModel(TfWeighting(), IdfWeighting(), compute_bow.(config, _corpus))
+    model = VectorModel(IdfWeighting(), TfWeighting(), compute_bow.(config, _corpus))
     ψ(text) = vectorize(model, compute_bow(config, text))
     invindex = InvIndex([ψ(text) for text in _corpus])
     @test are_posting_lists_sorted(invindex)
@@ -228,7 +244,7 @@ end
 
 @testset "centroid computing" begin
     config = TextConfig(nlist=[1])
-    model = VectorModel(FreqWeighting(), BinaryGlobalWeighting(), compute_bow.(config, _corpus))
+    model = VectorModel(BinaryGlobalWeighting(), FreqWeighting(), compute_bow.(config, _corpus))
     X = [vectorize(model, compute_bow(config, x)) for x in _corpus]
     x = sum(X) |> normalize!
     vec = bow(model, x)
@@ -257,7 +273,7 @@ end
     end
 
     randcorpus = create_corpus()
-    model = VectorModel(TfWeighting(), BinaryGlobalWeighting(), compute_bow.(config, randcorpus))
+    model = VectorModel(BinaryGlobalWeighting(), TfWeighting(), compute_bow.(config, randcorpus))
     @show randcorpus[1:10]
     X = [vectorize(model, compute_bow(config, x)) for x in randcorpus]
     L, D  = neardup(X, 0.2)
