@@ -204,7 +204,7 @@ Creates a new vector model with the best `k` tokens from `model` based on global
 function prune_select_top(model::VectorModel, k::Integer)
     w = [prune_global_weighting(model, s) for (token, s) in model.tokens]
     sort!(w, rev=true)
-    prune(model, w[k])
+    prune(model, Float64(w[k]))
 end
 
 prune_select_top(model::VectorModel, ratio::AbstractFloat) = prune_select_top(model, floor(Int, length(model.tokens) * ratio))
@@ -260,4 +260,4 @@ local_weighting(::BinaryLocalWeighting, occs, maxfreq, numtokens) = 1.0
 global_weighting(m::VectorModel{IdfWeighting}, s::TokenStats) = log(2, 1 + m.n / s.ndocs)
 global_weighting(m::VectorModel{BinaryGlobalWeighting}, s::TokenStats) = 1.0
 prune_global_weighting(m::VectorModel, s) = global_weighting(m, s)
-prune_global_weighting(m::VectorModel{BinaryGlobalWeighting}, s) = log(2, 1 + m.n / s.ndocs) * log2(s.occs)
+prune_global_weighting(m::VectorModel{BinaryGlobalWeighting}, s) = -s.ndocs
