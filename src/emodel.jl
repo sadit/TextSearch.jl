@@ -40,6 +40,7 @@ end
 Creates a vector model using the input corpus. 
 """
 function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, corpus::AbstractVector{BOW}, labels=nothing;
+        mindocs=1,
         smooth::Float64=0.0,
         weights=:balance
     )
@@ -75,12 +76,12 @@ function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, corpus::Abstract
         weights = ones(Float64, nclasses)
     end
 
-    tokens, id2token, maxfreq = _create_vocabulary_with_entropy(V, D, weights, nclasses)
+    tokens, id2token, maxfreq = _create_vocabulary_with_entropy(V, D, weights, nclasses, mindocs)
     
     VectorModel(ent, lw, tokens, id2token, maxfreq, length(tokens), length(corpus))
 end
 
-function _create_vocabulary_with_entropy(V, D, weights, nclasses)
+function _create_vocabulary_with_entropy(V, D, weights, nclasses, mindocs)
     tokens = Vocabulary()
     id2token = IdTokenMap()
 
@@ -89,6 +90,7 @@ function _create_vocabulary_with_entropy(V, D, weights, nclasses)
     maxent = log2(nclasses)
 
     for (t, s) in V
+        s.ndocs < mindocs && continue
         dist = D[t]
         dist .= dist .* weights
 

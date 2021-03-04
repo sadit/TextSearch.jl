@@ -148,11 +148,11 @@ function create_vocabulary(corpus)
 end
 
 """
-    VectorModel(global_weighting::GlobalWeighting, local_weighting::LocalWeighting, corpus::BOW)
+    VectorModel(global_weighting::GlobalWeighting, local_weighting::LocalWeighting, corpus::BOW; mindocs=1)
 
 Creates a vector model using the input corpus. 
 """
-function VectorModel(global_weighting::GlobalWeighting, local_weighting::LocalWeighting, corpus::AbstractVector{BOW})
+function VectorModel(global_weighting::GlobalWeighting, local_weighting::LocalWeighting, corpus::AbstractVector{BOW}; mindocs=1)
     tokens = Vocabulary()
     id2token = IdTokenMap()
 
@@ -161,6 +161,7 @@ function VectorModel(global_weighting::GlobalWeighting, local_weighting::LocalWe
     tokenID = 0
     maxfreq = 0
     for (t, s) in V
+        s.ndocs < mindocs && continue
         tokenID += 1
         id2token[tokenID] = t
         tokens[t] = TokenStats(tokenID, s.occs, s.ndocs, 0.0f0)
