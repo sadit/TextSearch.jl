@@ -1,11 +1,11 @@
 # This file is a part of TextSearch.jl
 # License is Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0.txt
 
-export compute_bow_multimessage, compute_bow_list, compute_bow
+export compute_bow_corpus, compute_bow
 
 """
-    compute_bow(tokenlist::AbstractVector{S}, bow::BOW=BOW()) where {S<:AbstractString}
-    compute_bow(config::TextConfig, text::AbstractString, bow::BOW=BOW())
+    compute_bow(tokenlist::AbstractVector{S}, bow::BOW=BOW()) where {S<:Symbol}
+    compute_bow(config::TextConfig, text::Symbol, bow::BOW=BOW())
     compute_bow(config::TextConfig, text::AbstractVector, bow::BOW=BOW())
     
 
@@ -13,66 +13,46 @@ Creates a bag of words from the given text (a string or a list of strings).
 If bow is given then updates the bag with the text.
 When `config` is given, the text is parsed according to it.
 """
-function compute_bow(tokenlist::AbstractVector{S}, bow::BOW=BOW()) where {S<:AbstractString}
-    for token in tokenlist
-        sym = Symbol(token)
-        m = get(bow, sym, 0) + 1
-        bow[sym] = m
+function compute_bow(tokenlist::AbstractVector, bow::BOW=BOW())
+    for sym in tokenlist
+        bow[sym] = get(bow, sym, 0) + 1
     end
 
     bow
 end
 
-compute_bow(config::TextConfig, text::AbstractString, bow::BOW=BOW()) = 
-    compute_bow(tokenize(config, normalize_text(config, text)), bow)
-
-compute_bow(config::TextConfig, text::AbstractVector, bow::BOW=BOW()) = 
-    compute_bow_multimessage(config, text, bow)
+function compute_bow(config::TextConfig, text::AbstractString, bow::BOW=BOW(), buff::TokenizerBuffer=TokenizerBuffer())
+    compute_bow(tokenize(config, text, buff), bow)
+end
 
 """
-    compute_bow_multimessage(config::TextConfig, corpus::AbstractVector, bow=BOW())
+    compute_bow(config::TextConfig, messages::AbstractVector, bow::BOW=BOW())
 
-Computes a bag of words from a multimessage corpus
+Computes a bag of words from messages
 """
-function compute_bow_multimessage(config::TextConfig, corpus::AbstractVector, bow=BOW())
-    normbuffer = Vector{Char}()
-    tokenlist = Vector{String}()
-    buff = IOBuffer(Vector{UInt8}(undef, 16), write=true)
-
-    for text in corpus
-        empty!(tokenlist)
-        if text isa AbstractString
-            empty!(normbuffer)
-            normalize_text(config, text, normbuffer)
-            tokenize(config, normbuffer; output=tokenlist, buff=buff)
-        else
-            tokenize(config, text; output=tokenlist, buff=buff)
-        end
-        
-        compute_bow(tokenlist, bow)
+function compute_bow(config::TextConfig, messages::AbstractVector, bow::BOW=BOW(), buff::TokenizerBuffer=TokenizerBuffer())
+    for text in messages
+        empty!(buff)
+        tokenize(config, text, buff)
+        compute_bow(buff.output, bow)
     end
-    
+
     bow
 end
 
 """
-    compute_bow_list(config::TextConfig, corpus::AbstractVector)
+    compute_bow_corpus(config::TextConfig, corpus::AbstractVector)
 
 Computes a list of bag of words from a corpus
 """
-function compute_bow_list(config::TextConfig, corpus::AbstractVector)
-    bow_vector = Vector{BOW}(undef, length(corpus))
-    t = Char[]
-    L = String[]
-    buff = IOBuffer(Vector{UInt8}(undef, 16), write=true)
-
-    for (i, text) in enumerate(corpus)
-        empty!(t)
-        empty!(L)
-        normalize_text(config, text, t)
-        tokenize(config, t; output=L, buff=buff)
-        bow_vector[i] = compute_bow(tokenize(config, t))
+function compute_bow_corpus(config::TextConfig, corpus::AbstractVector, bow::BOW=BOW(), buff::TokenizerBuffer=TokenizerBuffer())
+    X = Vector{BOW}(undef, length(corpus))
+    for i in eachindex(corpus)
+        empty!(buff)
+        empty!(bow)
+        compute_bow(config, corpus[i], bow, buff)
+        X[i] = Dict(bow)
     end
 
-    bow_vector
+    X
 end

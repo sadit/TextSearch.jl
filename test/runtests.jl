@@ -10,77 +10,71 @@ const corpus = ["hello world :)", "@user;) excellent!!", "#jello world."]
 
 @testset "individual tokenizers" begin
     @show text0
-    @test qgrams(text0, 1) == ["@", "u", "s", "e", "r", ";", ")", " ", "#", "j", "e", "l", "l", "o", ".", "w", "o", "r", "l", "d"] 
-    @test qgrams(text0, 3) == ["@us", "use", "ser", "er;", "r;)", ";) ", ") #", " #j", "#je", "jel", "ell", "llo", "lo.", "o.w", ".wo", "wor", "orl", "rld"]
+    @test qgrams(text0, 1) == Symbol.(["@", "u", "s", "e", "r", ";", ")", " ", "#", "j", "e", "l", "l", "o", ".", "w", "o", "r", "l", "d"])
+    @test qgrams(text0, 3) == Symbol.(["@us", "use", "ser", "er;", "r;)", ";) ", ") #", " #j", "#je", "jel", "ell", "llo", "lo.", "o.w", ".wo", "wor", "orl", "rld"])
     @show text1
-    @test unigrams(text0) == ["@user", ";)", "#jello", ".", "world"]
-    @test unigrams(text1) == ["hello", "world", "!!", "@user", ";)", "#jello", ".", "world", ":)"]
-    @test unigrams(corpus[1]) == ["hello", "world", ":)"]
-    @test unigrams(corpus[2]) == ["@user", ";)", "excellent", "!!"]
-    @test unigrams(corpus[3]) == ["#jello", "world", "."]
+    @test unigrams(text0) == Symbol.(["@user", ";)", "#jello", ".", "world"])
+    @test unigrams(text1) == Symbol.(["hello", "world", "!!", "@user", ";)", "#jello", ".", "world", ":)"])
+    @test unigrams(corpus[1]) == Symbol.(["hello", "world", ":)"])
+    @test unigrams(corpus[2]) == Symbol.(["@user", ";)", "excellent", "!!"])
+    @test unigrams(corpus[3]) == Symbol.(["#jello", "world", "."])
     @show corpus
 end
 
 @testset "Normalize and tokenize" begin
     config = TextConfig(del_punc=true, group_usr=true, nlist=[1, 2, 3])
-    t = normalize_text(config, text1)
-    @test t == [' ', 'h', 'e', 'l', 'l', 'o', ' ', 'w', 'o', 'r', 'l', 'd', ' ', ' ', '_', 'u', 's', 'r', ' ', ' ', '#', 'j', 'e', 'l', 'l', 'o', ' ', 'w', 'o', 'r', 'l', 'd', ' ', ' ']
-    @test tokenize(config, t) == ["hello", "world", "_usr", "#jello", "world", "hello world", "world _usr", "_usr #jello", "#jello world", "hello world _usr", "world _usr #jello", "_usr #jello world"]
+    @test tokenize(config, text1) == Symbol.(["hello", "world", "_usr", "#jello", "world", "hello world", "world _usr", "_usr #jello", "#jello world", "hello world _usr", "world _usr #jello", "_usr #jello world"])
     
     config_ = JSON3.read(JSON3.write(config), typeof(config))
-    t = normalize_text(config_, text1)
-    @test t == [' ', 'h', 'e', 'l', 'l', 'o', ' ', 'w', 'o', 'r', 'l', 'd', ' ', ' ', '_', 'u', 's', 'r', ' ', ' ', '#', 'j', 'e', 'l', 'l', 'o', ' ', 'w', 'o', 'r', 'l', 'd', ' ', ' ']
-    @test tokenize(config_, t) == ["hello", "world", "_usr", "#jello", "world", "hello world", "world _usr", "_usr #jello", "#jello world", "hello world _usr", "world _usr #jello", "_usr #jello world"]
+    @test tokenize(config_, text1) == Symbol.(["hello", "world", "_usr", "#jello", "world", "hello world", "world _usr", "_usr #jello", "#jello world", "hello world _usr", "world _usr #jello", "_usr #jello world"])
 
 end
 
 @testset "Normalize and tokenize bigrams and trigrams" begin
     config = TextConfig(del_punc=true, group_usr=true, nlist=[2, 3])
-    t = normalize_text(config, text1)
-    @test tokenize(config, t) == ["hello world", "world _usr", "_usr #jello", "#jello world", "hello world _usr", "world _usr #jello", "_usr #jello world"]
+    @test tokenize(config, text1) == Symbol.(["hello world", "world _usr", "_usr #jello", "#jello world", "hello world _usr", "world _usr #jello", "_usr #jello world"])
 end
 
 @testset "Tokenize skipgrams" begin
     config = TextConfig(del_punc=false, group_usr=false, nlist=[1], slist=[])
-    tokens = tokenize(config, normalize_text(config, text1))
+    tokens = tokenize(config, text1)
     @info tokens
-    @test tokens == ["hello", "world", "!!", "@user", ";)", "#jello", ".", "world", ":)"]
+    @test tokens == Symbol.(["hello", "world", "!!", "@user", ";)", "#jello", ".", "world", ":)"])
 
     config = TextConfig(del_punc=false, group_usr=false, nlist=[], slist=[Skipgram(2,1)])
-    t = normalize_text(config, text1)
-    @test tokenize(config, t) == ["hello !!", "world @user", "!! ;)", "@user #jello", ";) .", "#jello world", ". :)"]
+    @test tokenize(config, text1) == Symbol.(["hello !!", "world @user", "!! ;)", "@user #jello", ";) .", "#jello world", ". :)"])
 
     config = TextConfig(del_punc=false, group_usr=false, nlist=[], slist=[Skipgram(2,2)])
-    tokens = tokenize(config, normalize_text(config, text1))
-    @test tokens ==  ["hello @user", "world ;)", "!! #jello", "@user .", ";) world", "#jello :)"]
+    @test tokenize(config, text1) == Symbol.(["hello @user", "world ;)", "!! #jello", "@user .", ";) world", "#jello :)"])
 
     config = TextConfig(del_punc=false, group_usr=false, nlist=[], slist=[Skipgram(3,1)])
-    tokens = tokenize(config, normalize_text(config, text1))
+    tokens = tokenize(config, text1)
     @info text1 tokens
-    @test tokens == ["hello !! ;)", "world @user #jello", "!! ;) .", "@user #jello world", ";) . :)"]
+    @test tokens == Symbol.(["hello !! ;)", "world @user #jello", "!! ;) .", "@user #jello world", ";) . :)"])
 
     config = TextConfig(del_punc=false, group_usr=false, nlist=[], slist=[Skipgram(3,1), Skipgram(2, 1)])
-    tokens = tokenize(config, normalize_text(config, text1))
+    tokens = tokenize(config, text1)
     @info text1 tokens
-    @test tokens == ["hello !!", "world @user", "!! ;)", "@user #jello", ";) .", "#jello world", ". :)", "hello !! ;)", "world @user #jello", "!! ;) .", "@user #jello world", ";) . :)"]
+    @test tokens == Symbol.(["hello !!", "world @user", "!! ;)", "@user #jello", ";) .", "#jello world", ". :)", "hello !! ;)", "world @user #jello", "!! ;) .", "@user #jello world", ";) . :)"])
 
 end
 
 @testset "Tokenizer, DVEC, and vectorize" begin
     config = TextConfig(group_usr=true, nlist=[1])
-    model = VectorModel(BinaryGlobalWeighting(), FreqWeighting(), compute_bow.(config, corpus))
-    x = vectorize(model, compute_bow(config, text1))
+    model = VectorModel(BinaryGlobalWeighting(), FreqWeighting(), compute_bow_corpus(config, corpus))
+    x = vectorize(config, model, text1)
     @show corpus
     @show text1
     @show text2
-    @test nnz(x) == 8
-    x = vectorize(model, compute_bow(config, text2))
+    @test nnz(x) == 7
+    x = vectorize(config, model, text2)
     @test nnz(x) == 1 && first(keys(x)) < 0
 
     model_ = JSON3.read(JSON3.write(model), typeof(model))
-    x = vectorize(model_, compute_bow(config, text1))
-    @test nnz(x) == 8
+    x = vectorize(config, model_, text1)
+    @test nnz(x) == 7
 end
+
 
 const sentiment_corpus = ["me gusta", "me encanta", "lo lo odio", "odio esto", "me encanta esto LOL!"]
 const sentiment_labels = categorical(["pos", "pos", "neg", "neg", "pos"])
@@ -88,7 +82,7 @@ const sentiment_msg = "lol, esto me encanta"
 
 @testset "Tokenizer, DVEC, and vectorize" begin
     config = TextConfig(group_usr=true, nlist=[1])
-    model = VectorModel(EntropyWeighting(), BinaryLocalWeighting(), compute_bow.(config, sentiment_corpus), sentiment_labels)
+    model = VectorModel(EntropyWeighting(), BinaryLocalWeighting(), compute_bow_corpus(config, sentiment_corpus), sentiment_labels)
     @info model.tokens
     @info sum(t.weight for t in values(model.tokens))
     @test (7.059714 - sum(t.weight for t in values(model.tokens))) < 1e-5
@@ -110,9 +104,9 @@ end
         ]
 
         if gw isa EntropyWeighting
-            model = VectorModel(gw, lw, compute_bow.(config, sentiment_corpus), sentiment_labels)
+            model = VectorModel(gw, lw, compute_bow_corpus(config, sentiment_corpus), sentiment_labels)
         else
-            model = VectorModel(gw, lw, compute_bow.(config, sentiment_corpus))
+            model = VectorModel(gw, lw, compute_bow_corpus(config, sentiment_corpus))
         end
 
         x = vectorize(model, compute_bow(config, sentiment_corpus[3]))
@@ -126,9 +120,9 @@ end
             (IdfWeighting(), TfWeighting(), 0.23334, 0.9),
         ]
         if gw isa EntropyWeighting
-            model = VectorModel(gw, lw, compute_bow.(config, sentiment_corpus), sentiment_labels)
+            model = VectorModel(gw, lw, compute_bow_corpus(config, sentiment_corpus), sentiment_labels)
         else
-            model = VectorModel(gw, lw, compute_bow.(config, sentiment_corpus))
+            model = VectorModel(gw, lw, compute_bow_corpus(config, sentiment_corpus))
         end
 
         model = prune_select_top(model, p)
@@ -165,7 +159,6 @@ end
     @test dot(normalize!(u + v - v), normalize!(u)) > 0.99
 end
 
-
 _corpus = [
     "la casa roja",
     "la casa verde",
@@ -178,8 +171,8 @@ _corpus = [
 
 @testset "transpose bow" begin
     config = TextConfig(nlist=[1])
-    model = VectorModel(BinaryGlobalWeighting(), FreqWeighting(), compute_bow.(config, _corpus))
-    X = [vectorize(model, compute_bow(config, msg)) for msg in _corpus]
+    model = VectorModel(BinaryGlobalWeighting(), FreqWeighting(), compute_bow_corpus(config, _corpus))
+    X = vectorize_corpus(config, model, _corpus)
     dX = transpose(X)
 end
 
@@ -206,9 +199,9 @@ end
 
 @testset "invindex" begin
     config = TextConfig(nlist=[1])
-    model = VectorModel(IdfWeighting(), TfWeighting(), compute_bow.(config, _corpus))
+    model = VectorModel(IdfWeighting(), TfWeighting(), compute_bow_corpus(config, _corpus))
     ψ(text) = vectorize(model, compute_bow(config, text))
-    invindex = InvIndex([ψ(text) for text in _corpus])
+    invindex = InvIndex(vectorize_corpus(config, model, _corpus))
     @test are_posting_lists_sorted(invindex)
     begin # searching
         q = ψ("la casa roja")
@@ -244,8 +237,8 @@ end
 
 @testset "centroid computing" begin
     config = TextConfig(nlist=[1])
-    model = VectorModel(BinaryGlobalWeighting(), FreqWeighting(), compute_bow.(config, _corpus))
-    X = [vectorize(model, compute_bow(config, x)) for x in _corpus]
+    model = VectorModel(BinaryGlobalWeighting(), FreqWeighting(), compute_bow_corpus(config, _corpus))
+    X = vectorize_corpus(config, model, _corpus)
     x = sum(X) |> normalize!
     vec = bow(model, x)
     expected = Dict(:la => 0.7366651330405098,:verde => 0.39921969741172364,:azul => 0.11248181187626208,:pera => 0.08712803682959973,:esta => 0.17425607365919946,:roja => 0.22496362375252416,:hoja => 0.11248181187626208,:casa => 0.33744543562878626,:rica => 0.17425607365919946,:manzana => 0.19960984870586182)
@@ -273,9 +266,9 @@ end
     end
 
     randcorpus = create_corpus()
-    model = VectorModel(BinaryGlobalWeighting(), TfWeighting(), compute_bow.(config, randcorpus))
+    model = VectorModel(BinaryGlobalWeighting(), TfWeighting(), compute_bow_corpus(config, randcorpus))
     @show randcorpus[1:10]
-    X = [vectorize(model, compute_bow(config, x)) for x in randcorpus]
+    X = vectorize_corpus(config, model, randcorpus)
     L, D  = neardup(X, 0.2)
     @test length(X) > length(unique(L))
 end

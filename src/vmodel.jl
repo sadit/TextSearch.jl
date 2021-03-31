@@ -5,7 +5,7 @@ export TextModel, VectorModel,
     TfWeighting, IdfWeighting, TpWeighting,
     FreqWeighting, BinaryLocalWeighting, BinaryGlobalWeighting,
     LocalWeighting, GlobalWeighting,
-    fit, vectorize, prune, prune_select_top
+    fit, vectorize, vectorize_corpus, prune, prune_select_top
 
 #####
 ##
@@ -137,10 +137,10 @@ end
 
 function create_vocabulary(corpus)
     V = Vocabulary()
-    for vec in corpus
-        for (t, occ) in vec
-            s = get(V, t, UnknownTokenStats)
-            V[t] = TokenStats(0, s.occs + occ, s.ndocs + 1, 0f0)
+    for tokenlist in corpus
+        for (token, occs) in tokenlist
+            s = get(V, token, UnknownTokenStats)
+            V[token] = TokenStats(0, s.occs + occs, s.ndocs + 1, 0f0)
         end
     end
 
@@ -148,19 +148,18 @@ function create_vocabulary(corpus)
 end
 
 """
-    VectorModel(global_weighting::GlobalWeighting, local_weighting::LocalWeighting, corpus::BOW; mindocs=1)
+    VectorModel(global_weighting::GlobalWeighting, local_weighting::LocalWeighting, corpus; mindocs=1)
 
 Creates a vector model using the input corpus. 
 """
-function VectorModel(global_weighting::GlobalWeighting, local_weighting::LocalWeighting, corpus::AbstractVector{BOW}; mindocs=1)
+function VectorModel(global_weighting::GlobalWeighting, local_weighting::LocalWeighting, corpus; mindocs=1)
     tokens = Vocabulary()
     id2token = IdTokenMap()
 
-    V = create_vocabulary(corpus)
     tokens = Vocabulary()
     tokenID = 0
     maxfreq = 0
-    for (t, s) in V
+    for (t, s) in create_vocabulary(corpus)
         s.ndocs < mindocs && continue
         tokenID += 1
         id2token[tokenID] = t
@@ -172,7 +171,6 @@ function VectorModel(global_weighting::GlobalWeighting, local_weighting::LocalWe
 end
 
 Base.show(io::IO, model::VectorModel) = print(io, "{VectorModel global_weighting=$(model.global_weighting), local_weighting=$(model.local_weighting), train-voc=$(model.m), train-n=$(model.n), maxfreq=$(model.maxfreq)}")
-
 
 """
     prune(model::VectorModel, lowerweight::AbstractFloat)
@@ -231,7 +229,6 @@ function vectorize(model::VectorModel{_G, _L}, bow::BOW; normalize=true) where {
 
         lw = local_weighting(model.local_weighting, freq, maxfreq, numtokens)
         gw = global_weighting(model, s)
-        # @info (token, _G => gw, _L => lw)
         w = Float64(lw * gw)
         if w > 1e-6
             vec[s.id] = w
@@ -244,6 +241,23 @@ function vectorize(model::VectorModel{_G, _L}, bow::BOW; normalize=true) where {
 
     normalize && normalize!(vec)
     vec
+end
+
+function vectorize(config::TextConfig, model::VectorModel, text; bow=BOW(), buff=TokenizerBuffer(), normalize=true)
+    compute_bow(config, text, bow, buff)
+    vectorize(model, bow; normalize=normalize)
+end
+
+function vectorize_corpus(config::TextConfig, model::VectorModel, corpus; bow=BOW(), buff=TokenizerBuffer(), normalize=true)
+    V = Vector{SVEC}(undef, length(corpus))
+
+    for (i, text) in enumerate(corpus)
+        empty!(buff)
+        empty!(bow)
+        V[i] = vectorize(config, model, text; bow=bow, buff=buff, normalize=normalize)
+    end
+
+    V
 end
 
 function broadcastable(model::VectorModel)

@@ -2,7 +2,7 @@
 # License is Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0.txt
 
 export normalize_text
-using Unicode
+using Base.Unicode
 
 #, language!
 # using Languages
@@ -17,80 +17,103 @@ const PUNCTUACTION  = Set(_PUNCTUACTION * _SYMBOLS)
 # Note that enabled del_punc will delete all these symbols without any of the previous expansions
 
 const BLANK_LIST = string(' ', '\t', '\n', '\v', '\r')
-const RE_USER = r"""@[^;:,.@#&\\\-\"'/:\*\(\)\[\]\¿\?\¡\!\{\}~\<\>\|\s]+"""
-const RE_URL = r"(http|ftp|https)://\S+"
-const RE_NUM = r"\d+"
 const BLANK = ' '
 const PUNCTUACTION_BLANK = Set(_PUNCTUACTION * _SYMBOLS * BLANK)
 const EMOJIS = Set([l[1] for l in readlines(joinpath(@__DIR__, "emojis.txt"))])
 
-# SKIP_WORDS = set(["…", "..", "...", "...."])
-
-
-function _preprocessing(config::TextConfig, text)
-    if config.lc
-        text = lowercase(text)
-    end
-
-    if config.group_url
-        text = replace(text, RE_URL => "_url")
-    end
-
-    if config.group_usr
-        text = replace(text, RE_USER => "_usr")
-    end
-
-    if config.group_num
-        text = replace(text, RE_NUM => "_num")
-    end
-
-    text
-end
 
 """
-    normalize_text(config::TextConfig, text::AbstractString, L::Vector{Char}=Vector{Char}())::Vector{Char}
+    normalize_text(config::TextConfig, text::AbstractString, output::Vector{Char})
 
 Normalizes a given text using the specified transformations of `config`
 
 """
-function normalize_text(config::TextConfig, text::AbstractString, L::Vector{Char}=Vector{Char}())::Vector{Char}
-    text = _preprocessing(config, text)
-    push!(L, BLANK)
+function normalize_text(config::TextConfig, text::AbstractString, output::Vector{Char})
+    push!(output, BLANK)
     prev = BLANK
+    user = false
+    url = 0
 
-    @inbounds for u in Unicode.normalize(text, :NFD)
-        if config.del_diac
-            o = Int(u)
-            0x300 <= o && o <= 0x036F && continue
+    function f(u)
+        if isspace(u)
+            u = BLANK
         end
 
-        if u in BLANK_LIST
-            u = BLANK
-        elseif config.del_dup && prev == u
-            continue
-        elseif config.del_punc && u in PUNCTUACTION
-            L[end] !== BLANK && push!(L, BLANK)
+        if config.group_num && isnumeric(u)
+            u = '0'
+            u != prev && push!(output, u)
             prev = u
-            continue
+            return
+        end
+
+        if config.group_usr
+            if u === '@'
+                user = true
+                prev = u
+                push!(output, '_'); push!(output, 'u'); push!(output, 's'); push!(output, 'r'); 
+                return
+            elseif user # consumes until BLANK is found
+                if u === BLANK
+                    user = false
+                else
+                    return
+                end
+            end
+        end
+
+        if config.group_url
+             if url == 0 && u === 'h'
+                url = length(output)
+                prev = u
+                push!(output, u)
+                return
+            elseif url > 0 # consumes until BLANK is found
+                if u === BLANK
+                    if (length(output) - url) < 10  # http(s)://a.b
+                        url = 0
+                    elseif output[url+1] == 't' && output[url+2] == 't' && output[url+1] == 'p' && output[url+1] == ':'
+                        output[url] = '_'; output[url+1] = 'u'; output[url+2] = 'r'; output[url + 3] = 'l'
+                        resize!(output, url + 4)
+                        url = 0
+                    else
+                        url = 0
+                    end
+                else
+                    push!(output, u)
+                    return
+                end
+            end
+        end
+
+        if config.del_dup && prev === u
+            return
+        elseif config.del_punc && ispunct(u) && u != '#'
+            output[end] !== BLANK && push!(output, BLANK)
+            prev = u
+            return
         end
 
         if u in EMOJIS
-            if prev != BLANK
-                push!(L, BLANK)
+            if output[end] !== BLANK
+                push!(output, BLANK)
             end
             if config.group_emo
-                push!(L, '_');push!(L, 'e');push!(L, 'm');push!(L, 'o')
+                push!(output, '_');push!(output, 'e');push!(output, 'm');push!(output, 'o')
                 prev = u
-                continue
+                return
             end
         end
 
         prev = u
-        push!(L, u)
+        push!(output, u)
     end
 
-    push!(L, BLANK)
+    @inbounds for u in Unicode.normalize(text, casefold=config.lc, stripmark=config.del_diac, stripcc=true, compat=true)
+        f(u)
+    end
 
-    L
+    f(BLANK)
+
+    output
 end
 
