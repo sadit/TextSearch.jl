@@ -12,9 +12,9 @@ struct TokenizerBuffer
 
     function TokenizerBuffer(; n=128)
         normtext = Vector{Char}(undef, n)
-        tokens = Vector{Symbol}(undef, 8n)
+        tokens = Vector{Symbol}(undef, n)
         unigrams = Vector{Symbol}(undef, n)
-        currtoken = Vector{UInt8}(undef, 2n)
+        currtoken = Vector{UInt8}(undef, 16)
         resize!(normtext, 0)
         resize!(tokens, 0)
         resize!(unigrams, 0)
@@ -35,7 +35,6 @@ function Base.empty!(buff::TokenizerBuffer)
     empty!(buff.tokens)
     empty!(buff.unigrams)
     empty!(buff.currtoken)
-    # empty!(buff.io)
 end
 
 function tokenize__(config::TextConfig, textlist::AbstractVector, buff::TokenizerBuffer=TokenizerBuffer())
@@ -94,16 +93,10 @@ function tokenize_(config::TextConfig, buff::TokenizerBuffer)
 end
 
 """
-    qgrams(text::AbstractString, q::Integer)
     qgrams(q::Integer, buff)
 
 Computes character q-grams for the given input
 """
-function qgrams(text::AbstractString, q::Integer, buff=TokenizerBuffer())
-    append!(buff.normtext, text)
-    qgrams(q, buff)
-end
-
 function qgrams(q::Integer, buff::TokenizerBuffer)
     n = length(buff.normtext)
 
@@ -148,11 +141,6 @@ function flush_token!(buff::TokenizerBuffer)
     end
 end
 
-function unigrams(text::AbstractString, buff=TokenizerBuffer())
-    append!(buff.normtext, text)
-    unigrams(buff)
-end
-
 """
     unigrams(buff::TokenizerBuffer)
 
@@ -167,22 +155,22 @@ function unigrams(buff::TokenizerBuffer)
         if c == BLANK
             flush_token!(buff)
             ## write(buff, '~')
-        elseif i > 1
-            if buff.normtext[i-1] in PUNCTUACTION && !(c in PUNCTUACTION)
-                # flushing from punctuaction to non punctuaction
-                flush_token!(buff)
-                ## write(buff, '~')
-                write(buff.io, c)
-                continue
-            elseif !(buff.normtext[i-1] in PUNCTUACTION_BLANK) && c in PUNCTUACTION
-                # flushing from neither punctuaction nor blank to some punctuaction symbol
-                flush_token!(buff)
-                ## write(buff.io, '~')
-                write(buff.io, c)
-                continue
-            else
-                write(buff.io, c)
-            end
+#        elseif i > 1
+#            if c != '_' && ispunct(buff.normtext[i-1]) && !ispunct(c)
+#                # flushing from punctuaction to non punctuaction
+#                flush_token!(buff)
+#                ## write(buff, '~')
+#                write(buff.io, c)
+#                continue
+#            elseif !ispunct(buff.normtext[i-1]) && ispunct(c)
+#                # flushing from neither punctuaction nor blank to some punctuaction symbol
+#                flush_token!(buff)
+#                ## write(buff.io, '~')
+#                write(buff.io, c)
+#                continue
+#            else
+#                write(buff.io, c)
+#            end
         else
             write(buff.io, c)
         end

@@ -8,19 +8,12 @@ using Base.Unicode
 # using Languages
 # using SnowballStemmer
 
-# const _PUNCTUACTION = """;:,.@#&\\-\"'/:*"""
-const _PUNCTUACTION = """;:,.&\\-\"'/:*"️“”«»"""
-const _SYMBOLS = "()[]¿?¡!{}~<>|^"
-const PUNCTUACTION  = Set(_PUNCTUACTION * _SYMBOLS)
 # A symbol s in this list will be expanded to BLANK*s if the predecesor of s is neither s nor BLANK
 # On changes from s to BLANK or [^s] it will produce also produce an extra BLANK
 # Note that enabled del_punc will delete all these symbols without any of the previous expansions
 
-const BLANK_LIST = string(' ', '\t', '\n', '\v', '\r')
 const BLANK = ' '
-const PUNCTUACTION_BLANK = Set(_PUNCTUACTION * _SYMBOLS * BLANK)
 const EMOJIS = Set([l[1] for l in readlines(joinpath(@__DIR__, "emojis.txt"))])
-
 
 """
     normalize_text(config::TextConfig, text::AbstractString, output::Vector{Char})
@@ -36,9 +29,12 @@ function normalize_text(config::TextConfig, text::AbstractString, output::Vector
 
     function f(u)
         if isspace(u)
-            u = BLANK
+            output[end] !== BLANK && push!(output, BLANK)
+            prev = BLANK
+            return
         end
 
+        #  group numeric tokens
         if config.group_num && isnumeric(u)
             u = '0'
             u != prev && push!(output, u)
@@ -46,6 +42,7 @@ function normalize_text(config::TextConfig, text::AbstractString, output::Vector
             return
         end
 
+        # group user tokens
         if config.group_usr
             if u === '@'
                 user = true
@@ -61,6 +58,7 @@ function normalize_text(config::TextConfig, text::AbstractString, output::Vector
             end
         end
 
+        # group url tokens
         if config.group_url
              if url == 0 && u === 'h'
                 url = length(output)
@@ -85,18 +83,27 @@ function normalize_text(config::TextConfig, text::AbstractString, output::Vector
             end
         end
 
-        if config.del_dup && prev === u
-            return
-        elseif config.del_punc && ispunct(u) && u != '#'
+        # delete duplications
+        config.del_dup && prev === u && return
+        # delete punctuactions
+        if config.del_punc && ispunct(u)
             output[end] !== BLANK && push!(output, BLANK)
             prev = u
             return
         end
+        
+        # manage proper spaces on sequences  "punctuaction-alphanumeric" and "alphanumeric-punctuaction"
+        # with special handling of '#' and '@' as part of tokens
+        if ispunct(u) && !ispunct(output[end])
+            output[end] !== BLANK && push!(output, BLANK)
+        elseif !ispunct(u) && ispunct(output[end]) && !(output[end] in ('#', '@'))
+            push!(output, BLANK)
+        end
 
+        # emojis grouping
         if u in EMOJIS
-            if output[end] !== BLANK
-                push!(output, BLANK)
-            end
+            output[end] !== BLANK && push!(output, BLANK)
+
             if config.group_emo
                 push!(output, '_');push!(output, 'e');push!(output, 'm');push!(output, 'o')
                 prev = u
@@ -116,4 +123,3 @@ function normalize_text(config::TextConfig, text::AbstractString, output::Vector
 
     output
 end
-

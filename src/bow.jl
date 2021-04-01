@@ -51,7 +51,7 @@ function compute_bow_corpus(config::TextConfig, corpus::AbstractVector, bow::BOW
         empty!(buff)
         empty!(bow)
         compute_bow(config, corpus[i], bow, buff)
-        X[i] = Dict(bow)
+        X[i] = copy(bow)
     end
 
     X
