@@ -23,58 +23,41 @@ Normalizes a given text using the specified transformations of `config`
 """
 function normalize_text(config::TextConfig, text::AbstractString, output::Vector{Char})
     push!(output, BLANK)
-    prev = BLANK
     user = false
     url = 0
-
     function f(u)
         if isspace(u)
-            output[end] !== BLANK && push!(output, BLANK)
-            prev = BLANK
-            return
-        end
-
-        #  group numeric tokens
-        if config.group_num && isnumeric(u)
-            u = '0'
-            u != prev && push!(output, u)
-            prev = u
-            return
+            u = BLANK
         end
 
         # group user tokens
         if config.group_usr
             if u === '@'
                 user = true
-                prev = u
                 push!(output, '_'); push!(output, 'u'); push!(output, 's'); push!(output, 'r'); 
                 return
             elseif user # consumes until BLANK is found
-                if u === BLANK
-                    user = false
-                else
+                if isletter(u) || isnumeric(u) # consumes
                     return
+                else # stop consuming chars
+                    push!(output, BLANK)
+                    user = false
                 end
             end
         end
 
         # group url tokens
         if config.group_url
-             if url == 0 && u === 'h'
+            if url == 0 && u === 'h'
                 url = length(output)
-                prev = u
                 push!(output, u)
                 return
             elseif url > 0 # consumes until BLANK is found
                 if u === BLANK
-                    if (length(output) - url) < 10  # http(s)://a.b
-                        url = 0
-                    elseif output[url+1] == 't' && output[url+2] == 't' && output[url+1] == 'p' && output[url+1] == ':'
+                    url = 0
+                    if (length(output) - url) > 10 && output[url+1] == 't' && output[url+2] == 't' && output[url+1] == 'p' && output[url+1] == ':'
                         output[url] = '_'; output[url+1] = 'u'; output[url+2] = 'r'; output[url + 3] = 'l'
                         resize!(output, url + 4)
-                        url = 0
-                    else
-                        url = 0
                     end
                 else
                     push!(output, u)
@@ -83,12 +66,17 @@ function normalize_text(config::TextConfig, text::AbstractString, output::Vector
             end
         end
 
-        # delete duplications
-        config.del_dup && prev === u && return
+        #  group numeric tokens
+        if config.group_num && isnumeric(u)
+            u = '0'
+            output[end] != u && push!(output, u)
+            return
+        end
+
+
         # delete punctuactions
         if config.del_punc && ispunct(u)
             output[end] !== BLANK && push!(output, BLANK)
-            prev = u
             return
         end
         
@@ -96,7 +84,7 @@ function normalize_text(config::TextConfig, text::AbstractString, output::Vector
         # with special handling of '#' and '@' as part of tokens
         if ispunct(u) && !ispunct(output[end])
             output[end] !== BLANK && push!(output, BLANK)
-        elseif !ispunct(u) && ispunct(output[end]) && !(output[end] in ('#', '@'))
+        elseif ispunct(output[end]) && !ispunct(u) && !(output[end] in ('#', '@'))
             push!(output, BLANK)
         end
 
@@ -106,12 +94,13 @@ function normalize_text(config::TextConfig, text::AbstractString, output::Vector
 
             if config.group_emo
                 push!(output, '_');push!(output, 'e');push!(output, 'm');push!(output, 'o')
-                prev = u
                 return
             end
         end
 
-        prev = u
+         # delete duplications
+        config.del_dup && output[end] === u && return
+        u == BLANK && output[end] == BLANK && return
         push!(output, u)
     end
 

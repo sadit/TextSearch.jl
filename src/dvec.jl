@@ -10,8 +10,8 @@ import SimilaritySearch: evaluate
 export centroid, evaluate, NormalizedAngleDistance, NormalizedCosineDistance, AngleDistance, NormalizedAngleDistance
 
 const DVEC{Ti,Tv<:Real} = Dict{Ti,Tv}
-const BOW = DVEC{Symbol,Int}
-const SVEC = DVEC{Int32,Float32}
+const BOW = DVEC{UInt64,Int32}
+const SVEC = DVEC{UInt64,Float32}
 
 export DVEC, SVEC, BOW
 nnz(dvec::DVEC) = length(dvec)

@@ -93,22 +93,19 @@ abstract type TextModel end
 Stores useful information for a token; i.e., the number of occurrences in the collection, the number of documents having that token
 """
 struct TokenStats
-    id::Int32
     occs::Int32
     ndocs::Int32
     weight::Float32
 end
 
-const UnknownTokenStats = TokenStats(0, 0, 0, 0f0)
+const UnknownTokenStats = TokenStats(0, 0, 0f0)
 
-const Vocabulary = Dict{Symbol, TokenStats}
-const IdTokenMap = Dict{Int32, Symbol}
+const Vocabulary = Dict{UInt64, TokenStats}
 
 mutable struct VectorModel{_G<:GlobalWeighting, _L<:LocalWeighting} <: TextModel
     global_weighting::_G
     local_weighting::_L
     tokens::Vocabulary
-    id2token::IdTokenMap
     maxfreq::Int
     m::Int  # vocabulary size
     n::Int  # training collection size
@@ -127,12 +124,11 @@ function Base.copy(
         local_weighting=e.local_weighting,
         global_weighting=e.global_weighting,
         tokens=e.tokens,
-        id2token=e.id2token,
         maxfreq=e.maxfreq,
         m=e.m,
         n=e.n
     )
-    VectorModel(global_weighting, local_weighting, tokens, id2token, maxfreq, m, n)
+    VectorModel(global_weighting, local_weighting, tokens, maxfreq, m, n)
 end
 
 function create_vocabulary(corpus)
@@ -140,7 +136,7 @@ function create_vocabulary(corpus)
     for tokenlist in corpus
         for (token, occs) in tokenlist
             s = get(V, token, UnknownTokenStats)
-            V[token] = TokenStats(0, s.occs + occs, s.ndocs + 1, 0f0)
+            V[token] = TokenStats(s.occs + occs, s.ndocs + 1, 0f0)
         end
     end
 
@@ -154,20 +150,16 @@ Creates a vector model using the input corpus.
 """
 function VectorModel(global_weighting::GlobalWeighting, local_weighting::LocalWeighting, corpus; mindocs=1)
     tokens = Vocabulary()
-    id2token = IdTokenMap()
 
     tokens = Vocabulary()
-    tokenID = 0
     maxfreq = 0
     for (t, s) in create_vocabulary(corpus)
         s.ndocs < mindocs && continue
-        tokenID += 1
-        id2token[tokenID] = t
-        tokens[t] = TokenStats(tokenID, s.occs, s.ndocs, 0.0f0)
+        tokens[t] = TokenStats(s.occs, s.ndocs, 0.0f0)
         maxfreq = max(maxfreq, s.occs)
     end
     
-    VectorModel(global_weighting, local_weighting, tokens, id2token, maxfreq, length(tokens), length(corpus))
+    VectorModel(global_weighting, local_weighting, tokens, maxfreq, length(tokens), length(corpus))
 end
 
 Base.show(io::IO, model::VectorModel) = print(io, "{VectorModel global_weighting=$(model.global_weighting), local_weighting=$(model.local_weighting), train-voc=$(model.m), train-n=$(model.n), maxfreq=$(model.maxfreq)}")
@@ -179,17 +171,13 @@ Creates a new vector model without terms with smaller global weights than `lower
 """
 function prune(model::VectorModel, lowerweight::AbstractFloat)
     tokens = Vocabulary()
-    id2token = IdTokenMap()
-    i = 0
     for (token, s) in model.tokens
         if prune_global_weighting(model, s) >= lowerweight
-            i += 1
-            tokens[token] = TokenStats(i, s.occs, s.ndocs, s.weight)
-            id2token[i] = token
+            tokens[token] = TokenStats(s.occs, s.ndocs, s.weight)
         end
     end
 
-    VectorModel(model.global_weighting, model.local_weighting, tokens, id2token, model.maxfreq, model.m, model.n)
+    VectorModel(model.global_weighting, model.local_weighting, tokens, model.maxfreq, model.m, model.n)
 end
 
 """
@@ -230,31 +218,31 @@ function vectorize(model::VectorModel{_G, _L}, bow::BOW; normalize=true) where {
         lw = local_weighting(model.local_weighting, freq, maxfreq, numtokens)
         gw = global_weighting(model, s)
         w = Float64(lw * gw)
-        if w > 1e-6
-            vec[s.id] = w
+        if w > 1e-6 
+            vec[token] = w
         end
     end
 
     if length(vec) == 0
-        vec[rand(typemin(Int32):-1)] = 1e-6
+        vec[rand(UInt64) | (one(UInt64) << 63)] = 1e-6
     end
 
     normalize && normalize!(vec)
     vec
 end
 
-function vectorize(config::TextConfig, model::VectorModel, text; bow=BOW(), buff=TokenizerBuffer(), normalize=true)
-    compute_bow(config, text, bow, buff)
+function vectorize(tok::Tokenizer, model::VectorModel, text; bow=BOW(), normalize=true)
+    compute_bow(tok, text, bow)
     vectorize(model, bow; normalize=normalize)
 end
 
-function vectorize_corpus(config::TextConfig, model::VectorModel, corpus; bow=BOW(), buff=TokenizerBuffer(), normalize=true)
+function vectorize_corpus(tok::Tokenizer, model::VectorModel, corpus; bow=BOW(), normalize=true)
     V = Vector{SVEC}(undef, length(corpus))
 
     for (i, text) in enumerate(corpus)
-        empty!(buff)
+        empty!(tok)
         empty!(bow)
-        V[i] = vectorize(config, model, text; bow=bow, buff=buff, normalize=normalize)
+        V[i] = vectorize(tok, model, text; bow=bow, normalize=normalize)
     end
 
     V

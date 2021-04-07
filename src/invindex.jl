@@ -10,7 +10,7 @@ using SimilaritySearch
 const PostList = Vector{IdWeight}
 
 mutable struct InvIndex <: AbstractSearchContext
-    lists::Dict{Int,PostList}
+    lists::Dict{UInt64,PostList}
     n::Int
     res::KnnResult
 end

@@ -7,14 +7,15 @@ module TextSearch
     using StructTypes
     
     struct IdWeight
-        id::Int32
-        weight::Float32
+        id::UInt64
+        weight::Float64
     end
 
     StructTypes.StructType(::Type{IdWeight}) = StructTypes.Struct()
 
     include("textconfig.jl")
     include("normalize.jl")
+    include("tokenmap.jl")
     include("tokenize.jl")
     include("dvec.jl")
     include("bow.jl")

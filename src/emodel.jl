@@ -48,14 +48,14 @@ function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, corpus::Abstract
 
     nclasses = length(levels(labels))
 
-    D = Dict{Symbol,Vector{Float64}}()
+    D = Dict{UInt64,Vector{Float64}}()
     V = Vocabulary()
     
     for i in eachindex(corpus)
         vec = corpus[i]
         for (t, occ) in vec
             s = get(V, t, UnknownTokenStats)
-            V[t] = TokenStats(0, s.occs + occ, s.ndocs + 1, 0f0)
+            V[t] = TokenStats(s.occs + occ, s.ndocs + 1, 0f0)
             dist = get(D, t, nothing)
             if dist === nothing
                 dist = D[t] = fill(smooth, nclasses)
@@ -76,15 +76,13 @@ function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, corpus::Abstract
         weights = ones(Float64, nclasses)
     end
 
-    tokens, id2token, maxfreq = _create_vocabulary_with_entropy(V, D, weights, nclasses, mindocs)
+    tokens, maxfreq = _create_vocabulary_with_entropy(V, D, weights, nclasses, mindocs)
     
-    VectorModel(ent, lw, tokens, id2token, maxfreq, length(tokens), length(corpus))
+    VectorModel(ent, lw, tokens, maxfreq, length(tokens), length(corpus))
 end
 
 function _create_vocabulary_with_entropy(V, D, weights, nclasses, mindocs)
     tokens = Vocabulary()
-    id2token = IdTokenMap()
-
     tokenID = 0
     maxfreq = 0
     maxent = log2(nclasses)
@@ -93,16 +91,12 @@ function _create_vocabulary_with_entropy(V, D, weights, nclasses, mindocs)
         s.ndocs < mindocs && continue
         dist = D[t]
         dist .= dist .* weights
-
         e = 1.0 - entropy(dist) / maxent
-
-        tokenID += 1
-        id2token[tokenID] = t
-        tokens[t] = TokenStats(tokenID, s.occs, s.ndocs, e)
+        tokens[t] = TokenStats(s.occs, s.ndocs, e)
         maxfreq = max(maxfreq, s.occs)
     end
 
-    tokens, id2token, maxfreq
+    tokens, maxfreq
 end
 
 global_weighting(::VectorModel{EntropyWeighting}, s::TokenStats) = s.weight

@@ -30,7 +30,7 @@ Base.isequal(a::Skipgram, b::Skipgram) = a.qsize == b.qsize && a.skip == b.skip
         group_emo::Bool=false,
         lc::Bool=true,
         qlist::Vector=Int8[],
-        nlist::Vector=Int8[1],
+        nlist::Vector=Int8[],
         slist::Vector{Skipgram}=Skipgram[]
     )
 
@@ -48,6 +48,7 @@ Defines a preprocessing and tokenization pipeline
 - `nlist`: a list of words n-grams to use
 - `slist`: a list of skip-grams tokenizers to use
 
+Note: If qlist, nlist, and slists are all empty arrays, then it defaults to nlist=[1]
 """
 struct TextConfig
     del_diac::Bool
@@ -63,6 +64,9 @@ struct TextConfig
     slist::Vector{Skipgram}
 
     function TextConfig(del_diac, del_dup, del_punc, group_num, group_url, group_usr, group_emo, lc, qlist, nlist, slist)
+        if length(qlist) == length(nlist) == length(slist) == 0
+            nlist = [1]
+        end
         qlist = sort!(Vector{Int8}(qlist))
         nlist = sort!(Vector{Int8}(nlist))
         slist = sort!(Vector{Skipgram}(slist))
@@ -84,7 +88,7 @@ function TextConfig(;
         group_emo::Bool=false,
         lc::Bool=true,
         qlist::AbstractVector=[],
-        nlist::AbstractVector=[1],
+        nlist::AbstractVector=[],
         slist::AbstractVector=[]
     )
  

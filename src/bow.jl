@@ -5,8 +5,8 @@ export compute_bow_corpus, compute_bow
 
 """
     compute_bow(tokenlist::AbstractVector{S}, bow::BOW=BOW()) where {S<:Symbol}
-    compute_bow(config::TextConfig, text::Symbol, bow::BOW=BOW())
-    compute_bow(config::TextConfig, text::AbstractVector, bow::BOW=BOW())
+    compute_bow(tok::Tokenizer, text::Symbol, bow::BOW=BOW())
+    compute_bow(tok::Tokenizer, text::AbstractVector, bow::BOW=BOW())
     
 
 Creates a bag of words from the given text (a string or a list of strings).
@@ -21,36 +21,36 @@ function compute_bow(tokenlist::AbstractVector, bow::BOW=BOW())
     bow
 end
 
-function compute_bow(config::TextConfig, text::AbstractString, bow::BOW=BOW(), buff::TokenizerBuffer=TokenizerBuffer())
-    compute_bow(tokenize(config, text, buff), bow)
+function compute_bow(tok::Tokenizer, text::AbstractString, bow::BOW=BOW())
+    compute_bow(tokenize(tok, text), bow)
 end
 
 """
-    compute_bow(config::TextConfig, messages::AbstractVector, bow::BOW=BOW())
+    compute_bow(messages::AbstractVector, bow::BOW=BOW())
 
 Computes a bag of words from messages
 """
-function compute_bow(config::TextConfig, messages::AbstractVector, bow::BOW=BOW(), buff::TokenizerBuffer=TokenizerBuffer())
+function compute_bow(tok::Tokenizer, messages::AbstractVector, bow::BOW=BOW())
     for text in messages
-        empty!(buff)
-        tokenize(config, text, buff)
-        compute_bow(buff.output, bow)
+        empty!(tok)
+        tokenize(tok, text)
+        compute_bow(tok.output, bow)
     end
 
     bow
 end
 
 """
-    compute_bow_corpus(config::TextConfig, corpus::AbstractVector)
+    compute_bow_corpus(tok::Tokenizer, corpus::AbstractVector)
 
 Computes a list of bag of words from a corpus
 """
-function compute_bow_corpus(config::TextConfig, corpus::AbstractVector, bow::BOW=BOW(), buff::TokenizerBuffer=TokenizerBuffer())
+function compute_bow_corpus(tok::Tokenizer, corpus::AbstractVector, bow::BOW=BOW())
     X = Vector{BOW}(undef, length(corpus))
     for i in eachindex(corpus)
-        empty!(buff)
+        empty!(tok)
         empty!(bow)
-        compute_bow(config, corpus[i], bow, buff)
+        compute_bow(tok, corpus[i], bow)
         X[i] = copy(bow)
     end
 
