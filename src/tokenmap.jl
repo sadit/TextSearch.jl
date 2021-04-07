@@ -7,6 +7,7 @@ abstract type TokenMap end
 const InvMapTypeD = Union{Dict{UInt64,String},Nothing}
 const InvMapTypeV = Union{Vector{String},Nothing}
 
+struct TokenHash
 struct TokenHash{InvMap<:InvMapTypeD} <: TokenMap
     invmap::InvMap
     isconstruction::Bool

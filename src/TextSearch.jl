@@ -15,7 +15,7 @@ module TextSearch
 
     include("textconfig.jl")
     include("normalize.jl")
-    include("tokenmap.jl")
+#    include("tokenmap.jl")
     include("tokenize.jl")
     include("dvec.jl")
     include("bow.jl")

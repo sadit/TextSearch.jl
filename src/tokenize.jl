@@ -1,11 +1,12 @@
 # This file is a part of TextSearch.jl
 # License is Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0.txt
 
-export Tokenizer, tokenize, qgrams, unigrams
+export Tokenizer, tokenize, qgrams, unigrams, encode, decode
 
-struct Tokenizer{TMap<:TokenMap}
+struct Tokenizer
     config::TextConfig
-    vocmap::TMap
+    invmap::Union{Dict{UInt64,String},Nothing}
+    isconstruction::Bool
     normtext::Vector{Char}
     tokens::Vector{UInt64}
     unigrams::Vector{String}
@@ -14,7 +15,7 @@ end
 
 StructTypes.StructType(::Type{<:Tokenizer}) = StructTypes.Struct()
 
-function Tokenizer(config::TextConfig, vocmap=TokenHash(true); n=128) 
+function Tokenizer(config::TextConfig; isconstruction=true, invmap=Dict{UInt64,String}(), n=128)
     normtext = Vector{Char}(undef, n)
     tokens = Vector{UInt64}(undef, n)
     unigrams = Vector{String}(undef, n)
@@ -22,12 +23,22 @@ function Tokenizer(config::TextConfig, vocmap=TokenHash(true); n=128)
     resize!(tokens, 0)
     resize!(unigrams, 0)
 
-    Tokenizer(config, vocmap, normtext, tokens, unigrams, IOBuffer())
+    Tokenizer(config, invmap, isconstruction, normtext, tokens, unigrams, IOBuffer())
 end
 
 Base.broadcastable(m::Tokenizer) = (m,)
 
 decode(tok::Tokenizer, id::UInt64) = decode(tok.vocmap, id)
+
+function encode(tok::Tokenizer, token::AbstractString)
+    h = hash(token)
+    tok.isconstruction && tok.invmap !== nothing && (tok.invmap[h] = token)
+    h
+end
+
+function decode(tok::Tokenizer, id::UInt64)
+    tok.invmap === nothing ? nothing : tok.invmap[id]
+end
 
 function Base.empty!(tok::Tokenizer)
     empty!(tok.normtext)
@@ -97,7 +108,7 @@ function flush_token!(tok::Tokenizer)
     io = tok.io
     if io.size > 0
         s = String(take!(io))
-        push!(tok.tokens, encode(tok.vocmap, s))
+        push!(tok.tokens, encode(tok, s))
         s
     else
         nothing

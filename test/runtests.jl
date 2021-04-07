@@ -8,54 +8,35 @@ const text1 = "hello world!! @user;) #jello.world :)"
 const text2 = "a b c d e f g h i j k l m n o p q"
 const corpus = ["hello world :)", "@user;) excellent!!", "#jello world."]
 
-@testset "TokenHash" begin
-    m = TokenHash(true, storetokens=true)
-    @test encode(m, "hello") == hash("hello")
-    @test encode(m, "xhello") == hash("xhello")
-    mm = TokenHash(m) # makes an immutable copy
-    @test encode(mm, "hellox") == hash("hellox")
-    @test [hash("hello") => "hello", hash("xhello") => "xhello"] == sort!(collect(m.invmap), by=p->p.second)
-end
-
-@testset "TokenTable" begin
-    m = TokenTable(true, storetokens=true)
-    @test encode(m, "hello") == 1
-    @test encode(m, "xhello") == 2
-    mm = TokenTable(m) # makes an immutable copy
-    @test 0 < (encode(mm, "hellox") & (one(UInt64)<<63))
-    @test m.map == Dict{String, UInt64}("xhello" => 0x0000000000000002, "hello" => 0x0000000000000001)
-    @test m.invmap == ["hello", "xhello"]
-end
-
 
 @testset "individual tokenizers" begin
-    m = Tokenizer(TextConfig(nlist=[1]), TokenHash(true))
+    m = Tokenizer(TextConfig(nlist=[1]))
     @test tokenize(m, text0) == hash.(["@user", ";)", "#jello", ".", "world"])
 
-    m = Tokenizer(TextConfig(nlist=[2]), TokenHash(true, storetokens=true))
+    m = Tokenizer(TextConfig(nlist=[2]))
     @test decode.(m, tokenize(m, text0)) == ["@user ;)", ";) #jello", "#jello .", ". world"]
 
-    m = Tokenizer(TextConfig(qlist=[3]), TokenHash(true))
+    m = Tokenizer(TextConfig(qlist=[3]))
     @test tokenize(m, text0) == hash.([" @u", "@us", "use", "ser", "er ", "r ;", " ;)", ";) ", ") #", " #j", "#je", "jel", "ell", "llo", "lo ", "o .", " . ", ". w", " wo", "wor", "orl", "rld", "ld "])
 
-    m = Tokenizer(TextConfig(nlist=[1]), TokenTable(true, storetokens=true))
+    m = Tokenizer(TextConfig(nlist=[1]))
     @test decode.(m, tokenize(m, text1)) == ["hello", "world", "!!", "@user", ";)", "#jello", ".", "world", ":)"]
 
-    m = Tokenizer(TextConfig(slist=[Skipgram(2,1)]), TokenTable(true, storetokens=true))
+    m = Tokenizer(TextConfig(slist=[Skipgram(2,1)]))
     @test decode.(m, tokenize(m, text1)) == ["hello !!", "world @user", "!! ;)", "@user #jello", ";) .", "#jello world", ". :)"]
 end
 
 
 @testset "Normalize and tokenize" begin
-    tok = Tokenizer(TextConfig(del_punc=true, group_usr=true, nlist=[1, 2, 3]), TokenHash(true))
+    tok = Tokenizer(TextConfig(del_punc=true, group_usr=true, nlist=[1, 2, 3]))
     @test tokenize(tok, text1) == hash.(["hello", "world", "_usr", "jello", "world", "hello world", "world _usr", "_usr jello", "jello world", "hello world _usr", "world _usr jello", "_usr jello world"])
-    tok_ = Tokenizer(JSON3.read(JSON3.write((tok.config, tok.vocmap)), typeof((tok.config, tok.vocmap)))...)
-    @test tokenize(tok_, text1) == hash.(["hello", "world", "_usr", "jello", "world", "hello world", "world _usr", "_usr jello", "jello world", "hello world _usr", "world _usr jello", "_usr jello world"])
+    #tok_ = Tokenizer(JSON3.read(JSON3.write((tok.config, tok.vocmap)), typeof((tok.config, tok.vocmap)))...)
+    #@test tokenize(tok_, text1) == hash.(["hello", "world", "_usr", "jello", "world", "hello world", "world _usr", "_usr jello", "jello world", "hello world _usr", "world _usr jello", "_usr jello world"])
 end
 
 
 @testset "Normalize and tokenize bigrams and trigrams" begin
-    tok = Tokenizer(TextConfig(del_punc=true, group_usr=true, nlist=[2, 3]), TokenHash(true))
+    tok = Tokenizer(TextConfig(del_punc=true, group_usr=true, nlist=[2, 3]))
     @test tokenize(tok, text1) == hash.(["hello world", "world _usr", "_usr jello", "jello world", "hello world _usr", "world _usr jello", "_usr jello world"])
 end
 
@@ -246,11 +227,11 @@ end
 end
 
 @testset "centroid computing" begin
-    tok = Tokenizer(TextConfig(nlist=[1]), TokenHash(true, storetokens=true))
+    tok = Tokenizer(TextConfig(nlist=[1]))
     model = VectorModel(BinaryGlobalWeighting(), FreqWeighting(), compute_bow_corpus(tok, _corpus))
     X = vectorize_corpus(tok, model, _corpus)
     x = sum(X) |> normalize!
-    vec = bow(tok.vocmap, x)
+    vec = bow(tok, x)
     expected = Dict("la" => 0.7366651330405098, "verde" => 0.39921969741172364, "azul" => 0.11248181187626208, "pera" => 0.08712803682959973, "esta" => 0.17425607365919946, "roja" => 0.22496362375252416, "hoja" => 0.11248181187626208, "casa" => 0.33744543562878626, "rica" => 0.17425607365919946, "manzana" => 0.19960984870586182)
     @test 0.999 < dot(vec, expected)
 end

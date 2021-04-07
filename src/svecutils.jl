@@ -66,25 +66,25 @@ function sparse(cols::AbstractVector{S}, m=0) where S<:DVEC{Ti,Tv} where {Ti<:In
 end
 
 """
-    bow(model::TokenMap, x::AbstractSparseVector)
-    bow(model::TokenMap, x::DVEC{Ti,Tv}) where {Ti<:Integer,Tv<:Number}
+    bow(model::Tokenizer, x::AbstractSparseVector)
+    bow(model::Tokenizer, x::DVEC{Ti,Tv}) where {Ti<:Integer,Tv<:Number}
     
 Creates a bag of words using the sparse vector `x` and the text model `model`
 """
-function bow(m::TokenMap, x::AbstractSparseVector)
+function bow(m::Tokenizer, x::AbstractSparseVector)
     DVEC{String,eltype{x.nzval}}(decode(m, t) => v for (t, v) in zip(x.nzind, x.nzval))
 end
 
-function bow(m::TokenMap, x::DVEC{Ti,Tv}) where {Ti<:Integer,Tv<:Number}
+function bow(m::Tokenizer, x::DVEC{Ti,Tv}) where {Ti<:Integer,Tv<:Number}
     DVEC{String,Tv}(decode(m, t) => v for (t, v) in x)
 end
 
 """
-    dvec(m::TokenMap, x::DVEC{Symbol,Tv}, Ti=Int) where Tv<:Number
+    dvec(m::Tokenizer, x::DVEC{Symbol,Tv}, Ti=Int) where Tv<:Number
 
 Creates a DVEC sparse vector from a bag of words sparse vector (i.e., with type DVEC{Symbol,Tv}),
 using the inverse map `m`
 """
-function dvec(m::TokenMap, x::DVEC{String,Tv}, Ti=Int) where Tv<:Number
+function dvec(m::Tokenizer, x::DVEC{String,Tv}, Ti=Int) where Tv<:Number
     DVEC{Ti,Tv}(encode(m, t) => v for (t, v) in x)
 end
