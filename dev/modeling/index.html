@@ -1,41 +1,19 @@
 <!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Models · TextSearch.jl</title><link rel="canonical" href="https://sadit.github.io/TextSearch.jl/modeling/"/><link href="https://fonts.googleapis.com/css?family=Lato|Roboto+Mono" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.0/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.0/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.0/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.11.1/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL=".."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../assets/documenter.js"></script><script src="../siteinfo.js"></script><script src="../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit">TextSearch.jl</span></div><form class="docs-search" action="../search/"><input class="docs-search-query" id="documenter-search-query" name="q" type="text" placeholder="Search docs"/></form><ul class="docs-menu"><li><a class="tocitem" href="../">Home</a></li><li><a class="tocitem" href="../searching/">Searching</a></li><li><a class="tocitem" href="../preprocessing/">Preprocessing</a></li><li class="is-active"><a class="tocitem" href>Models</a><ul class="internal"><li><a class="tocitem" href="#Entropy-models"><span>Entropy models</span></a></li><li class="toplevel"><a class="tocitem" href="#Inspecting-models"><span>Inspecting models</span></a></li></ul></li><li><span class="tocitem">API</span><ul><li><a class="tocitem" href="../apitextconfig/">Preprocessing</a></li><li><a class="tocitem" href="../apimodels/">Weighting schemes</a></li></ul></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><nav class="breadcrumb"><ul class="is-hidden-mobile"><li class="is-active"><a href>Models</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Models</a></li></ul></nav><div class="docs-right"><a class="docs-edit-link" href="https://github.com/sadit/TextSearch.jl/blob/master/docs/src/modeling.md#L" title="Edit on GitHub"><span class="docs-icon fab"></span><span class="docs-label is-hidden-touch">Edit on GitHub</span></a><a class="docs-settings-button fas fa-cog" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-sidebar-button fa fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a></div></header><article class="content" id="documenter-page"><h1 id="Modeling-the-text-collection"><a class="docs-heading-anchor" href="#Modeling-the-text-collection">Modeling the text collection</a><a id="Modeling-the-text-collection-1"></a><a class="docs-heading-anchor-permalink" href="#Modeling-the-text-collection" title="Permalink"></a></h1><p>The processesing and tokenization is defined through a text configuration <a href="../apitextconfig/#TextSearch.TextConfig"><code>TextConfig</code></a>.</p><p>Once a <code>TextConfig</code> is define, we need to create </p><p>We need to create a model for the text, we select a typical vector model. The model constructor needs to know the weighthing scheme and some stats about the corpus&#39; vocabulary:</p><pre><code class="language-julia-repl">julia&gt; corpus_bow = compute_bow(config, corpus)
-Dict{Symbol,Int64} with 45090 entries:
-  :brava                        =&gt; 3
-  :desobligada                  =&gt; 1
-  :podra                        =&gt; 12
-  :teamoo                       =&gt; 1
-  :grabacion                    =&gt; 5
-  :paso                         =&gt; 269
-  :resistes                     =&gt; 1
-  :consienta                    =&gt; 2
-  Symbol(&quot;#buenasnochesatodos&quot;) =&gt; 1
-  Symbol(&quot;#juntossiempre&quot;)      =&gt; 1
-  Symbol(&quot;#tasty&quot;)              =&gt; 2
-  :confien                      =&gt; 4
-  :bailarrrrrr                  =&gt; 1
-  :zangolotea                   =&gt; 1
-  Symbol(&quot;#pepguardiola&quot;)       =&gt; 1
-  :riata                        =&gt; 3
-  :_emosigue                    =&gt; 1
-  :desenvolvernos               =&gt; 1
-  :sirvienta                    =&gt; 1
-  ⋮                             =&gt; ⋮
+ERROR: MethodError: no method matching compute_bow(::TextConfig, ::Vector{String})
+Closest candidates are:
+  compute_bow(!Matched::Tokenizer, ::AbstractVector{T} where T) at /home/runner/work/TextSearch.jl/TextSearch.jl/src/bow.jl:33
+  compute_bow(!Matched::Tokenizer, ::AbstractVector{T} where T, !Matched::Dict{UInt64, Int32}) at /home/runner/work/TextSearch.jl/TextSearch.jl/src/bow.jl:33
 
 julia&gt; model = VectorModel(TfWeighting(), IdfWeighting(), corpus_bow)
-ERROR: MethodError: no method matching VectorModel(::TfWeighting, ::IdfWeighting, ::Dict{Symbol,Int64})</code></pre><p>Now we can vectorize a text</p><pre><code class="language-julia-repl">julia&gt; text = &quot;las mejor música, la música de siempre!&quot;
+ERROR: UndefVarError: corpus_bow not defined</code></pre><p>Now we can vectorize a text</p><pre><code class="language-julia-repl">julia&gt; text = &quot;las mejor música, la música de siempre!&quot;
 &quot;las mejor música, la música de siempre!&quot;
 
 julia&gt; b = compute_bow(config, text)
-Dict{Symbol,Int64} with 8 entries:
-  :la         =&gt; 1
-  Symbol(&quot;,&quot;) =&gt; 1
-  :las        =&gt; 1
-  :de         =&gt; 1
-  :siempre    =&gt; 1
-  :mejor      =&gt; 1
-  :musica     =&gt; 2
-  :!          =&gt; 1
+ERROR: MethodError: no method matching compute_bow(::TextConfig, ::String)
+Closest candidates are:
+  compute_bow(!Matched::Tokenizer, ::AbstractString) at /home/runner/work/TextSearch.jl/TextSearch.jl/src/bow.jl:24
+  compute_bow(!Matched::Tokenizer, ::AbstractString, !Matched::Dict{UInt64, Int32}) at /home/runner/work/TextSearch.jl/TextSearch.jl/src/bow.jl:24
 
 julia&gt; vectorize(model, b; normalize=false)
 ERROR: UndefVarError: model not defined</code></pre><p>Note: typically, you may to set <code>normalize=true</code> to allow the vector normalization.</p><h2 id="Entropy-models"><a class="docs-heading-anchor" href="#Entropy-models">Entropy models</a><a id="Entropy-models-1"></a><a class="docs-heading-anchor-permalink" href="#Entropy-models" title="Permalink"></a></h2><p><code>TextSearch</code> supports a family of text models based on labeled data called Entropy-based models; which use the empirical distribution of symbols along labels to determine its importance; the entropy of this distribution is used to compose the symbol weight. In this example, the variable <code>labels</code> is a categorical array containing emojis associated to each text in the corpus, see <a href="https://github.com/JuliaData/CategoricalArrays.jl"><code>CategoricalArrays.jl</code></a>.</p><pre><code class="language-julia-repl">julia&gt; labels
@@ -62,48 +40,26 @@ ERROR: UndefVarError: model not defined</code></pre><p>Note: typically, you may 
  &quot;😬&quot;
 
 julia&gt; vcorpus = compute_bow.(config, corpus)
-50000-element Array{Dict{Symbol,Int64},1}:
- Dict(:amika =&gt; 1,:panza =&gt; 1,:una =&gt; 1,:me =&gt; 1,:_usr =&gt; 1,:gustaria =&gt; 1,:tengo =&gt; 1,:_emo =&gt; 1,:enorme =&gt; 1,:pero =&gt; 1…)
- Dict(:hay =&gt; 1,:de =&gt; 1,:en =&gt; 1,:aqui =&gt; 1,:_emo =&gt; 1,:no =&gt; 2,:mi =&gt; 1,Symbol(&quot;,&quot;) =&gt; 1,:deberia =&gt; 1,:estar =&gt; 1…)
- Dict(:de =&gt; 1,:en =&gt; 1,:voto =&gt; 1,Symbol(&quot;#hayamores&quot;) =&gt; 1,:_emo =&gt; 1,:que =&gt; 1,:el =&gt; 1,Symbol(&quot;#toppower&quot;) =&gt; 1,:para =&gt; 1,:x =&gt; 1…)
- Dict(:de =&gt; 1,:recibir =&gt; 1,:lo =&gt; 1,:super =&gt; 1,:mio =&gt; 1,:. =&gt; 1,:es =&gt; 1,:esto =&gt; 1,:_emo =&gt; 1,:modelos =&gt; 1…)
- Dict(:muy =&gt; 1,:buenos =&gt; 1,:dias =&gt; 1,:_usr =&gt; 1,:_emo =&gt; 1,:bae =&gt; 1)
- Dict(:de =&gt; 1,:que =&gt; 1,:el =&gt; 1,:_emo =&gt; 1,:no =&gt; 1,Symbol(&quot;,&quot;) =&gt; 1,:era =&gt; 1,:despues =&gt; 1,:necesario =&gt; 1,:corazon =&gt; 1…)
- Dict(:desestresarme =&gt; 1,:_emo =&gt; 1,:mi =&gt; 1,Symbol(&quot;(&quot;) =&gt; 1,:venir =&gt; 1,:! =&gt; 1,:idea =&gt; 1,:buena =&gt; 1,:gym =&gt; 1,:donde =&gt; 1…)
- Dict(:lasana =&gt; 1,:xalapa =&gt; 1,:centro =&gt; 1,:_emo =&gt; 3,Symbol(&quot;@&quot;) =&gt; 1,Symbol(&quot;!!!.&quot;) =&gt; 1,:_url =&gt; 1,:postodoro =&gt; 1)
- Dict(:la =&gt; 1,:hay =&gt; 1,:que =&gt; 1,:_emo =&gt; 1,:vivir =&gt; 2,:suya =&gt; 1,:dejar =&gt; 1,:los =&gt; 1,:aprender =&gt; 1,:a =&gt; 2…)
- Dict(:las =&gt; 1,:bicho =&gt; 1,:pues =&gt; 1,:que =&gt; 1,:el =&gt; 1,:hasta =&gt; 1,:separe =&gt; 1,:_emo =&gt; 1,:chavas =&gt; 1)
- ⋮
- Dict(:en =&gt; 1,:el =&gt; 2,:_emo =&gt; 1,:no =&gt; 1,:onda =&gt; 1,:alcohol =&gt; 1,:lo =&gt; 1,:le =&gt; 1,:al =&gt; 1,:buena =&gt; 1…)
- Dict(:desde =&gt; 1,:hice =&gt; 1,:aun =&gt; 1,:el =&gt; 1,:tengo =&gt; 1,:que =&gt; 1,:no =&gt; 2,:se =&gt; 2,:como =&gt; 1,:_emo =&gt; 3…)
- Dict(:hay =&gt; 1,Symbol(&quot;#campeche&quot;) =&gt; 1,:limites =&gt; 1,:. =&gt; 1,:_emo =&gt; 3,:_url =&gt; 1,:no =&gt; 1,:... =&gt; 1,:ironman =&gt; 1,:_num =&gt; 2…)
- Dict(:de =&gt; 1,:semana =&gt; 1,:buen =&gt; 1,:_emo =&gt; 1,:inicio =&gt; 1)
- Dict(:el =&gt; 1,:que =&gt; 1,:_emo =&gt; 2,:no =&gt; 1,:causa =&gt; 1,:estres =&gt; 1,:una =&gt; 1,:gotera =&gt; 1,:me =&gt; 1,:saben =&gt; 1…)
- Dict(:existes =&gt; 1,:_usr =&gt; 1,:_emo =&gt; 1,Symbol(&quot;¿&quot;) =&gt; 1,:_url =&gt; 1,:? =&gt; 1)
- Dict(:la =&gt; 1,:_emo =&gt; 2,:no =&gt; 1,:se =&gt; 1,:querer =&gt; 1,:entonces =&gt; 1,:puede =&gt; 1,:pero =&gt; 1,:salude =&gt; 1,:super =&gt; 1…)
- Dict(:creo =&gt; 1,:adicta =&gt; 1,:soy =&gt; 1,:que =&gt; 1,:al =&gt; 1,:trabajo =&gt; 1,:_emo =&gt; 1)
- Dict(:lapiz =&gt; 1,:por =&gt; 1,:que =&gt; 1,:encargo =&gt; 1,:_emo =&gt; 1,:colecciona =&gt; 1,Symbol(&quot;,&quot;) =&gt; 1,:bien =&gt; 1,:! =&gt; 1,:un =&gt; 1…)
+ERROR: MethodError: no method matching compute_bow(::TextConfig, ::String)
+Closest candidates are:
+  compute_bow(!Matched::Tokenizer, ::AbstractString) at /home/runner/work/TextSearch.jl/TextSearch.jl/src/bow.jl:24
+  compute_bow(!Matched::Tokenizer, ::AbstractString, !Matched::Dict{UInt64, Int32}) at /home/runner/work/TextSearch.jl/TextSearch.jl/src/bow.jl:24
 
 julia&gt; model = EntModel(TfWeighting(), EntWeighting(), vcorpus, labels)
 ERROR: UndefVarError: EntWeighting not defined</code></pre><p>Now we can vectorize a text</p><pre><code class="language-julia-repl">julia&gt; text = &quot;las mejor música, la música de siempre!&quot;
 &quot;las mejor música, la música de siempre!&quot;
 
 julia&gt; b = compute_bow(config, text)
-Dict{Symbol,Int64} with 8 entries:
-  :la         =&gt; 1
-  Symbol(&quot;,&quot;) =&gt; 1
-  :las        =&gt; 1
-  :de         =&gt; 1
-  :siempre    =&gt; 1
-  :mejor      =&gt; 1
-  :musica     =&gt; 2
-  :!          =&gt; 1
+ERROR: MethodError: no method matching compute_bow(::TextConfig, ::String)
+Closest candidates are:
+  compute_bow(!Matched::Tokenizer, ::AbstractString) at /home/runner/work/TextSearch.jl/TextSearch.jl/src/bow.jl:24
+  compute_bow(!Matched::Tokenizer, ::AbstractString, !Matched::Dict{UInt64, Int32}) at /home/runner/work/TextSearch.jl/TextSearch.jl/src/bow.jl:24
 
 julia&gt; vec = vectorize(model, b; normalize=false)
 ERROR: UndefVarError: model not defined</code></pre><h1 id="Inspecting-models"><a class="docs-heading-anchor" href="#Inspecting-models">Inspecting models</a><a id="Inspecting-models-1"></a><a class="docs-heading-anchor-permalink" href="#Inspecting-models" title="Permalink"></a></h1><p>Models have a <code>id2token</code> dictionary to map identifiers to symbols</p><pre><code class="language-julia-repl">julia&gt; Dict(model.id2token[k] =&gt; v for (k,v) in vec)
 ERROR: MethodError: no method matching iterate(::typeof(vec))
 Closest candidates are:
-  iterate(!Matched::LibGit2.GitRevWalker) at /buildworker/worker/package_linux64/build/usr/share/julia/stdlib/v1.5/LibGit2/src/walker.jl:29
-  iterate(!Matched::LibGit2.GitRevWalker, !Matched::Any) at /buildworker/worker/package_linux64/build/usr/share/julia/stdlib/v1.5/LibGit2/src/walker.jl:29
-  iterate(!Matched::StatsBase.CoefTable) at /home/runner/.julia/packages/StatsBase/aknjg/src/statmodels.jl:438
-  ...</code></pre></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../preprocessing/">« Preprocessing</a><a class="docs-footer-nextpage" href="../apitextconfig/">Preprocessing »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> on <span class="colophon-date" title="Thursday 11 March 2021 00:36">Thursday 11 March 2021</span>. Using Julia version 1.5.3.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+  iterate(!Matched::Union{LinRange, StepRangeLen}) at range.jl:664
+  iterate(!Matched::Union{LinRange, StepRangeLen}, !Matched::Int64) at range.jl:664
+  iterate(!Matched::T) where T&lt;:Union{Base.KeySet{var&quot;#s79&quot;, var&quot;#s78&quot;} where {var&quot;#s79&quot;, var&quot;#s78&quot;&lt;:Dict}, Base.ValueIterator{var&quot;#s77&quot;} where var&quot;#s77&quot;&lt;:Dict} at dict.jl:693
+  ...</code></pre></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../preprocessing/">« Preprocessing</a><a class="docs-footer-nextpage" href="../apitextconfig/">Preprocessing »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> on <span class="colophon-date" title="Friday 9 April 2021 14:01">Friday 9 April 2021</span>. Using Julia version 1.6.0.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
