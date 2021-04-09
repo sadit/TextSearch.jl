@@ -5,7 +5,6 @@ version = "0.9.0"
 
 [deps]
 CategoricalArrays = "324d7699-5711-5eae-9e2f-1d82baa6b597"
-InternedStrings = "7d512f48-7fb1-5a58-b986-67e6dc259f01"
 JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
 KCenters = "5d8de97f-65f8-4dd6-a15b-0f89c36a43ce"
 KNearestCenters = "4dca28ae-43b8-11eb-1f5e-d55054101997"
