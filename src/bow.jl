@@ -34,7 +34,7 @@ function compute_bow(tok::Tokenizer, messages::AbstractVector, bow::BOW=BOW())
     for text in messages
         empty!(tok)
         tokenize(tok, text)
-        compute_bow(tok.output, bow)
+        compute_bow(tok.tokens, bow)
     end
 
     bow

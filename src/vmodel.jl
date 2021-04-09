@@ -111,6 +111,7 @@ mutable struct VectorModel{_G<:GlobalWeighting, _L<:LocalWeighting} <: TextModel
     n::Int  # training collection size
 end
 
+StructTypes.construct(::Type{UInt64}, s::String) = parse(UInt64, s)
 StructTypes.construct(::Type{Int64}, s::String) = parse(Int64, s)
 StructTypes.construct(::Type{Int32}, s::String) = parse(Int32, s)
 StructTypes.construct(::Type{Int16}, s::String) = parse(Int16, s)
@@ -240,7 +241,6 @@ function vectorize_corpus(tok::Tokenizer, model::VectorModel, corpus; bow=BOW(),
     V = Vector{SVEC}(undef, length(corpus))
 
     for (i, text) in enumerate(corpus)
-        empty!(tok)
         empty!(bow)
         V[i] = vectorize(tok, model, text; bow=bow, normalize=normalize)
     end

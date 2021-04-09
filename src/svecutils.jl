@@ -44,20 +44,21 @@ end
 
 Creates a sparse matrix from an array of DVEC sparse vectors.
 """
-function sparse(cols::AbstractVector{S}, m=0) where S<:DVEC{Ti,Tv} where {Ti<:Integer,Tv<:Number}
+function sparse(cols::AbstractVector{S}, m) where S<:DVEC{Ti,Tv} where {Ti<:Integer,Tv<:Number}
     I = Ti[]
     J = Ti[]
     F = Tv[]
 
     for j in eachindex(cols)
         for (term, weight) in cols[j]
-            if term > 0
+            if term > 0 && term <= m 
                 push!(I, term)
                 push!(J, j)
                 push!(F, weight)
             end
         end
     end
+
     if m == 0
         sparse(I, J, F)
     else

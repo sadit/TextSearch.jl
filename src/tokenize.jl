@@ -15,7 +15,12 @@ end
 
 StructTypes.StructType(::Type{<:Tokenizer}) = StructTypes.Struct()
 
-function Tokenizer(config::TextConfig; isconstruction=true, invmap=Dict{UInt64,String}(), n=128)
+function Tokenizer(
+        config::TextConfig;
+        isconstruction=true,
+        invmap=Dict{UInt64,String}(),
+        n=128
+    )
     normtext = Vector{Char}(undef, n)
     tokens = Vector{UInt64}(undef, n)
     unigrams = Vector{String}(undef, n)
@@ -26,9 +31,11 @@ function Tokenizer(config::TextConfig; isconstruction=true, invmap=Dict{UInt64,S
     Tokenizer(config, invmap, isconstruction, normtext, tokens, unigrams, IOBuffer())
 end
 
-Base.broadcastable(m::Tokenizer) = (m,)
+function Tokenizer(tok::Tokenizer; isconstruction=false, n=128)
+    Tokenizer(tok.config, invmap=tok.invmap, isconstruction=isconstruction, n=n)
+end
 
-decode(tok::Tokenizer, id::UInt64) = decode(tok.vocmap, id)
+Base.broadcastable(m::Tokenizer) = (m,)
 
 function encode(tok::Tokenizer, token::AbstractString)
     h = hash(token)
