@@ -53,7 +53,7 @@ function Base.empty!(tok::Tokenizer)
     empty!(tok.unigrams)
 end
 
-function tokenize__(config::TextConfig, textlist::AbstractVector, tok::Tokenizer=Tokenizer())
+#=function tokenize__(config::TextConfig, textlist::AbstractVector, tok::Tokenizer=Tokenizer())
     n = length(textlist) * length(first(textlist))
 
     for text in textlist
@@ -67,7 +67,7 @@ function tokenize__(config::TextConfig, textlist::AbstractVector, tok::Tokenizer
     end
 
     tok.tokens
-end
+end=#
 
 """
     tokenize(tok::Tokenizer, text::AbstractString)
@@ -115,6 +115,7 @@ function flush_token!(tok::Tokenizer)
     io = tok.io
     if io.size > 0
         s = String(take!(io))
+        @info s
         push!(tok.tokens, encode(tok, s))
         s
     else
@@ -149,16 +150,36 @@ Performs the word tokenization
 """
 function unigrams(tok::Tokenizer)
     n = length(tok.normtext)
-    @inbounds for i in 1:n
+    ## @info tok.normtext
+    @inbounds for i in 2:n  # normtext[1] is BLANK
         c = tok.normtext[i]
+        p = tok.normtext[i-1]
 
-        if c == BLANK
+        ## @show i, p, c
+        if ispunct(c) && !ispunct(p) && p !== BLANK
+            ## @show :a
             s = flush_token!(tok)
             s !== nothing && push!(tok.unigrams, s)
+            write(tok.io, c)
+        elseif ispunct(p) && !ispunct(c) && !(p in ('#', '@'))
+            ## @show :b
+            s = flush_token!(tok)
+            s !== nothing && push!(tok.unigrams, s)
+            if c !== BLANK
+                write(tok.io, c)
+            end
+        elseif c == BLANK
+            ## @show :c
+            if p !== BLANK
+                s = flush_token!(tok)
+                s !== nothing && push!(tok.unigrams, s)
+            end
         else
+            ## @show :d
             write(tok.io, c)
         end
     end
+
     s = flush_token!(tok)
     s !== nothing && push!(tok.unigrams, s)
     tok.tokens

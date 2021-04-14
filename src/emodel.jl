@@ -53,6 +53,7 @@ function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, corpus::Abstract
     
     for i in eachindex(corpus)
         vec = corpus[i]
+        code = labels.refs[i]
         for (t, occ) in vec
             s = get(V, t, UnknownTokenStats)
             V[t] = TokenStats(s.occs + occ, s.ndocs + 1, 0f0)
@@ -61,7 +62,7 @@ function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, corpus::Abstract
                 dist = D[t] = fill(smooth, nclasses)
             end
             
-            dist[labels.refs[i]] += occ
+            dist[code] += occ
         end
     end
 
