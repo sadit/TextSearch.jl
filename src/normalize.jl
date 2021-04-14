@@ -50,9 +50,10 @@ function normalize_text(config::TextConfig, text::AbstractString, output::Vector
     
     @inbounds for u in Unicode.normalize(text, casefold=config.lc, stripmark=config.del_diac, stripcc=true, compat=true)
         isspace(u) && (u = BLANK)
-        config.del_dup && u === output[end] && continue
-        config.del_punc && ispunct(u) && continue
+        config.del_punc && ispunct(u) && !(u in ('@', '#', '_')) && (u = BLANK)
         config.group_emo && u in EMOJIS && (u = '😂')
+        config.del_dup && u === output[end] && continue
+
         push!(output, u)
     end
 

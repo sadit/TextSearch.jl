@@ -75,6 +75,7 @@ end=#
 Tokenizes `text` using the given configuration
 """
 function tokenize(tok::Tokenizer, text::AbstractString)
+    #@info text
     empty!(tok)
     normalize_text(tok.config, text, tok.normtext)
     tokenize_(tok)
@@ -115,7 +116,7 @@ function flush_token!(tok::Tokenizer)
     io = tok.io
     if io.size > 0
         s = String(take!(io))
-        @info s
+        #@info s
         push!(tok.tokens, encode(tok, s))
         s
     else
@@ -150,7 +151,7 @@ Performs the word tokenization
 """
 function unigrams(tok::Tokenizer)
     n = length(tok.normtext)
-    ## @info tok.normtext
+    # @info tok.normtext
     @inbounds for i in 2:n  # normtext[1] is BLANK
         c = tok.normtext[i]
         p = tok.normtext[i-1]
@@ -161,7 +162,7 @@ function unigrams(tok::Tokenizer)
             s = flush_token!(tok)
             s !== nothing && push!(tok.unigrams, s)
             write(tok.io, c)
-        elseif ispunct(p) && !ispunct(c) && !(p in ('#', '@'))
+        elseif ispunct(p) && !ispunct(c) && !(p in ('#', '@', '_'))
             ## @show :b
             s = flush_token!(tok)
             s !== nothing && push!(tok.unigrams, s)

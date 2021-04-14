@@ -12,14 +12,12 @@ const corpus = ["hello world :)", "@user;) excellent!!", "#jello world."]
 @testset "individual tokenizers" begin
     m = Tokenizer(TextConfig(nlist=[1]))
     @test tokenize(m, text0) == hash.(["@user", ";)", "#jello", ".", "world"])
-    exit(0)
-    @test tokenize(m, text0) == hash.(["@user", ";)", "#jello", ".", "world"])
 
     m = Tokenizer(TextConfig(nlist=[2]))
     @test decode.(m, tokenize(m, text0)) == ["@user ;)", ";) #jello", "#jello .", ". world"]
 
     m = Tokenizer(TextConfig(qlist=[3]))
-    @test tokenize(m, text0) == hash.([" @u", "@us", "use", "ser", "er ", "r ;", " ;)", ";) ", ") #", " #j", "#je", "jel", "ell", "llo", "lo ", "o .", " . ", ". w", " wo", "wor", "orl", "rld", "ld "])
+    @test decode.(m, tokenize(m, text0)) == [" @u", "@us", "use", "ser", "er;", "r;)", ";) ", ") #", " #j", "#je", "jel", "ell", "llo", "lo.", "o.w", ".wo", "wor", "orl", "rld", "ld "]
 
     m = Tokenizer(TextConfig(nlist=[1]))
     @test decode.(m, tokenize(m, text1)) == ["hello", "world", "!!", "@user", ";)", "#jello", ".", "world", ":)"]
@@ -28,21 +26,15 @@ const corpus = ["hello world :)", "@user;) excellent!!", "#jello world."]
     @test decode.(m, tokenize(m, text1)) == ["hello !!", "world @user", "!! ;)", "@user #jello", ";) .", "#jello world", ". :)"]
 end
 
-exit(0)
-
 @testset "Normalize and tokenize" begin
     tok = Tokenizer(TextConfig(del_punc=true, group_usr=true, nlist=[1, 2, 3]))
-    @test tokenize(tok, text1) == hash.(["hello", "world", "_usr", "jello", "world", "hello world", "world _usr", "_usr jello", "jello world", "hello world _usr", "world _usr jello", "_usr jello world"])
-    #tok_ = Tokenizer(JSON3.read(JSON3.write((tok.config, tok.vocmap)), typeof((tok.config, tok.vocmap)))...)
-    #@test tokenize(tok_, text1) == hash.(["hello", "world", "_usr", "jello", "world", "hello world", "world _usr", "_usr jello", "jello world", "hello world _usr", "world _usr jello", "_usr jello world"])
+    @test decode.(tok, tokenize(tok, text1)) == ["hello", "world", "_usr", "#jello", "world", "hello world", "world _usr", "_usr #jello", "#jello world", "hello world _usr", "world _usr #jello", "_usr #jello world"]
 end
-
 
 @testset "Normalize and tokenize bigrams and trigrams" begin
     tok = Tokenizer(TextConfig(del_punc=true, group_usr=true, nlist=[2, 3]))
-    @test tokenize(tok, text1) == hash.(["hello world", "world _usr", "_usr jello", "jello world", "hello world _usr", "world _usr jello", "_usr jello world"])
+    @test decode.(tok, tokenize(tok, text1)) == ["hello world", "world _usr", "_usr #jello", "#jello world", "hello world _usr", "world _usr #jello", "_usr #jello world"]
 end
-
 
 @testset "Tokenize skipgrams" begin
     tok = Tokenizer(TextConfig(del_punc=false, group_usr=false, slist=[Skipgram(3,1)]))
