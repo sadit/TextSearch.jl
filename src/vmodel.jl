@@ -223,10 +223,10 @@ function vectorize(model::VectorModel{_G, _L}, bow::BOW; normalize=true) where {
     end
 
     if length(vec) == 0
-        @warn "empty vector! $bow"
+        # error("empty final vector: the original vector has $(length(bow)) features")
         vec[0] = 1e-9
     end
-    
+
     normalize && normalize!(vec)
     vec
 end
