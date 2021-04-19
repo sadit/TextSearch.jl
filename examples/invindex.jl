@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.12.20
+# v0.14.2
 
 using Markdown
 using InteractiveUtils
@@ -31,11 +31,15 @@ md"""
 
 # ╔═╡ 547e44b2-5f08-11eb-128c-61c32cdb2ee7
 begin
-	url = "http://ingeotec.mx/~sadit/emospace50k.json.gz"
+	url = "https://github.com/sadit/TextClassificationTutorial/raw/main/data/emo50k.json.gz"
 	!isfile(basename(url)) && download(url, basename(url))
 	db = open(basename(url)) do stream
 		[JSON.parse(line) for line in eachline(GzipDecompressorStream(stream))]
 	end
+	
+	md"""
+	loaded $(length(db)) messages
+	"""
 end
 
 
@@ -48,10 +52,13 @@ md"""
 begin
 	
 	# you can use a number of tokenizers, here we use character q-grams to improve support for informal writing
-	config = TextConfig(qlist=[3], nlist=[1], group_usr=true, group_url=true)
+	tok = Tokenizer(TextConfig(qlist=[3], nlist=[1], group_usr=true, group_url=true, del_diac=true, del_punc=true, group_emo=false))
 	corpus = [t["text"] for t in db]
-	model = VectorModel(TfWeighting(), IdfWeighting(), compute_bow.(config, corpus))
+	model = VectorModel(IdfWeighting(), TfWeighting(), compute_bow.(tok, corpus))
 end
+
+# ╔═╡ 6dc5265a-f5ae-410d-b18b-5433f6248ae9
+
 
 # ╔═╡ 7cf28d6c-5f4f-11eb-0101-63bc0ff84e94
 md"""
@@ -59,7 +66,7 @@ md"""
 """
 
 # ╔═╡ 6cceec0a-5f4f-11eb-0727-6d333d16196c
-X = [vectorize(model, compute_bow(config, text)) for text in corpus];
+X = vectorize_corpus(tok, model, corpus);
 
 # ╔═╡ 95ea6094-5f4f-11eb-0d62-5b0407fb63a3
 md"## Construction of the dataset"
@@ -86,7 +93,7 @@ md"## Results "
 
 # ╔═╡ 92d0c64e-5f09-11eb-0d65-05a484984b63
 begin
-	q = vectorize(model, compute_bow(config, querytext))
+	q = vectorize(model, compute_bow(tok, querytext))
 	
 	with_terminal() do
 		res = search(invindex, q, ksearch)
@@ -103,17 +110,18 @@ begin
 end
 
 # ╔═╡ Cell order:
-# ╠═fb25ee14-5f4e-11eb-1c8e-6d292c20388a
-# ╠═11f6ef4a-5f08-11eb-0ba1-05a1a1ff205a
-# ╠═0c25b8a2-5f4f-11eb-3410-f5560725ed17
-# ╠═547e44b2-5f08-11eb-128c-61c32cdb2ee7
-# ╠═545269a4-5f4f-11eb-0f7d-01adcaf452a0
+# ╟─fb25ee14-5f4e-11eb-1c8e-6d292c20388a
+# ╟─11f6ef4a-5f08-11eb-0ba1-05a1a1ff205a
+# ╟─0c25b8a2-5f4f-11eb-3410-f5560725ed17
+# ╟─547e44b2-5f08-11eb-128c-61c32cdb2ee7
+# ╟─545269a4-5f4f-11eb-0f7d-01adcaf452a0
 # ╠═52bbc1a8-5f4f-11eb-1308-39c8a8a651b0
+# ╠═6dc5265a-f5ae-410d-b18b-5433f6248ae9
 # ╠═7cf28d6c-5f4f-11eb-0101-63bc0ff84e94
 # ╠═6cceec0a-5f4f-11eb-0727-6d333d16196c
 # ╠═95ea6094-5f4f-11eb-0d62-5b0407fb63a3
-# ╠═8dc9b872-5f4f-11eb-254d-2ddb4b4b53e7
-# ╠═9f6f6568-5f4f-11eb-2a25-8d5c2aa35f76
-# ╠═010ec74a-5f0b-11eb-1c3a-f327bad5b02f
-# ╠═b32bfc10-5f4f-11eb-3e9c-05de9cc7d34f
-# ╠═92d0c64e-5f09-11eb-0d65-05a484984b63
+# ╟─8dc9b872-5f4f-11eb-254d-2ddb4b4b53e7
+# ╟─9f6f6568-5f4f-11eb-2a25-8d5c2aa35f76
+# ╟─010ec74a-5f0b-11eb-1c3a-f327bad5b02f
+# ╟─b32bfc10-5f4f-11eb-3e9c-05de9cc7d34f
+# ╟─92d0c64e-5f09-11eb-0d65-05a484984b63

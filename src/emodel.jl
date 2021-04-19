@@ -14,12 +14,11 @@ struct EntropyWeighting <: GlobalWeighting end
 
 
 function entropy(dist)
-    popsize = sum(dist)
     e = 0.0
-    pop = sum(dist)
+    ipop = 1/sum(dist)
 
     for x in dist
-        p = x / pop
+        p = x * ipop
 
         if p > 0.0
             e -= p * log2(p)
@@ -45,30 +44,26 @@ function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, corpus::Abstract
         weights=:balance
     )
     labels === nothing && error("EntropyWeighting requires labels as a categorical array to work")
-
     nclasses = length(levels(labels))
-
     D = Dict{UInt64,Vector{Float64}}()
     V = Vocabulary()
     
     for i in eachindex(corpus)
         vec = corpus[i]
         code = labels.refs[i]
-        for (t, occ) in vec
+        for (t, occs) in vec
             s = get(V, t, UnknownTokenStats)
-            V[t] = TokenStats(s.occs + occ, s.ndocs + 1, 0f0)
+            V[t] = TokenStats(s.occs + occs, s.ndocs + 1, 0f0)
             dist = get(D, t, nothing)
             if dist === nothing
                 dist = D[t] = fill(smooth, nclasses)
             end
             
-            dist[code] += occ
+            dist[code] += occs
         end
     end
 
-    if weights isa String
-        weights = Symbol(weights)
-    end
+    weights = weights isa String ? Symbol(weights) : weights
 
     if weights === :balance
         weights = sum(Vector{Float64}, values(D))

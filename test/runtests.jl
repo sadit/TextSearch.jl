@@ -100,6 +100,7 @@ end
         @test abs(dot(x, y) - dot_) < 1e-3
     end
 
+    
     for (gw, lw, dot_, p) in [
             (EntropyWeighting(), BinaryLocalWeighting(), 0.70711, 0.9),
             (IdfWeighting(), TfWeighting(), 0.23334, 0.9),

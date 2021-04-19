@@ -216,18 +216,17 @@ function vectorize(model::VectorModel{_G, _L}, bow::BOW; normalize=true) where {
         s = get(model.tokens, token, nothing)
         s === nothing && continue
 
-        lw = local_weighting(model.local_weighting, freq, maxfreq, numtokens)
-        gw = global_weighting(model, s)
-        w = Float64(lw * gw)
-        if w > 1e-6 
+        w = local_weighting(model.local_weighting, freq, maxfreq, numtokens) * global_weighting(model, s)
+        if w > 1e-9
             vec[token] = w
         end
     end
 
     if length(vec) == 0
-        vec[rand(UInt64) | (one(UInt64) << 63)] = 1e-6
+        @warn "empty vector! $bow"
+        vec[0] = 1e-9
     end
-
+    
     normalize && normalize!(vec)
     vec
 end

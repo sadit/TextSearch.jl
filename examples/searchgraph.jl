@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.12.18
+# v0.14.2
 
 using Markdown
 using InteractiveUtils
@@ -25,17 +25,18 @@ This example shows how to perform knn searches using a `SearchGraph` index (defi
 
 # ╔═╡ 547e44b2-5f08-11eb-128c-61c32cdb2ee7
 begin
-	url = "http://ingeotec.mx/~sadit/emospace50k.json.gz"
+	url = "https://github.com/sadit/TextClassificationTutorial/raw/main/data/emo50k.json.gz"
 	!isfile(basename(url)) && download(url, basename(url))
 	db = open(basename(url)) do stream
 		[JSON.parse(line) for line in eachline(GzipDecompressorStream(stream))]
 	end
 	
 	# you can use a number of tokenizers, here we use character q-grams to improve support for informal writing
-	config = TextConfig(qlist=[3], nlist=[1], group_usr=true, group_url=true)
+	tok = Tokenizer(TextConfig(qlist=[4], nlist=[1], del_diac=true, group_usr=true, group_url=true))
 	corpus = [t["text"] for t in db]
-	model = VectorModel(TfWeighting(), IdfWeighting(), compute_bow.(config, corpus))
-	X = [vectorize(model, compute_bow(config, text)) for text in corpus]
+	model = VectorModel(IdfWeighting(), TfWeighting(), compute_bow_corpus(tok, corpus))
+	X = vectorize_corpus(tok, model, corpus)
+	nothing
 end
 
 # ╔═╡ 67fa1b66-5f4d-11eb-01b8-0d9b99c60386
@@ -46,11 +47,12 @@ This example uses a different index, `SearchGraph` which has an slower construct
 """
 
 # ╔═╡ f8bb66c4-5f4c-11eb-1f2e-4100b9d49eb1
-index = SearchGraph(CosineDistance(), X;
-	search_algo=BeamSearch(),
-	neighborhood_algo=LogNeighborhood(2),
-	automatic_optimization=false
-)
+index =	SearchGraph(CosineDistance(), X;
+		search_algo=BeamSearch(4),
+		neighborhood_algo=LogNeighborhood(3),
+		automatic_optimization=false
+	)
+
 
 # ╔═╡ a873c5de-5f4d-11eb-3b7c-69b56d88d7ef
 md"""
@@ -70,7 +72,7 @@ end
 
 # ╔═╡ 92d0c64e-5f09-11eb-0d65-05a484984b63
 begin
-	q = vectorize(model, compute_bow(config, querytext))
+	q = vectorize(model, compute_bow(tok, querytext))
 	
 	with_terminal() do
 		res = search(index, q, ksearch)
