@@ -16,6 +16,9 @@ const corpus = ["hello world :)", "@user;) excellent!!", "#jello world."]
     m = Tokenizer(TextConfig(nlist=[2]))
     @test decode.(m, tokenize(m, text0)) == ["@user ;)", ";) #jello", "#jello .", ". world"]
 
+    m = Tokenizer(TextConfig(nlist=[3]))
+    @test decode.(m, tokenize(m, text0)) == ["@user ;) #jello", ";) #jello .", "#jello . world"]
+
     m = Tokenizer(TextConfig(qlist=[3]))
     @test decode.(m, tokenize(m, text0)) == [" @u", "@us", "use", "ser", "er;", "r;)", ";) ", ") #", " #j", "#je", "jel", "ell", "llo", "lo.", "o.w", ".wo", "wor", "orl", "rld", "ld "]
 
@@ -82,10 +85,10 @@ end
             (IdfWeighting(), BinaryLocalWeighting(), 0.40518),
             (IdfWeighting(), TfWeighting(), 0.23334),
 
-            (EntropyWeighting(), FreqWeighting(), 0.44641),
-            (EntropyWeighting(), TfWeighting(), 0.44641),
-            (EntropyWeighting(), TpWeighting(), 0.44641),
-            (EntropyWeighting(), BinaryLocalWeighting(), 0.70585)
+            (EntropyWeighting(), FreqWeighting(), 0.44456),
+            (EntropyWeighting(), TfWeighting(), 0.44456),
+            (EntropyWeighting(), TpWeighting(), 0.44456),
+            (EntropyWeighting(), BinaryLocalWeighting(), 0.70290)
         ]
 
         if gw isa EntropyWeighting

@@ -27,25 +27,20 @@ open(filename) do f
 end
 
 labels = categorical(labels)
-config = TextConfig(group_emo=false, group_num=false, group_url=false, group_usr=false, nlist=[1])
+tok = Tokenizer(TextConfig(group_emo=false, group_num=false, group_url=false, group_usr=false, nlist=[1]))
 ```
 
-Once a `TextConfig` is define, we need to create 
-
-We need to create a model for the text, we select a typical vector model. The model constructor needs to know the weighthing scheme and some stats about the corpus' vocabulary:
+Once a `Tokenizer` is defined, we need to create a model for the text, we select a typical vector model. The model constructor needs to know the weighthing scheme and some stats about the corpus' vocabulary:
 ```@repl Model
-corpus_bow = compute_bow(config, corpus)
-model = VectorModel(TfWeighting(), IdfWeighting(), corpus_bow)
+model = VectorModel(IdfWeighting(), TfWeighting(), compute_bow_corpus(tok, corpus))
 ```
 
 Now we can vectorize a text
 ```@repl Model
-text = "las mejor música, la música de siempre!"
-b = compute_bow(config, text)
-vectorize(model, b; normalize=false)
+vectorize(model, tok, "la mejor música, la música de siempre!"; normalize=false)
 ```
 
-Note: typically, you may to set `normalize=true` to allow the vector normalization.
+Note: by default `normalize=true` normalizes the vector.
 
 
 ## Entropy models
@@ -54,20 +49,18 @@ Note: typically, you may to set `normalize=true` to allow the vector normalizati
 
 ```@repl Model
 labels
-vcorpus = compute_bow.(config, corpus)
-model = EntModel(TfWeighting(), EntWeighting(), vcorpus, labels)
+vcorpus = compute_bow_corpus(tok, corpus)
+model = VectorModel(EntropyWeighting(), BinaryLocalWeighting(), vcorpus, labels)
 ```
 
 Now we can vectorize a text
 ```@repl Model
-text = "las mejor música, la música de siempre!"
-b = compute_bow(config, text)
-vec = vectorize(model, b; normalize=false)
-
+vec = vectorize(tok, model, "la mejor música, la música de siempre!"; normalize=false)
+decode(tok, vec)
 ```
 
 # Inspecting models
 Models have a `id2token` dictionary to map identifiers to symbols
 ```@repl Model
-Dict(model.id2token[k] => v for (k,v) in vec)
+model.tokens
 ```

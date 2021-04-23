@@ -7,6 +7,7 @@ end
 ```
 
 ```@docs
+Tokenizer
 TextConfig
 tokenize
 normalize_text

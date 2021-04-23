@@ -27,26 +27,28 @@ corpus = open(filename) do f
 end;
 ```
 
-Now, we need to define the preprocessing step and tokenizer
+Now, we need to define the preprocessing step and the tokenizer
 
 ```@repl Search
-config = TextConfig(group_emo=false, group_num=false, group_url=false, group_usr=false, nlist=[1])
+tok = Tokenizer(TextConfig(group_emo=false, group_num=false, group_url=false, group_usr=false, nlist=[1]))
 ```
 
 We need to create a model for the text, we select a typical vector model. The model constructor needs to know the weighthing scheme and some stats about the corpus' vocabulary:
 ```@repl Search
-model = VectorModel(TfWeighting, IdfWeighting(), compute_bow(config, corpus))
+model = VectorModel(IdfWeighting(), TfWeighting(), compute_bow_corpus(tok, corpus))
 ```
 
 This model is used to vectorize the corpus, and then, create the Inverted Index search structure.
 ```@repl Search
-invindex = InvIndex(vectorize.(model, compute_bow.(config, corpus)))
+invindex = InvIndex(vectorize_corpus(tok, model, corpus))
 ```
+
+Please note that `compute_bow_corpus(tok, corpus)` is a faster way (shared buffers) to compute `compute_bow.(tok, corpus)`
 
 The index can be used for solving queries efficiently
 ```@repl Search
-q = "que buena música"
-for p in search(invindex, vectorize(model, compute_bow(config, q)), 5)
+q = "que buena música!!"
+for p in search(invindex, vectorize(tok, model, q), 5)
     @info (dist=p.dist, tweet=corpus[p.id])
 end
 ```

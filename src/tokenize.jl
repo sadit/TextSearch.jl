@@ -3,6 +3,19 @@
 
 export Tokenizer, tokenize, qgrams, unigrams, encode, decode
 
+"""
+    struct Tokenizer
+
+A tokenizer converts a text into a set of tokens, and in particular, each token
+in this implementation is represented as the hash code of the corresponding string token.
+This methods also normalize and preprocess the text following instructions in the given `TextConfig` object.
+The structure has several fields:
+- the text config object
+- an inverse map `invmap` that need to be captured at construction time (only needed if the tokens need to be inspected).
+- `isconstruction` indicator (must be true only when the tokens are being parsed for building a model)
+- the rest of the fields are used as buffers (multithreaded applications need independent copies of tokenizers)
+
+"""
 struct Tokenizer
     config::TextConfig
     invmap::Union{Dict{UInt64,String},Nothing}
@@ -13,7 +26,9 @@ struct Tokenizer
     io::IOBuffer
 end
 
-StructTypes.StructType(::Type{<:Tokenizer}) = StructTypes.Struct()
+StructTypes.StructType(::Type{<:Tokenizer}) = StructTypes.DictType()
+StructTypes.construct(::Type{<:Tokenizer}, d::Dict) = Tokenizer(d["config"], isconstruction=false, invmap=d["invmap"])
+StructTypes.keyvaluepairs(tok::Tokenizer) = ["config" => tok.config, "invmap" => tok.invmap]
 
 function Tokenizer(
         config::TextConfig;
@@ -35,6 +50,16 @@ function Tokenizer(tok::Tokenizer; isconstruction=false, n=128)
     Tokenizer(tok.config, invmap=tok.invmap, isconstruction=isconstruction, n=n)
 end
 
+function Base.show(io::IO, tok::Tokenizer) 
+    print(io, "{Tokenizer isconstruction=$(tok.isconstruction) ")
+    if tok.invmap === nothing
+        print(io, "invmap=nothing")
+    else
+        print(io, "invmap=", length(tok.invmap))
+    end
+    print(io, " config=$(tok.config)\n}")
+end
+
 Base.broadcastable(m::Tokenizer) = (m,)
 
 function encode(tok::Tokenizer, token::AbstractString)
@@ -45,6 +70,10 @@ end
 
 function decode(tok::Tokenizer, id::UInt64)
     tok.invmap === nothing ? nothing : tok.invmap[id]
+end
+
+function decode(tok::Tokenizer, vec::Dict{UInt64,S}) where S
+    tok.invmap === nothing ? nothing : Dict(tok.invmap[k] => v for (k,v) in vec)
 end
 
 function Base.empty!(tok::Tokenizer)

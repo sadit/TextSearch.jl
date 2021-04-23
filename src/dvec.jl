@@ -9,7 +9,7 @@ using SimilaritySearch
 import SimilaritySearch: evaluate
 export centroid, evaluate, NormalizedAngleDistance, NormalizedCosineDistance, AngleDistance, NormalizedAngleDistance
 
-const DVEC{Ti,Tv<:Real} = Dict{Ti,Tv}
+const DVEC{Ti,Tv<:Number} = Dict{Ti,Tv}
 const BOW = DVEC{UInt64,Int32}
 const SVEC = DVEC{UInt64,Float32}
 
@@ -97,11 +97,11 @@ function norm(a::DVEC)::Float64
 end
 
 """
-    zero(::Type{DVEC{Ti,Tv}}) where {Ti,Tv<:Real}
+    zero(::Type{DVEC{Ti,Tv}}) where {Ti,Tv}
 
 Creates an empty DVEC vector
 """
-function zero(::Type{DVEC{Ti,Tv}}) where {Ti,Tv<:Real}
+function zero(::Type{DVEC{Ti,Tv}}) where {Ti,Tv}
     DVEC{Ti,Tv}()
 end
 

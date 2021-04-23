@@ -51,15 +51,16 @@ function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, corpus::Abstract
     for i in eachindex(corpus)
         vec = corpus[i]
         code = labels.refs[i]
+        #M = sum(x for x in values(vec))
         for (t, occs) in vec
             s = get(V, t, UnknownTokenStats)
             V[t] = TokenStats(s.occs + occs, s.ndocs + 1, 0f0)
             dist = get(D, t, nothing)
             if dist === nothing
-                dist = D[t] = fill(smooth, nclasses)
+                D[t] = dist = fill(smooth, nclasses)
             end
             
-            dist[code] += occs
+            dist[code] += 1  # occs/M # log2(1 + occs)
         end
     end
 

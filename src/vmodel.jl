@@ -233,7 +233,11 @@ end
 
 function vectorize(tok::Tokenizer, model::VectorModel, text; bow=BOW(), normalize=true)
     compute_bow(tok, text, bow)
-    vectorize(model, bow; normalize=normalize)
+    v = vectorize(model, bow; normalize=normalize)
+    # if length(v) == 1 && haskey(v, 0)
+    #     @info "empty vector"
+    # end
+    v
 end
 
 function vectorize_corpus(tok::Tokenizer, model::VectorModel, corpus; bow=BOW(), normalize=true)
