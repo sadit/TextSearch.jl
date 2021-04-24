@@ -21,12 +21,16 @@ const corpus = ["hello world :)", "@user;) excellent!!", "#jello world."]
 
     m = Tokenizer(TextConfig(qlist=[3]))
     @test decode.(m, tokenize(m, text0)) == [" @u", "@us", "use", "ser", "er;", "r;)", ";) ", ") #", " #j", "#je", "jel", "ell", "llo", "lo.", "o.w", ".wo", "wor", "orl", "rld", "ld "]
+    mm = JSON3.read(JSON3.write(m), typeof(m))
+    @test decode.(mm, tokenize(m, text0)) == [" @u", "@us", "use", "ser", "er;", "r;)", ";) ", ") #", " #j", "#je", "jel", "ell", "llo", "lo.", "o.w", ".wo", "wor", "orl", "rld", "ld "]
 
     m = Tokenizer(TextConfig(nlist=[1]))
     @test decode.(m, tokenize(m, text1)) == ["hello", "world", "!!", "@user", ";)", "#jello", ".", "world", ":)"]
 
     m = Tokenizer(TextConfig(slist=[Skipgram(2,1)]))
     @test decode.(m, tokenize(m, text1)) == ["hello !!", "world @user", "!! ;)", "@user #jello", ";) .", "#jello world", ". :)"]
+    mm = JSON3.read(JSON3.write(m), typeof(m))
+    @test decode.(mm, tokenize(m, text1)) == ["hello !!", "world @user", "!! ;)", "@user #jello", ";) .", "#jello world", ". :)"]
 end
 
 @testset "Normalize and tokenize" begin
@@ -102,7 +106,6 @@ end
         @show gw, lw, dot_, dot(x, y), x, y
         @test abs(dot(x, y) - dot_) < 1e-3
     end
-
     
     for (gw, lw, dot_, p) in [
             (EntropyWeighting(), BinaryLocalWeighting(), 0.70711, 0.9),
