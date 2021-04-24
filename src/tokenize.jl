@@ -27,8 +27,13 @@ struct Tokenizer
 end
 
 StructTypes.StructType(::Type{<:Tokenizer}) = StructTypes.DictType()
-StructTypes.construct(::Type{<:Tokenizer}, d::Dict) = Tokenizer(d["config"], isconstruction=false, invmap=d["invmap"])
-StructTypes.keyvaluepairs(tok::Tokenizer) = ["config" => tok.config, "invmap" => tok.invmap]
+
+function StructTypes.construct(::Type{<:Tokenizer}, d::Dict)
+    config = TextConfig(; (Symbol(k) => v for (k,v) in d[:config])...)
+    Tokenizer(config, isconstruction=false, invmap=d[:invmap])
+end
+
+StructTypes.keyvaluepairs(tok::Tokenizer) = [:config => tok.config, :invmap => tok.invmap]
 
 function Tokenizer(
         config::TextConfig;
