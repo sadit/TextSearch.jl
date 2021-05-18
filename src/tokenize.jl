@@ -156,7 +156,6 @@ function flush_token!(tok::Tokenizer)
     io = tok.io
     if io.size > 0
         s = String(take!(io))
-        #@info s
         push!(tok.tokens, encode(tok, s))
         s
     else
@@ -173,10 +172,10 @@ function qgrams(tok::Tokenizer, q::Integer)
     n = length(tok.normtext)
 
     for i in 1:(n - q + 1)
+        write(tok.io, '\t', 'q')
         for j in i:i+q-1
             @inbounds write(tok.io, tok.normtext[j])
         end
-
         flush_token!(tok)
     end
 
@@ -234,6 +233,7 @@ function nwords(tok::Tokenizer, q::Integer)
 
     @inbounds for i in 1:(n - q + 1)
         _last = i + q - 1
+        write(tok.io, '\t', 'n')
         for j in i:_last-1
             write(tok.io, tok.unigrams[j])
             write(tok.io, BLANK)
@@ -255,12 +255,13 @@ function skipgrams(tok::Tokenizer, q::Skipgram)
     n = length(tok.unigrams)
 
     for start in 1:(n - (q.qsize + (q.qsize - 1) * q.skip) + 1)
+        write(tok.io, '\t', 's')
         if q.qsize == 2
             write(tok.io, tok.unigrams[start])
             write(tok.io, BLANK)
             write(tok.io, tok.unigrams[start + 1 + q.skip])
         else
-            ep = q.qsize-2
+            ep = q.qsize - 2
             for i in 0:ep
                 write(tok.io, tok.unigrams[start + i * (1+q.skip)])
                 write(tok.io, BLANK)

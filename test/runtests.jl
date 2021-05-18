@@ -14,45 +14,45 @@ const corpus = ["hello world :)", "@user;) excellent!!", "#jello world."]
     @test tokenize(m, text0) == hash.(["@user", ";)", "#jello", ".", "world"])
 
     m = Tokenizer(TextConfig(nlist=[2]))
-    @test decode.(m, tokenize(m, text0)) == ["@user ;)", ";) #jello", "#jello .", ". world"]
+    @test decode.(m, tokenize(m, text0)) == ["\tn@user ;)", "\tn;) #jello", "\tn#jello .", "\tn. world"]
 
     m = Tokenizer(TextConfig(nlist=[3]))
-    @test decode.(m, tokenize(m, text0)) == ["@user ;) #jello", ";) #jello .", "#jello . world"]
+    @test decode.(m, tokenize(m, text0)) == ["\tn@user ;) #jello", "\tn;) #jello .", "\tn#jello . world"]
 
     m = Tokenizer(TextConfig(qlist=[3]))
-    @test decode.(m, tokenize(m, text0)) == [" @u", "@us", "use", "ser", "er;", "r;)", ";) ", ") #", " #j", "#je", "jel", "ell", "llo", "lo.", "o.w", ".wo", "wor", "orl", "rld", "ld "]
+    @test decode.(m, tokenize(m, text0)) == map(p -> "\tq" * p, [" @u", "@us", "use", "ser", "er;", "r;)", ";) ", ") #", " #j", "#je", "jel", "ell", "llo", "lo.", "o.w", ".wo", "wor", "orl", "rld", "ld "])
     mm = JSON3.read(JSON3.write(m), typeof(m))
-    @test decode.(mm, tokenize(m, text0)) == [" @u", "@us", "use", "ser", "er;", "r;)", ";) ", ") #", " #j", "#je", "jel", "ell", "llo", "lo.", "o.w", ".wo", "wor", "orl", "rld", "ld "]
+    @test decode.(mm, tokenize(m, text0)) == map(p -> "\tq" * p, [" @u", "@us", "use", "ser", "er;", "r;)", ";) ", ") #", " #j", "#je", "jel", "ell", "llo", "lo.", "o.w", ".wo", "wor", "orl", "rld", "ld "])
 
     m = Tokenizer(TextConfig(nlist=[1]))
     @test decode.(m, tokenize(m, text1)) == ["hello", "world", "!!", "@user", ";)", "#jello", ".", "world", ":)"]
 
     m = Tokenizer(TextConfig(slist=[Skipgram(2,1)]))
-    @test decode.(m, tokenize(m, text1)) == ["hello !!", "world @user", "!! ;)", "@user #jello", ";) .", "#jello world", ". :)"]
+    @test decode.(m, tokenize(m, text1)) == map(p -> "\ts" * p, ["hello !!", "world @user", "!! ;)", "@user #jello", ";) .", "#jello world", ". :)"])
     mm = JSON3.read(JSON3.write(m), typeof(m))
-    @test decode.(mm, tokenize(m, text1)) == ["hello !!", "world @user", "!! ;)", "@user #jello", ";) .", "#jello world", ". :)"]
+    @test decode.(mm, tokenize(m, text1)) == map(p -> "\ts" * p, ["hello !!", "world @user", "!! ;)", "@user #jello", ";) .", "#jello world", ". :)"])
 end
 
 @testset "Normalize and tokenize" begin
     tok = Tokenizer(TextConfig(del_punc=true, group_usr=true, nlist=[1, 2, 3]))
-    @test decode.(tok, tokenize(tok, text1)) == ["hello", "world", "_usr", "#jello", "world", "hello world", "world _usr", "_usr #jello", "#jello world", "hello world _usr", "world _usr #jello", "_usr #jello world"]
+    @test decode.(tok, tokenize(tok, text1)) == ["hello", "world", "_usr", "#jello", "world", "\tnhello world", "\tnworld _usr", "\tn_usr #jello", "\tn#jello world", "\tnhello world _usr", "\tnworld _usr #jello", "\tn_usr #jello world"]
 end
 
 @testset "Normalize and tokenize bigrams and trigrams" begin
     tok = Tokenizer(TextConfig(del_punc=true, group_usr=true, nlist=[2, 3]))
-    @test decode.(tok, tokenize(tok, text1)) == ["hello world", "world _usr", "_usr #jello", "#jello world", "hello world _usr", "world _usr #jello", "_usr #jello world"]
+    @test decode.(tok, tokenize(tok, text1)) == ["\tnhello world", "\tnworld _usr", "\tn_usr #jello", "\tn#jello world", "\tnhello world _usr", "\tnworld _usr #jello", "\tn_usr #jello world"]
 end
 
 @testset "Tokenize skipgrams" begin
     tok = Tokenizer(TextConfig(del_punc=false, group_usr=false, slist=[Skipgram(3,1)]))
     tokens = tokenize(tok, text1)
     @show text1 tokens
-    @test tokens == hash.(["hello !! ;)", "world @user #jello", "!! ;) .", "@user #jello world", ";) . :)"])
+    @test tokens == hash.(["\tshello !! ;)", "\tsworld @user #jello", "\ts!! ;) .", "\ts@user #jello world", "\ts;) . :)"])
 
     config = Tokenizer(TextConfig(del_punc=false, group_usr=false, nlist=[], slist=[Skipgram(3,1), Skipgram(2, 1)]))
     tokens = tokenize(config, text1)
     @show text1 tokens
-    @test tokens == hash.(["hello !!", "world @user", "!! ;)", "@user #jello", ";) .", "#jello world", ". :)", "hello !! ;)", "world @user #jello", "!! ;) .", "@user #jello world", ";) . :)"])
+    @test tokens == hash.(["\tshello !!", "\tsworld @user", "\ts!! ;)", "\ts@user #jello", "\ts;) .", "\ts#jello world", "\ts. :)", "\tshello !! ;)", "\tsworld @user #jello", "\ts!! ;) .", "\ts@user #jello world", "\ts;) . :)"])
 end
 
 @testset "Tokenizer, DVEC, and vectorize" begin
