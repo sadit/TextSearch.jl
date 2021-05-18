@@ -11,12 +11,12 @@ Dict{UInt64, Int32} with 5 entries:
 
 julia&gt; compute_bow(Tokenizer(TextConfig(nlist=[2])), &quot;HI!! this is fun!! http://something&quot;)
 Dict{UInt64, Int32} with 6 entries:
-  0x44032c0b0b7a48c5 =&gt; 1
-  0x080e655eecda4319 =&gt; 1
-  0x8c682766de710414 =&gt; 1
-  0x071cce3f303efd46 =&gt; 1
-  0x97ea2e171d64f040 =&gt; 1
-  0x910f10fca7763072 =&gt; 1</code></pre><p>You can access the original words using the <code>decode</code> method (you can avoid storing these words to save memory passing <code>invmap=nothing</code> to the <code>Tokenizer</code> constructor).</p><pre><code class="language-julia-repl">julia&gt; tok = Tokenizer(TextConfig(nlist=[1]))
+  0x152a831d02105c58 =&gt; 1
+  0x8d0a5e191e73b810 =&gt; 1
+  0x458c864bc2f0b780 =&gt; 1
+  0xf73b5aeb8768a4a4 =&gt; 1
+  0x9c8fd867bbb81e99 =&gt; 1
+  0x57713d5412bb3534 =&gt; 1</code></pre><p>You can access the original words using the <code>decode</code> method (you can avoid storing these words to save memory passing <code>invmap=nothing</code> to the <code>Tokenizer</code> constructor).</p><pre><code class="language-julia-repl">julia&gt; tok = Tokenizer(TextConfig(nlist=[1]))
 {Tokenizer isconstruction=true invmap=0 config=TextConfig(true, false, false, true, true, false, false, true, Int8[], Int8[1], Skipgram[])
 }
 
@@ -59,4 +59,4 @@ Dict{UInt64, Int32} with 5 entries:
   0x74181d008b49c29c =&gt; 1
   0x7da62ded4440a112 =&gt; 1
   0xc61b075d8a89c746 =&gt; 1
-  0x15a08dae5e56a5d5 =&gt; 1</code></pre></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../searching/">« Searching</a><a class="docs-footer-nextpage" href="../modeling/">Models »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> on <span class="colophon-date" title="Saturday 24 April 2021 17:14">Saturday 24 April 2021</span>. Using Julia version 1.6.1.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+  0x15a08dae5e56a5d5 =&gt; 1</code></pre></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../searching/">« Searching</a><a class="docs-footer-nextpage" href="../modeling/">Models »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> on <span class="colophon-date" title="Tuesday 18 May 2021 18:13">Tuesday 18 May 2021</span>. Using Julia version 1.6.1.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
