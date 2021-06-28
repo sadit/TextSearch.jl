@@ -26,21 +26,6 @@ struct Tokenizer
     io::IOBuffer
 end
 
-StructTypes.StructType(::Type{<:Tokenizer}) = StructTypes.DictType()
-
-function StructTypes.construct(::Type{<:Tokenizer}, d::Dict)
-    c = d[:config]
-    invmap = d[:invmap]
-    c["slist"] = Skipgram[Skipgram(s["qsize"], s["skip"]) for s in c["slist"]]
-    config = TextConfig(; (Symbol(k) => v for (k,v) in c)...)
-    if invmap !== nothing
-        invmap = Dict(parse(UInt64, k) => v for (k, v) in invmap)
-    end
-    Tokenizer(config, isconstruction=false, invmap=invmap)
-end
-
-StructTypes.keyvaluepairs(tok::Tokenizer) = [:config => tok.config, :invmap => tok.invmap]
-
 function Tokenizer(
         config::TextConfig;
         isconstruction=true,
