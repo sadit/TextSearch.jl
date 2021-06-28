@@ -1,6 +1,6 @@
 # using Languages
 using SimilaritySearch, TextSearch
-using Test, SparseArrays, LinearAlgebra, CategoricalArrays, StatsBase, Random, JSON3
+using Test, SparseArrays, LinearAlgebra, CategoricalArrays, StatsBase, Random
 const fit = TextSearch.fit
 
 const text0 = "@user;) #jello.world"
@@ -21,16 +21,11 @@ const corpus = ["hello world :)", "@user;) excellent!!", "#jello world."]
 
     m = Tokenizer(TextConfig(qlist=[3]))
     @test decode.(m, tokenize(m, text0)) == map(p -> "\tq" * p, [" @u", "@us", "use", "ser", "er;", "r;)", ";) ", ") #", " #j", "#je", "jel", "ell", "llo", "lo.", "o.w", ".wo", "wor", "orl", "rld", "ld "])
-    mm = JSON3.read(JSON3.write(m), typeof(m))
-    @test decode.(mm, tokenize(m, text0)) == map(p -> "\tq" * p, [" @u", "@us", "use", "ser", "er;", "r;)", ";) ", ") #", " #j", "#je", "jel", "ell", "llo", "lo.", "o.w", ".wo", "wor", "orl", "rld", "ld "])
-
     m = Tokenizer(TextConfig(nlist=[1]))
     @test decode.(m, tokenize(m, text1)) == ["hello", "world", "!!", "@user", ";)", "#jello", ".", "world", ":)"]
 
     m = Tokenizer(TextConfig(slist=[Skipgram(2,1)]))
     @test decode.(m, tokenize(m, text1)) == map(p -> "\ts" * p, ["hello !!", "world @user", "!! ;)", "@user #jello", ";) .", "#jello world", ". :)"])
-    mm = JSON3.read(JSON3.write(m), typeof(m))
-    @test decode.(mm, tokenize(m, text1)) == map(p -> "\ts" * p, ["hello !!", "world @user", "!! ;)", "@user #jello", ";) .", "#jello world", ". :)"])
 end
 
 @testset "Normalize and tokenize" begin
