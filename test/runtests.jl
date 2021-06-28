@@ -199,32 +199,32 @@ end
     begin # searching
         q = ψ("la casa roja")
         res = search_with_union(invindex, q, KnnResult(4))
-        @test sort([r.id for r in res]) == [1, 2, 3, 4]
+        @test sort([id for (id, dist) in res]) == [1, 2, 3, 4]
 
         res = search_with_one_error(invindex, q, KnnResult(4))
         @info "ONE-ERROR" res
         res = search_with_intersection(invindex, q, KnnResult(4))
-        @test [r.id for r in res] == [1]
+        @test [id for (id, dist) in res] == [1]
 
         q = ψ("esta rica")
         res = search_with_intersection(invindex, q, KnnResult(4))
-        @test [5, 6] == sort!([r.id for r in res])
+        @test [5, 6] == sort!([id for (id, dist) in res])
     end
 
     shortindex = prune(invindex, 3)
     @test are_posting_lists_sorted(invindex)
     q = ψ("la casa roja")
     res = search_with_union(shortindex, q, KnnResult(4))
-    @test sort!([r.id for r in res]) == [1, 2, 3, 4]
+    @test sort!([id for (id, dist) in res]) == [1, 2, 3, 4]
 
     begin # searching with intersection
         res = search_with_intersection(shortindex, q, KnnResult(4))
-        @test [r.id for r in res] == [1]
+        @test [id for (id, dist) in res] == [1]
 
         q = ψ("esta rica")
         res = search_with_intersection(shortindex, q, KnnResult(4))
         @info res
-        @test [5, 6] == sort!([r.id for r in res])
+        @test [5, 6] == sort!([id for (id, dist) in res])
     end
 end
 

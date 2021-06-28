@@ -166,8 +166,8 @@ function search_with_one_error(invindex::InvIndex, q::SVEC, res::KnnResult; igno
         empty!(res)
         
         search_with_intersection(invindex, q, res; ignore_lists_larger_than=ignore_lists_larger_than)
-        for p in res
-            D[p.id] = min(p.dist, get(D, p.id, typemax(Float64)))
+        for (id, dist) in res
+            D[id] = min(dist, get(D, id, typemax(Float64)))
         end
 
         q[term] = weight

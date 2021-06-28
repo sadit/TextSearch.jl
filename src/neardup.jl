@@ -15,13 +15,12 @@ function neardup(X::AbstractVector{T}, epsilon=0.1) where T
         empty!(res)
         x = X[i]
         search_with_union(invindex, x, res)
-        if length(res) == 0 || first(res).dist > epsilon
+        if length(res) == 0 || minimum(res) > epsilon
             push!(invindex, i => x)
             L[i] = i
             D[i] = 0.0
         else
-            L[i] = first(res).id
-            D[i] = first(res).dist
+            L[i], D[i] = first(res)
         end
     end
 
