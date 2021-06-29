@@ -4,14 +4,11 @@ module TextSearch
     import Base: broadcastable
     import StatsBase: fit, predict
     using LinearAlgebra
-    using StructTypes
     
     struct IdWeight
         id::UInt64
         weight::Float64
     end
-
-    StructTypes.StructType(::Type{IdWeight}) = StructTypes.Struct()
 
     include("textconfig.jl")
     include("normalize.jl")

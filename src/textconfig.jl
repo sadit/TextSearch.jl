@@ -75,9 +75,6 @@ struct TextConfig
     end
 end
 
-StructTypes.StructType(::Type{Skipgram}) = StructTypes.Struct()
-StructTypes.StructType(::Type{TextConfig}) = StructTypes.Struct()
-
 function TextConfig(;
         del_diac::Bool=true,
         del_dup::Bool=false,
