@@ -17,8 +17,6 @@ end
 
 Base.show(io::IO, invindex::InvIndex) = print(io, "{InvIndex vocsize=$(length(invindex.lists)), n=$(invindex.n)}")
 
-StructTypes.StructType(::Type{InvIndex}) = StructTypes.Struct()
-
 InvIndex() = InvIndex(Dict{Int,PostList}(), 0, KnnResult(10))
 InvIndex(lists, n; ksearch=10) = InvIndex(lists, n, KnnResult(ksearch))
 
