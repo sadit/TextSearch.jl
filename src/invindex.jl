@@ -2,9 +2,9 @@
 # License is Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0.txt
 
 import Base: push!, length
-import SimilaritySearch: search, optimize!
+import SimilaritySearch: search
 import SparseArrays: nonzeroinds, nonzeros
-export InvIndex, search, optimize!
+export InvIndex, search
 using SimilaritySearch
 
 const PostList = Vector{IdWeight}
@@ -66,7 +66,7 @@ end
 Inserts a weighted vector into the index.
 
 """
-function push!(index::InvIndex, p::Pair{I,SVEC}) where {I<:Integer}
+function Base.push!(index::InvIndex, p::Pair{I,SVEC}) where {I<:Integer}
     index.n += 1
     for (id, weight) in p.second
         if haskey(index.lists, id)
@@ -78,31 +78,14 @@ function push!(index::InvIndex, p::Pair{I,SVEC}) where {I<:Integer}
 end
 
 """
-    optimize!(invindex::InvIndex; keep_k=3000, store_large_lists=true)
+    append!(index::InvIndex, vectors)
 
-Resizes large posting lists to maintain at most `keep_k` entries (most weighted ones).
-If `store_large_lists` is true, then these lists are not deleted, but instead they are
-stored under the negative of its key.
+
+Insert all elements vectors into `index`; each element (vector) is identified by its position in `vectors`
 """
-function optimize!(invindex::InvIndex; keep_k=3000, store_large_lists=true)
-    for (t, list) in invindex.lists
-        if t < 0
-            # ignore negative keys, negative keys store large lists
-            if !store_large_lists
-                delete!(invindex.lists, t)
-            end
-
-            continue
-        end
-
-        if length(list) > keep_k
-            if store_large_lists
-                invindex.lists[-t] = deepcopy(list)
-            end
-            sort!(list, by=x -> x.weight, rev=true)
-            resize!(list, keep_k)
-            sort!(list, by=x -> x.id)
-        end
+function Base.append!(index::InvIndex, vectors)
+    for (i, v) in enumerate(vectors)
+        push!(index, i => v)
     end
 end
 
