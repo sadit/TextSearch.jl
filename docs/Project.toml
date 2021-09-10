@@ -5,3 +5,6 @@ Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
 LiveServer = "16fef848-5104-11e9-1b77-fb7a48bbb589"
 TextSearch = "7f6f6c8a-3b03-11e9-223d-e7d88259bd6c"
+
+[compat]
+Documenter = "0.26"
