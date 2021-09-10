@@ -1,7 +1,7 @@
 # This file is a part of TextSearch.jl
 # License is Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0.txt
 
-export normalize_text
+export normalize_text, isemoji
 using Base.Unicode
 
 #, language!
@@ -18,6 +18,10 @@ const EMOJIS = Set([l[1] for l in readlines(joinpath(@__DIR__, "emojis.txt"))])
 const RE_USER = r"""@[^;:,.@#&\\\-\"'/:\*\(\)\[\]\¿\?\¡\!\{\}~\<\>\|\s]+"""
 const RE_URL = r"(http|ftp|https)://\S+"
 const RE_NUM = r"\d+"
+
+function isemoji(c::Char)
+    c in EMOJIS
+end
 
 function _preprocessing(config::TextConfig, text)
     if config.lc
@@ -47,13 +51,14 @@ Normalizes a given text using the specified transformations of `config`
 function normalize_text(config::TextConfig, text::AbstractString, output::Vector{Char})
     text = _preprocessing(config, text)
     push!(output, BLANK)
-    
+    rep = 0
+
     @inbounds for u in Unicode.normalize(text, casefold=config.lc, stripmark=config.del_diac, stripcc=true, compat=true)
         isspace(u) && (u = BLANK)
         config.del_punc && ispunct(u) && !(u in ('@', '#', '_')) && (u = BLANK)
-        config.group_emo && u in EMOJIS && (u = '👾')
-        config.del_dup && u === output[end] && continue
-
+        config.group_emo && isemoji(u) && (u = '👾')
+        rep = u === output[end] ? rep + 1 : 0
+        config.del_dup && rep > 1 && continue
         push!(output, u)
     end
 

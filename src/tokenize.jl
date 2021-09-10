@@ -1,7 +1,7 @@
 # This file is a part of TextSearch.jl
 # License is Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0.txt
 
-export Tokenizer, tokenize, qgrams, unigrams, encode, decode
+export Tokenizer, tokenize, tokenize_corpus, qgrams, unigrams, encode, decode
 
 """
     struct Tokenizer
@@ -15,6 +15,7 @@ The structure has several fields:
 - `isconstruction` indicator (must be true only when the tokens are being parsed for building a model)
 - the rest of the fields are used as buffers (multithreaded applications need independent copies of tokenizers)
 
+Note: non-thread safe, make a copy of this structure for each thread.
 """
 struct Tokenizer
     config::TextConfig
@@ -93,6 +94,15 @@ end
 
     tok.tokens
 end=#
+
+"""
+    tokenize_corpus(tok::Tokenizer, arr)
+
+Tokenize a list of texts.
+"""
+function tokenize_corpus(tok::Tokenizer, arr)
+    [copy(tokenize(tok, text)) for text in arr]
+end
 
 """
     tokenize(tok::Tokenizer, text::AbstractString)
@@ -190,13 +200,17 @@ function unigrams(tok::Tokenizer)
             ## @show :b
             s = flush_token!(tok)
             s !== nothing && push!(tok.unigrams, s)
-            if c !== BLANK
-                write(tok.io, c)
-            end
+            c !== BLANK && write(tok.io, c)
+        elseif isemoji(c)
+            s = flush_token!(tok)
+            s !== nothing && push!(tok.unigrams, s)
+            write(tok.io, c)
+            s = flush_token!(tok)
+            s !== nothing && push!(tok.unigrams, s)
         elseif c == BLANK
-            ## @show :c
             if p !== BLANK
                 s = flush_token!(tok)
+                #write(tok.io, c)
                 s !== nothing && push!(tok.unigrams, s)
             end
         else
