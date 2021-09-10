@@ -6,11 +6,8 @@ DocTestSetup = quote
 end
 ```
 
-```@docs
-Tokenizer
-TextConfig
-tokenize
-normalize_text
-Skipgram
-compute_bow
+# TextSearch API
+```@autodocs
+Modules = [TextSearch]
+Order   = [:function, :type]
 ```

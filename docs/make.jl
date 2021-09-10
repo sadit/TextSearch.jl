@@ -16,10 +16,7 @@ makedocs(;
         "Searching" => "searching.md",
         "Preprocessing" => "preprocessing.md",
         "Models" => "modeling.md",
-        "API" => [
-            "Preprocessing" => "apitextconfig.md",
-            "Weighting schemes" => "apimodels.md"
-        ]
+        "API" => "api.md"
     ],
 )
 
