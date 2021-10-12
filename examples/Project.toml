@@ -11,3 +11,4 @@ TextSearch = "7f6f6c8a-3b03-11e9-223d-e7d88259bd6c"
 
 [compat]
 TextSearch = "0.9"
+SimilaritySearch = "0.6"
