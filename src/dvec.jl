@@ -49,7 +49,7 @@ end
 function normalize!(bow::DVEC{Ti,Tv}) where {Ti,Tv<:Integer}
     s = 1.0 / norm(bow)
     for (k, v) in bow
-        bow[k] = round(T, v * s)
+        bow[k] = round(Tv, v * s)
     end
 
     bow
