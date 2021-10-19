@@ -1,7 +1,8 @@
 # This file is a part of TextSearch.jl
 # License is Apache 2.0: https://www.apache.org/licenses/LICENSE-2.0.txt
 
-export compute_bow_corpus, compute_bow
+export compute_bow_corpus, compute_bow, bow, dvec
+const BOW = DVEC{UInt64,Int32}
 
 """
     compute_bow(tokenlist::AbstractVector{S}, bow::BOW=BOW()) where {S<:Symbol}
@@ -55,4 +56,29 @@ function compute_bow_corpus(tok::Tokenizer, corpus::AbstractVector, bow::BOW=BOW
     end
 
     X
+end
+
+
+"""
+    bow(model::Tokenizer, x::AbstractSparseVector)
+    bow(model::Tokenizer, x::DVEC{Ti,Tv}) where {Ti<:Integer,Tv<:Number}
+    
+Creates a bag of words using the sparse vector `x` and the text model `model`
+"""
+function bow(m::Tokenizer, x::AbstractSparseVector)
+    DVEC{String,eltype{x.nzval}}(decode(m, t) => v for (t, v) in zip(x.nzind, x.nzval))
+end
+
+function bow(m::Tokenizer, x::DVEC{Ti,Tv}) where {Ti<:Integer,Tv<:Number}
+    DVEC{String,Tv}(decode(m, t) => v for (t, v) in x)
+end
+
+"""
+    dvec(m::Tokenizer, x::DVEC{Symbol,Tv}, Ti=Int) where {Tv<:Number}
+
+Creates a DVEC sparse vector from a bag of words sparse vector (i.e., with type DVEC{Symbol,Tv}),
+using the inverse map `m`
+"""
+function dvec(m::Tokenizer, x::DVEC{String,Tv}, Ti=Int) where {Tv<:Number}
+    DVEC{Ti,Tv}(encode(m, t) => v for (t, v) in x)
 end

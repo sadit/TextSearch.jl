@@ -3,24 +3,14 @@
 module TextSearch
     import Base: broadcastable
     import StatsBase: fit, predict
-    using LinearAlgebra
-    
-    struct IdWeight
-        id::UInt64
-        weight::Float64
-    end
+    using SimilaritySearch, InvertedFiles, LinearAlgebra, SparseArrays
 
     include("textconfig.jl")
     include("normalize.jl")
-#    include("tokenmap.jl")
     include("tokenize.jl")
-    include("dvec.jl")
     include("bow.jl")
     include("vmodel.jl")
     include("emodel.jl")
-#    include("distmodel.jl")
-#    include("multi.jl")
-    include("svecutils.jl")
-    include("invindex.jl")
     include("neardup.jl")
+#    include("multi.jl")
 end

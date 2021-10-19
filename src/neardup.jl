@@ -3,20 +3,20 @@
 
 export neardup
 
-function neardup(X::AbstractVector{T}, epsilon=0.1) where T
-    invindex = InvIndex()
+function neardup(X::AbstractVector{T}, α=0.1) where T
+    idx = InvertedFile()
     res = KnnResult(1)
     L = zeros(Int, length(X))
     D = zeros(Float64, length(X))
     L[1] = 1
     D[1] = 0.0
-    push!(invindex, 1 => X[1])
+    push!(idx, 1 => X[1])
     @inbounds for i in 2:length(X)
         empty!(res)
         x = X[i]
-        search_with_union(invindex, x, res)
-        if length(res) == 0 || minimum(res) > epsilon
-            push!(invindex, i => x)
+        search(idx, x, res)
+        if length(res) == 0 || minimum(res) > α
+            push!(idx, i => x)
             L[i] = i
             D[i] = 0.0
         else
@@ -24,5 +24,5 @@ function neardup(X::AbstractVector{T}, epsilon=0.1) where T
         end
     end
 
-    L, D
+    (idx=idx, nn=L, dist=D)
 end

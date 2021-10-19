@@ -1,5 +1,5 @@
 # using Languages
-using SimilaritySearch, TextSearch
+using SimilaritySearch, TextSearch, InvertedFiles
 using Test, SparseArrays, LinearAlgebra, CategoricalArrays, StatsBase, Random
 const fit = TextSearch.fit
 
@@ -174,52 +174,16 @@ function are_posting_lists_sorted(invindex)
     true
 end
 
-@testset "intersection" begin
-    Random.seed!(1)
-    for i in 1:100
-        A = shuffle!(collect(1:1000))[1:10] |> sort!
-        B = shuffle!(collect(1:1000))[1:100] |> sort!
-        C = intersection([A, B])
-        C_ = sort!(intersect(A, B))
-        @test C == C_
-    end
-end
-
 @testset "invindex" begin
     config = Tokenizer(TextConfig(nlist=[1]))
     model = VectorModel(IdfWeighting(), TfWeighting(), compute_bow_corpus(config, _corpus))
     ψ(text) = vectorize(model, compute_bow(config, text))
-    invindex = InvIndex(vectorize_corpus(config, model, _corpus))
-    @test are_posting_lists_sorted(invindex)
+    invindex = append!(InvertedFile(), vectorize_corpus(config, model, _corpus)) 
     begin # searching
         q = ψ("la casa roja")
-        res = search_with_union(invindex, q, KnnResult(4))
-        @test sort([id for (id, dist) in res]) == [1, 2, 3, 4]
-
-        res = search_with_one_error(invindex, q, KnnResult(4))
-        @info "ONE-ERROR" res
-        res = search_with_intersection(invindex, q, KnnResult(4))
-        @test [id for (id, dist) in res] == [1]
-
-        q = ψ("esta rica")
-        res = search_with_intersection(invindex, q, KnnResult(4))
-        @test [5, 6] == sort!([id for (id, dist) in res])
-    end
-
-    shortindex = prune(invindex, 3)
-    @test are_posting_lists_sorted(invindex)
-    q = ψ("la casa roja")
-    res = search_with_union(shortindex, q, KnnResult(4))
-    @test sort!([id for (id, dist) in res]) == [1, 2, 3, 4]
-
-    begin # searching with intersection
-        res = search_with_intersection(shortindex, q, KnnResult(4))
-        @test [id for (id, dist) in res] == [1]
-
-        q = ψ("esta rica")
-        res = search_with_intersection(shortindex, q, KnnResult(4))
+        res = search(invindex, q, KnnResult(4))
         @info res
-        @test [5, 6] == sort!([id for (id, dist) in res])
+        @test sort([id for (id, dist) in res]) == [1, 2, 3, 4]
     end
 end
 
@@ -256,6 +220,6 @@ end
     model = VectorModel(BinaryGlobalWeighting(), TfWeighting(), compute_bow_corpus(tok, randcorpus))
     @show randcorpus[1:10]
     X = vectorize_corpus(tok, model, randcorpus)
-    L, D  = neardup(X, 0.2)
-    @test length(X) > length(unique(L))
+    N = neardup(X, 0.2)
+    @test length(X) > length(unique(N.nn))
 end
