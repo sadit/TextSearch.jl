@@ -1,4 +1,3 @@
-# using Languages
 using SimilaritySearch, TextSearch, InvertedFiles
 using Test, SparseArrays, LinearAlgebra, CategoricalArrays, StatsBase, Random
 const fit = TextSearch.fit
