@@ -11,7 +11,7 @@ function neardup(X::AbstractVector{T}, α=0.1) where T
     D[1] = 0.0
     push!(idx, 1 => X[1])
     @inbounds for i in 2:length(X)
-        empty!(res)
+        res = reuse!(res)
         x = X[i]
         search(idx, x, res)
         if length(res) == 0 || minimum(res) > α

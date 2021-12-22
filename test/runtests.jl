@@ -180,9 +180,8 @@ end
     invindex = append!(InvertedFile(), vectorize_corpus(config, model, _corpus)) 
     begin # searching
         q = ψ("la casa roja")
-        res = search(invindex, q, KnnResult(4))
-        @info res
-        @test sort([id for (id, dist) in res]) == [1, 2, 3, 4]
+        p = search(invindex, q, KnnResult(4))
+        @test sort!(collect(idview(p.res, p.st))) == [1, 2, 3, 4]
     end
 end
 
