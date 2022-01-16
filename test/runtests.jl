@@ -181,7 +181,7 @@ end
     begin # searching
         q = ψ("la casa roja")
         p = search(invindex, q, KnnResult(4))
-        @test sort!(collect(idview(p.res, p.st))) == [1, 2, 3, 4]
+        @test sort!(collect(idview(p.res))) == [1, 2, 3, 4]
     end
 end
 
