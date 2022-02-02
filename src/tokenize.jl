@@ -178,7 +178,7 @@ end
 
 
 """
-    unigrams(tok::Tokenizer, dropunigrams::Bool)
+    unigrams(tok::Tokenizer)
 
 Performs the word tokenization
 """
@@ -195,11 +195,19 @@ function unigrams(tok::Tokenizer)
             s = flush_token!(tok)
             s !== nothing && push!(tok.unigrams, s)
             write(tok.io, c)
-        elseif ispunct(p) && !ispunct(c) && !(p in ('#', '@', '_'))
-            ## @show :b
-            s = flush_token!(tok)
-            s !== nothing && push!(tok.unigrams, s)
-            c !== BLANK && write(tok.io, c)
+        elseif ispunct(p)
+            if ispunct(c) && tok.io.size > 2
+                s = flush_token!(tok)
+                s !== nothing && push!(tok.unigrams, s)
+                write(tok.io, c)
+            elseif !ispunct(c) && !(p in ('#', '@', '_'))
+                ## @show :b
+                s = flush_token!(tok)
+                s !== nothing && push!(tok.unigrams, s)
+                c !== BLANK && write(tok.io, c)
+            else
+                write(tok.io, c)
+            end
         elseif isemoji(c)
             s = flush_token!(tok)
             s !== nothing && push!(tok.unigrams, s)

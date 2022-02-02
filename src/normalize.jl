@@ -16,7 +16,7 @@ const EMOJIS = Set([l[1] for l in readlines(joinpath(@__DIR__, "emojis.txt"))])
 
 const RE_USER = r"""@[^;:,.@#&\\\-\"'/:\*\(\)\[\]\¿\?\¡\!\{\}~\<\>\|\s]+"""
 const RE_URL = r"(http|ftp|https)://\S+"
-const RE_NUM = r"\d+"
+const RE_NUM = r"[-+]?(\d+\.?\d*)|(\.\d+)"
 
 function isemoji(c::Char)
     c in EMOJIS
@@ -28,15 +28,15 @@ function _preprocessing(config::TextConfig, text)
     end
 
     if config.group_url
-        text = replace(text, RE_URL => "_url")
+        text = replace(text, RE_URL => "_url ")
     end
 
     if config.group_usr
-        text = replace(text, RE_USER => "_usr")
+        text = replace(text, RE_USER => "_usr ")
     end
 
     if config.group_num
-        text = replace(text, RE_NUM => "_num")
+        text = replace(text, RE_NUM => "0 ")
     end
 
     text

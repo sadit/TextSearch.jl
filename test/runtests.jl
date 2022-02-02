@@ -37,6 +37,12 @@ end
     @test decode.(tok, tokenize(tok, text1)) == ["\tnhello world", "\tnworld _usr", "\tn_usr #jello", "\tn#jello world", "\tnhello world _usr", "\tnworld _usr #jello", "\tn_usr #jello world"]
 end
 
+@testset "Normalize and tokenize" begin
+    tok = Tokenizer(TextConfig(del_punc=false, group_usr=true, nlist=[1]))
+    text3 = "a ab __b @@c ..!d ''e \"!\"f +10 -20 30 40.00 .50 6.0 7.. ======= !()[]{}"
+    @test decode.(tok, tokenize(tok, text3)) == ["a", "ab", "__b", "@_usr", "..!", "d", "''", "e", "\"!\"", "f", "0", "0", "0", "0", "0", "0", "0", ".", "=======", "!()", "[]{", "}"]
+end
+
 @testset "Tokenize skipgrams" begin
     tok = Tokenizer(TextConfig(del_punc=false, group_usr=false, slist=[Skipgram(3,1)]))
     tokens = tokenize(tok, text1)
