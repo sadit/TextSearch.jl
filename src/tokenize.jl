@@ -26,6 +26,8 @@ struct Tokenizer
     io::IOBuffer
 end
 
+const EXTRA_PUNCT = Set(['~', '+', '^', '$', '|', '<', '>'])
+
 function Tokenizer(
         config::TextConfig;
         isconstruction=true,
@@ -176,6 +178,7 @@ function qgrams(tok::Tokenizer, q::Integer)
     tok.tokens
 end
 
+ispunct2(c) = ispunct(c) || c in EXTRA_PUNCT
 
 """
     unigrams(tok::Tokenizer)
@@ -190,17 +193,17 @@ function unigrams(tok::Tokenizer)
         p = tok.normtext[i-1]
 
         ## @show i, p, c
-        if ispunct(c) && !ispunct(p) && p !== BLANK
+        if ispunct2(c) && !ispunct2(p) && p !== BLANK
             ## @show :a
             s = flush_token!(tok)
             s !== nothing && push!(tok.unigrams, s)
             write(tok.io, c)
-        elseif ispunct(p)
-            if ispunct(c) && tok.io.size > 2
+        elseif ispunct2(p)
+            if ispunct2(c) && tok.io.size > 2
                 s = flush_token!(tok)
                 s !== nothing && push!(tok.unigrams, s)
                 write(tok.io, c)
-            elseif !ispunct(c) && !(p in ('#', '@', '_'))
+            elseif !ispunct2(c) && !(p in ('#', '@', '_'))
                 ## @show :b
                 s = flush_token!(tok)
                 s !== nothing && push!(tok.unigrams, s)
