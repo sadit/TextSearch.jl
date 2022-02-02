@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Models · TextSearch.jl</title><link rel="canonical" href="https://sadit.github.io/TextSearch.jl/modeling/"/><link href="https://fonts.googleapis.com/css?family=Lato|Roboto+Mono" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.0/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.0/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.0/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.11.1/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL=".."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../assets/documenter.js"></script><script src="../siteinfo.js"></script><script src="../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit">TextSearch.jl</span></div><form class="docs-search" action="../search/"><input class="docs-search-query" id="documenter-search-query" name="q" type="text" placeholder="Search docs"/></form><ul class="docs-menu"><li><a class="tocitem" href="../">Home</a></li><li><a class="tocitem" href="../searching/">Searching</a></li><li><a class="tocitem" href="../preprocessing/">Preprocessing</a></li><li class="is-active"><a class="tocitem" href>Models</a><ul class="internal"><li><a class="tocitem" href="#Entropy-models"><span>Entropy models</span></a></li><li class="toplevel"><a class="tocitem" href="#Inspecting-models"><span>Inspecting models</span></a></li></ul></li><li><a class="tocitem" href="../api/">API</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><nav class="breadcrumb"><ul class="is-hidden-mobile"><li class="is-active"><a href>Models</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Models</a></li></ul></nav><div class="docs-right"><a class="docs-edit-link" href="https://github.com/sadit/TextSearch.jl/blob/master/docs/src/modeling.md#L" title="Edit on GitHub"><span class="docs-icon fab"></span><span class="docs-label is-hidden-touch">Edit on GitHub</span></a><a class="docs-settings-button fas fa-cog" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-sidebar-button fa fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a></div></header><article class="content" id="documenter-page"><h1 id="Modeling-the-text-collection"><a class="docs-heading-anchor" href="#Modeling-the-text-collection">Modeling the text collection</a><a id="Modeling-the-text-collection-1"></a><a class="docs-heading-anchor-permalink" href="#Modeling-the-text-collection" title="Permalink"></a></h1><p>The processesing and tokenization is defined through a text configuration <a href="../api/#TextSearch.TextConfig"><code>TextConfig</code></a>.</p><p>Once a <code>Tokenizer</code> is defined, we need to create a model for the text, we select a typical vector model. The model constructor needs to know the weighthing scheme and some stats about the corpus&#39; vocabulary:</p><pre><code class="language-julia-repl">julia&gt; model = VectorModel(IdfWeighting(), TfWeighting(), compute_bow_corpus(tok, corpus))
-{VectorModel global_weighting=IdfWeighting(), local_weighting=TfWeighting(), train-voc=45384, train-n=50000, maxfreq=93973}</code></pre><p>Now we can vectorize a text</p><pre><code class="language-julia-repl">julia&gt; vectorize(model, tok, &quot;la mejor música, la música de siempre!&quot;; normalize=false)
+{VectorModel global_weighting=IdfWeighting(), local_weighting=TfWeighting(), train-voc=45374, train-n=50000, maxfreq=93991}</code></pre><p>Now we can vectorize a text</p><pre><code class="language-julia-repl">julia&gt; vectorize(model, tok, &quot;la mejor música, la música de siempre!&quot;; normalize=false)
 ERROR: MethodError: no method matching vectorize(::VectorModel{IdfWeighting, TfWeighting}, ::Tokenizer, ::String; normalize=false)
 Closest candidates are:
   vectorize(::VectorModel{_G, _L}, !Matched::Dict{UInt64, Int32}; normalize) where {_L, _G} at ~/work/TextSearch.jl/TextSearch.jl/src/vmodel.jl:194
@@ -51,43 +51,43 @@ julia&gt; vcorpus = compute_bow_corpus(tok, corpus)
  Dict(0xeebee57fa071401b =&gt; 1, 0x93017f16f1845e03 =&gt; 1, 0x9531daea6936b073 =&gt; 1, 0x3bdbf6858e455a91 =&gt; 1, 0x479860b54cec66b8 =&gt; 1, 0xa1431011cdc9bb9a =&gt; 1, 0xc449997d9a713ac1 =&gt; 1, 0x013b2d467f6471fb =&gt; 1, 0x4d45112e43473c4f =&gt; 1, 0x3d449ab259c7303b =&gt; 1…)
 
 julia&gt; model = VectorModel(EntropyWeighting(), BinaryLocalWeighting(), vcorpus, labels)
-{VectorModel global_weighting=EntropyWeighting(), local_weighting=BinaryLocalWeighting(), train-voc=45384, train-n=50000, maxfreq=93973}</code></pre><p>Now we can vectorize a text</p><pre><code class="language-julia-repl">julia&gt; vec = vectorize(tok, model, &quot;la mejor música, la música de siempre!&quot;; normalize=false)
+{VectorModel global_weighting=EntropyWeighting(), local_weighting=BinaryLocalWeighting(), train-voc=45374, train-n=50000, maxfreq=93991}</code></pre><p>Now we can vectorize a text</p><pre><code class="language-julia-repl">julia&gt; vec = vectorize(tok, model, &quot;la mejor música, la música de siempre!&quot;; normalize=false)
 Dict{UInt64, Float32} with 7 entries:
-  0xfa5db0e80cd0ced3 =&gt; 0.0960009
-  0x02eb319735bca9ef =&gt; 0.00177109
-  0xc9357b653a6d99f8 =&gt; 0.0310584
-  0x3bdbf6858e455a91 =&gt; 0.00336923
-  0x10a87038574b5cef =&gt; 0.000902032
-  0x81c92ba10d384d05 =&gt; 0.024314
-  0x03c1bab90bb0872a =&gt; 0.0231758
+  0xfa5db0e80cd0ced3 =&gt; 0.0960034
+  0x02eb319735bca9ef =&gt; 0.00177044
+  0xc9357b653a6d99f8 =&gt; 0.0310535
+  0x3bdbf6858e455a91 =&gt; 0.00336959
+  0x10a87038574b5cef =&gt; 0.000901939
+  0x81c92ba10d384d05 =&gt; 0.024311
+  0x03c1bab90bb0872a =&gt; 0.0231733
 
 julia&gt; decode(tok, vec)
 Dict{String, Float32} with 7 entries:
-  &quot;de&quot;      =&gt; 0.000902032
-  &quot;,&quot;       =&gt; 0.00336923
-  &quot;musica&quot;  =&gt; 0.0960009
-  &quot;!&quot;       =&gt; 0.024314
-  &quot;mejor&quot;   =&gt; 0.0310584
-  &quot;siempre&quot; =&gt; 0.0231758
-  &quot;la&quot;      =&gt; 0.00177109</code></pre><h1 id="Inspecting-models"><a class="docs-heading-anchor" href="#Inspecting-models">Inspecting models</a><a id="Inspecting-models-1"></a><a class="docs-heading-anchor-permalink" href="#Inspecting-models" title="Permalink"></a></h1><p>Models have a <code>id2token</code> dictionary to map identifiers to symbols</p><pre><code class="language-julia-repl">julia&gt; model.tokens
-Dict{UInt64, TextSearch.TokenStats} with 45384 entries:
+  &quot;de&quot;      =&gt; 0.000901939
+  &quot;,&quot;       =&gt; 0.00336959
+  &quot;musica&quot;  =&gt; 0.0960034
+  &quot;!&quot;       =&gt; 0.024311
+  &quot;mejor&quot;   =&gt; 0.0310535
+  &quot;siempre&quot; =&gt; 0.0231733
+  &quot;la&quot;      =&gt; 0.00177044</code></pre><h1 id="Inspecting-models"><a class="docs-heading-anchor" href="#Inspecting-models">Inspecting models</a><a id="Inspecting-models-1"></a><a class="docs-heading-anchor-permalink" href="#Inspecting-models" title="Permalink"></a></h1><p>Models have a <code>id2token</code> dictionary to map identifiers to symbols</p><pre><code class="language-julia-repl">julia&gt; model.tokens
+Dict{UInt64, TextSearch.TokenStats} with 45374 entries:
   0xe26d1b1f2f553177 =&gt; TokenStats(1, 1, 1.0)
-  0x2a51a9cd0f17d04b =&gt; TokenStats(3, 3, 0.73691)
+  0x2a51a9cd0f17d04b =&gt; TokenStats(3, 3, 0.736911)
   0x112eeae3ea6df7a4 =&gt; TokenStats(1, 1, 1.0)
-  0xae2b770f1a2cfc9b =&gt; TokenStats(3, 3, 0.736647)
+  0xae2b770f1a2cfc9b =&gt; TokenStats(3, 3, 0.73665)
   0xaf0eb90b3b1337d1 =&gt; TokenStats(1, 1, 1.0)
   0xbce85aa0ba0c8313 =&gt; TokenStats(1, 1, 1.0)
   0x8be0c9dcd9af4916 =&gt; TokenStats(1, 1, 1.0)
   0x72b25bff3d3b46b4 =&gt; TokenStats(1, 1, 1.0)
-  0xa2b5bad82c30d26e =&gt; TokenStats(3, 3, 0.740489)
-  0xffb9637a52d6ad16 =&gt; TokenStats(3, 3, 0.7367)
+  0xa2b5bad82c30d26e =&gt; TokenStats(3, 3, 0.740475)
+  0xffb9637a52d6ad16 =&gt; TokenStats(3, 3, 0.736698)
   0x9e4efeaa02f6d9dc =&gt; TokenStats(1, 1, 1.0)
   0x20ed2f2be7bcf27d =&gt; TokenStats(1, 1, 1.0)
   0x7bbc0905f48e70b1 =&gt; TokenStats(4, 4, 0.667642)
-  0x6dcaf280635c04d2 =&gt; TokenStats(12, 12, 0.430604)
+  0x6dcaf280635c04d2 =&gt; TokenStats(12, 12, 0.430607)
   0x632241edf4e9e265 =&gt; TokenStats(3, 3, 0.736047)
   0x5c39de02e03c347b =&gt; TokenStats(2, 2, 1.0)
   0xefeda4fcc355377a =&gt; TokenStats(18, 17, 0.375664)
   0x12031c55f76c77ba =&gt; TokenStats(1, 1, 1.0)
   0x0e3dc39e1a8b86ad =&gt; TokenStats(1, 1, 1.0)
-  ⋮                  =&gt; ⋮</code></pre></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../preprocessing/">« Preprocessing</a><a class="docs-footer-nextpage" href="../api/">API »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> on <span class="colophon-date" title="Wednesday 2 February 2022 01:45">Wednesday 2 February 2022</span>. Using Julia version 1.7.1.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+  ⋮                  =&gt; ⋮</code></pre></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../preprocessing/">« Preprocessing</a><a class="docs-footer-nextpage" href="../api/">API »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> on <span class="colophon-date" title="Wednesday 2 February 2022 23:10">Wednesday 2 February 2022</span>. Using Julia version 1.7.1.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
