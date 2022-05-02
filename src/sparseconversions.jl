@@ -37,3 +37,35 @@ function sparsevec(vec::DVEC{Ti,Tv}, m=0) where {Ti<:Integer,Tv<:Number}
         sparsevec(I, F, m)
     end
 end
+
+
+
+"""
+    sparse(cols::AbstractVector{S}, m=0) where S<:DVEC{Ti,Tv} where {Ti<:Integer,Tv<:Number}
+
+Creates a sparse matrix from an array of DVEC sparse vectors.
+"""
+function sparse(cols::AbstractVector{S}, m=0) where {S<:DVEC{Ti,Tv}} where {Ti<:Integer,Tv<:Number}
+    I = Ti[]
+    J = Ti[]
+    F = Tv[]
+
+    for j in eachindex(cols)
+        for (term, weight) in cols[j]
+            if term > 0
+                push!(I, term)
+                push!(J, j)
+                push!(F, weight)
+            end
+        end
+    end
+
+    #if length(cols) > 1
+    #    @show minimum(I), maximum(I), minimum(J), maximum(J), minimum(F), maximum(F), m, length(cols)
+    #end
+    if m == 0
+        sparse(I, J, F)
+    else
+        sparse(I, J, F, m, length(cols))
+    end
+end

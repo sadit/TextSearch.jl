@@ -32,7 +32,7 @@ tok = Tokenizer(TextConfig(group_emo=false, group_num=false, group_url=false, gr
 
 Once a `Tokenizer` is defined, we need to create a model for the text, we select a typical vector model. The model constructor needs to know the weighthing scheme and some stats about the corpus' vocabulary:
 ```@repl Model
-model = VectorModel(IdfWeighting(), TfWeighting(), compute_bow_corpus(tok, corpus))
+model = VectorModel(IdfWeighting(), TfWeighting(), tok, corpus)
 ```
 
 Now we can vectorize a text
@@ -49,18 +49,11 @@ Note: by default `normalize=true` normalizes the vector.
 
 ```@repl Model
 labels
-vcorpus = compute_bow_corpus(tok, corpus)
-model = VectorModel(EntropyWeighting(), BinaryLocalWeighting(), vcorpus, labels)
+model = VectorModel(EntropyWeighting(), BinaryLocalWeighting(), tok, corpus, labels)
 ```
 
 Now we can vectorize a text
 ```@repl Model
 vec = vectorize(tok, model, "la mejor música, la música de siempre!"; normalize=false)
 decode(tok, vec)
-```
-
-# Inspecting models
-Models have a `id2token` dictionary to map identifiers to symbols
-```@repl Model
-model.tokens
 ```

@@ -10,8 +10,6 @@ in this implementation is represented as the hash code of the corresponding stri
 This methods also normalize and preprocess the text following instructions in the given `TextConfig` object.
 The structure has several fields:
 - the text config object
-- an inverse map `invmap` that need to be captured at construction time (only needed if the tokens need to be inspected).
-- `isconstruction` indicator (must be true only when the tokens are being parsed for building a model)
 - the rest of the fields are used as buffers (multithreaded applications need independent copies of tokenizers)
 
 Note: non-thread safe, make a copy of this structure for each thread.

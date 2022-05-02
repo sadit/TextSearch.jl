@@ -59,7 +59,7 @@ function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, voc::Vocabulary,
     VectorModel(ent, lw, voc; mindocs)
 end
 
-function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, tok::Tokenizer, corpus::AbstractVector{<:AbstractString}, labels::CategoricalArray;
+function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, tok::Tokenizer, corpus::AbstractVector, labels::CategoricalArray;
             bow=BOW(),
             mindocs=1,
             smooth::Float64=0.0,

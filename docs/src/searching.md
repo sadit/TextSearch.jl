@@ -35,20 +35,19 @@ tok = Tokenizer(TextConfig(group_emo=false, group_num=false, group_url=false, gr
 
 We need to create a model for the text, we select a typical vector model. The model constructor needs to know the weighthing scheme and some stats about the corpus' vocabulary:
 ```@repl Search
-model = VectorModel(IdfWeighting(), TfWeighting(), compute_bow_corpus(tok, corpus))
+model = VectorModel(IdfWeighting(), TfWeighting(), tok, corpus)
 ```
 
 This model is used to vectorize the corpus, and then, create the Inverted Index search structure.
 ```@repl Search
-invindex = InvIndex(vectorize_corpus(tok, model, corpus))
+invindex = InvIndex(vocsize(model))
+append!(VectorDatabase(vectorize_corpus(model, tok, corpus)))
 ```
-
-Please note that `compute_bow_corpus(tok, corpus)` is a faster way (shared buffers) to compute `compute_bow.(tok, corpus)`
 
 The index can be used for solving queries efficiently
 ```@repl Search
 q = "que buena música!!"
-for p in search(invindex, vectorize(tok, model, q), 5)
+for p in search(invindex, vectorize(model, tok, q), 5)
     @info (dist=p.dist, tweet=corpus[p.id])
 end
 ```

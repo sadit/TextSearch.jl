@@ -176,7 +176,11 @@ function vectorize(model::VectorModel{_G,_L}, bow::BOW; normalize=true, mindocs=
         end
     end
     
-    maxoccs = (_L === TfWeighting) ? maximum(bow) : 0.0
+    maxoccs = 0
+    if _L === TfWeighting
+        maxoccs = length(bow) == 0 ? 0 : maximum(bow) 
+    end
+    
     vec = SVEC()
     voc = model.voc
     for (tokenID, freq) in bow
@@ -220,4 +224,4 @@ local_weighting(::BinaryLocalWeighting, occs, maxoccs, numtokens) = 1.0
 global_weighting(m::VectorModel{IdfWeighting}, tokenID) = @inbounds log2(1 + trainsize(m) / (0.01 + m.voc.ndocs[tokenID]))
 global_weighting(m::VectorModel{BinaryGlobalWeighting}, tokenID) = 1.0
 prune_global_weighting(m::VectorModel, tokenID) = global_weighting(m, tokenID)
-prune_global_weighting(m::VectorModel{BinaryGlobalWeighting}, tokenID) = @inbounds -m.ndocs[tokenID]
+prune_global_weighting(m::VectorModel{BinaryGlobalWeighting}, tokenID) = @inbounds -m.voc.ndocs[tokenID]
