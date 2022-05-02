@@ -1,10 +1,10 @@
 # This file is a part of TextSearch.jl
 
-export TextModel, VectorModel,
+export TextModel, VectorModel, trainsize, vocsize,
     TfWeighting, IdfWeighting, TpWeighting,
     FreqWeighting, BinaryLocalWeighting, BinaryGlobalWeighting,
     LocalWeighting, GlobalWeighting,
-    fit, vectorize, vectorize_corpus, prune, prune_select_top
+    fit, prune, prune_select_top
 
 #####
 ##
@@ -86,74 +86,48 @@ An abstract type that represents a weighting model
 """
 abstract type TextModel end
 
-"""
-    TokenStats(occs, ndocs)
-
-Stores useful information for a token; i.e., the number of occurrences in the collection, the number of documents having that token
-"""
-struct TokenStats
-    occs::Int32
-    ndocs::Int32
-    weight::Float32
-end
-
-const UnknownTokenStats = TokenStats(0, 0, 0f0)
-
-const Vocabulary = Dict{UInt64, TokenStats}
-
 mutable struct VectorModel{_G<:GlobalWeighting, _L<:LocalWeighting} <: TextModel
     global_weighting::_G
     local_weighting::_L
-    tokens::Vocabulary
-    maxfreq::Int
-    m::Int  # vocabulary size
-    n::Int  # training collection size
+    voc::Vocabulary
+    maxoccs::Int32
+    mindocs::Int32
 end
 
 function Base.copy(
         e::VectorModel;
         local_weighting=e.local_weighting,
         global_weighting=e.global_weighting,
-        tokens=e.tokens,
-        maxfreq=e.maxfreq,
-        m=e.m,
-        n=e.n
+        voc=e.voc,
+        maxoccs=e.maxoccs,
+        mindocs=e.mindocs,
     )
-    VectorModel(global_weighting, local_weighting, tokens, maxfreq, m, n)
+    VectorModel(global_weighting, local_weighting, voc, maxoccs, mindocs)
 end
 
-function create_vocabulary(corpus)
-    V = Vocabulary()
-    for tokenlist in corpus
-        for (token, occs) in tokenlist
-            s = get(V, token, UnknownTokenStats)
-            V[token] = TokenStats(s.occs + occs, s.ndocs + 1, 0f0)
-        end
-    end
-
-    V
-end
+trainsize(model::VectorModel) = model.voc.corpuslen
+vocsize(model::VectorModel) = length(model.voc)
 
 """
-    VectorModel(global_weighting::GlobalWeighting, local_weighting::LocalWeighting, corpus; mindocs=1)
+    VectorModel(global_weighting::GlobalWeighting, local_weighting::LocalWeighting, voc::Vocabulary; mindocs=1)
 
 Creates a vector model using the input corpus. 
 """
-function VectorModel(global_weighting::GlobalWeighting, local_weighting::LocalWeighting, corpus; mindocs=1)
-    tokens = Vocabulary()
+function VectorModel(global_weighting::GlobalWeighting, local_weighting::LocalWeighting, voc::Vocabulary; mindocs=1)
+    maxocc = convert(Int32, maximum(voc.occs))
+    mindocs = convert(Int32, mindocs)
 
-    tokens = Vocabulary()
-    maxfreq = 0
-    for (t, s) in create_vocabulary(corpus)
-        s.ndocs < mindocs && continue
-        tokens[t] = TokenStats(s.occs, s.ndocs, 0.0f0)
-        maxfreq = max(maxfreq, s.occs)
-    end
-    
-    VectorModel(global_weighting, local_weighting, tokens, maxfreq, length(tokens), length(corpus))
+    VectorModel(global_weighting, local_weighting, voc, maxocc, mindocs)
 end
 
-Base.show(io::IO, model::VectorModel) = print(io, "{VectorModel global_weighting=$(model.global_weighting), local_weighting=$(model.local_weighting), train-voc=$(model.m), train-n=$(model.n), maxfreq=$(model.maxfreq)}")
+function VectorModel(global_weighting::GlobalWeighting, local_weighting::LocalWeighting, tok::Tokenizer, corpus::AbstractVector; mindocs=1)
+    voc = Vocabulary(tok, corpus)
+    maxocc = convert(Int32, maximum(voc.occs))
+    mindocs = convert(Int32, mindocs)
+    VectorModel(global_weighting, local_weighting, voc, maxocc, mindocs)
+end
+
+Base.show(io::IO, model::VectorModel) = print(io, "{VectorModel global_weighting=$(model.global_weighting), local_weighting=$(model.local_weighting), train-voc=$(vocsize(model)), train-n=$(trainsize(model)), maxoccs=$(model.maxoccs)}")
 
 """
     prune(model::VectorModel, lowerweight::AbstractFloat)
@@ -161,14 +135,15 @@ Base.show(io::IO, model::VectorModel) = print(io, "{VectorModel global_weighting
 Creates a new vector model without terms with smaller global weights than `lowerweight`.
 """
 function prune(model::VectorModel, lowerweight::AbstractFloat)
-    tokens = Vocabulary()
-    for (token, s) in model.tokens
-        if prune_global_weighting(model, s) >= lowerweight
-            tokens[token] = TokenStats(s.occs, s.ndocs, s.weight)
+    voc = Vocabulary(trainsize(model))
+    old = model.voc
+    for tokenID in eachindex(old.occs)
+        if prune_global_weighting(model, tokenID) >= lowerweight
+            push!(voc, old.token[tokenID], old.occs[tokenID], old.ndocs[tokenID], old.weight[tokenID])
         end
     end
 
-    VectorModel(model.global_weighting, model.local_weighting, tokens, model.maxfreq, model.m, model.n)
+    VectorModel(model.global_weighting, model.local_weighting, voc, model.maxoccs, model.mindocs)
 end
 
 """
@@ -179,63 +154,53 @@ Creates a new vector model with the best `k` tokens from `model` based on global
 `ratio` is a floating point between 0 and 1 indicating the ratio of the vocabulary to be kept
 """
 function prune_select_top(model::VectorModel, k::Integer)
-    w = [prune_global_weighting(model, s) for (token, s) in model.tokens]
+    voc = model.voc
+    w = [prune_global_weighting(model, tokenID) for tokenID in eachindex(voc.token)]
     sort!(w, rev=true)
-    prune(model, Float64(w[k]))
+    prune(model, float(w[k]))
 end
 
-prune_select_top(model::VectorModel, ratio::AbstractFloat) = prune_select_top(model, floor(Int, length(model.tokens) * ratio))
+prune_select_top(model::VectorModel, ratio::AbstractFloat) =
+    prune_select_top(model, floor(Int, length(model.voc) * ratio))
 
 """
-    vectorize(model::VectorModel, bow::BOW, maxfreq::Integer=maximum(bow); normalize=true) where Tv<:Real
+    vectorize(model::VectorModel, bow::BOW; normalize=true, mindocs=model.mindocs, minweight=1e-6) where Tv<:Real
 
 Computes a weighted vector using the given bag of words and the specified weighting scheme.
 """
-function vectorize(model::VectorModel{_G, _L}, bow::BOW; normalize=true) where {_L,_G}
+function vectorize(model::VectorModel{_G,_L}, bow::BOW; normalize=true, mindocs=model.mindocs, minweight=1e-6) where {_G,_L}
     numtokens = 0.0
     if _L === TpWeighting
-        for (token, freq) in bow
+        for freq in values(bow)
             numtokens += freq
         end
     end
     
-    maxfreq = (_L === TfWeighting) ? maximum(bow) : 0.0
+    maxoccs = (_L === TfWeighting) ? maximum(bow) : 0.0
     vec = SVEC()
-
-    for (token, freq) in bow
-        s = get(model.tokens, token, nothing)
-        s === nothing && continue
-
-        w = local_weighting(model.local_weighting, freq, maxfreq, numtokens) * global_weighting(model, s)
-        if w > 1e-9
-            vec[token] = w
-        end
+    voc = model.voc
+    for (tokenID, freq) in bow
+        voc.ndocs[tokenID] < mindocs && continue
+        w = local_weighting(model.local_weighting, freq, maxoccs, numtokens) * global_weighting(model, tokenID)
+        # @show _G => global_weighting(model, tokenID), _L => local_weighting(model.local_weighting, freq, maxoccs, numtokens)
+        # @show w, tokenID => voc.token[tokenID], vec
+        w >= minweight && (vec[tokenID] = w)
     end
 
-    if length(vec) == 0
-        # error("empty final vector: the original vector has $(length(bow)) features")
-        vec[0] = 1e-9
-    end
-
-    normalize && normalize!(vec)
+    normalize && length(vec) > 0 && normalize!(vec)
     vec
 end
 
-function vectorize(tok::Tokenizer, model::VectorModel, text; bow=BOW(), normalize=true)
-    compute_bow(tok, text, bow)
-    v = vectorize(model, bow; normalize=normalize)
-    # if length(v) == 1 && haskey(v, 0)
-    #     @info "empty vector"
-    # end
-    v
+function vectorize(model::VectorModel, tok::Tokenizer, text; bow=BOW(), normalize=true, mindocs=model.mindocs, minweight=1e-6)
+    vectorize(model, vectorize(model.voc, tok, text, bow); normalize, mindocs, minweight)
 end
 
-function vectorize_corpus(tok::Tokenizer, model::VectorModel, corpus; bow=BOW(), normalize=true)
+function vectorize_corpus(model::VectorModel, tok::Tokenizer, corpus; bow=BOW(), normalize=true)
     V = Vector{SVEC}(undef, length(corpus))
 
     for (i, text) in enumerate(corpus)
         empty!(bow)
-        V[i] = vectorize(tok, model, text; bow=bow, normalize=normalize)
+        V[i] = vectorize(model, tok, text; bow, normalize)
     end
 
     V
@@ -248,11 +213,11 @@ end
 # local weightings: TfWeighting, TpWeighting, FreqWeighting, BinaryLocalWeighting
 # global weightings: IdfWeighting, BinaryGlobalWeighting
 
-local_weighting(::TfWeighting, occs, maxfreq, numtokens) = occs / maxfreq
-local_weighting(::FreqWeighting, occs, maxfreq, numtokens) = occs
-local_weighting(::TpWeighting, occs, maxfreq, numtokens) = occs / numtokens
-local_weighting(::BinaryLocalWeighting, occs, maxfreq, numtokens) = 1.0
-global_weighting(m::VectorModel{IdfWeighting}, s::TokenStats) = log2(1 + m.n / s.ndocs)
-global_weighting(m::VectorModel{BinaryGlobalWeighting}, s::TokenStats) = 1.0
-prune_global_weighting(m::VectorModel, s) = global_weighting(m, s)
-prune_global_weighting(m::VectorModel{BinaryGlobalWeighting}, s) = -s.ndocs
+local_weighting(::TfWeighting, occs, maxoccs, numtokens) = occs / maxoccs
+local_weighting(::FreqWeighting, occs, maxoccs, numtokens) = occs
+local_weighting(::TpWeighting, occs, maxoccs, numtokens) = occs / numtokens
+local_weighting(::BinaryLocalWeighting, occs, maxoccs, numtokens) = 1.0
+global_weighting(m::VectorModel{IdfWeighting}, tokenID) = @inbounds log2(1 + trainsize(m) / (0.01 + m.voc.ndocs[tokenID]))
+global_weighting(m::VectorModel{BinaryGlobalWeighting}, tokenID) = 1.0
+prune_global_weighting(m::VectorModel, tokenID) = global_weighting(m, tokenID)
+prune_global_weighting(m::VectorModel{BinaryGlobalWeighting}, tokenID) = @inbounds -m.ndocs[tokenID]

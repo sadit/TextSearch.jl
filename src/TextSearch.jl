@@ -8,9 +8,10 @@ module TextSearch
     include("textconfig.jl")
     include("normalize.jl")
     include("tokenize.jl")
+    include("dvec.jl")
+    include("voc.jl")
     include("bow.jl")
+    include("sparseconversions.jl")
     include("vmodel.jl")
     include("emodel.jl")
-    include("neardup.jl")
-#    include("multi.jl")
 end

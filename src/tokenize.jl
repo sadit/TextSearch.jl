@@ -18,10 +18,8 @@ Note: non-thread safe, make a copy of this structure for each thread.
 """
 struct Tokenizer
     config::TextConfig
-    invmap::Union{Dict{UInt64,String},Nothing}
-    isconstruction::Bool
     normtext::Vector{Char}
-    tokens::Vector{UInt64}
+    tokens::Vector{String}
     unigrams::Vector{String}
     io::IOBuffer
 end
@@ -30,8 +28,6 @@ const EXTRA_PUNCT = Set(['~', '+', '^', '$', '|', '<', '>'])
 
 function Tokenizer(
         config::TextConfig;
-        isconstruction=true,
-        invmap=Dict{UInt64,String}(),
         n=128
     )
     normtext = Vector{Char}(undef, n)
@@ -41,60 +37,24 @@ function Tokenizer(
     resize!(tokens, 0)
     resize!(unigrams, 0)
 
-    Tokenizer(config, invmap, isconstruction, normtext, tokens, unigrams, IOBuffer())
+    Tokenizer(config, normtext, tokens, unigrams, IOBuffer())
 end
 
-function Tokenizer(tok::Tokenizer; isconstruction=false, n=128)
-    Tokenizer(tok.config, invmap=tok.invmap, isconstruction=isconstruction, n=n)
+function Tokenizer(tok::Tokenizer; n=128)
+    Tokenizer(tok.config, n=n)
 end
 
 function Base.show(io::IO, tok::Tokenizer) 
-    print(io, "{Tokenizer isconstruction=$(tok.isconstruction) ")
-    if tok.invmap === nothing
-        print(io, "invmap=nothing")
-    else
-        print(io, "invmap=", length(tok.invmap))
-    end
-    print(io, " config=$(tok.config)\n}")
+    print(io, "{Tokenizer config=$(tok.config)\n}")
 end
 
 Base.broadcastable(m::Tokenizer) = (m,)
-
-function encode(tok::Tokenizer, token::AbstractString)
-    h = hash(token)
-    tok.isconstruction && tok.invmap !== nothing && (tok.invmap[h] = token)
-    h
-end
-
-function decode(tok::Tokenizer, id::UInt64)
-    tok.invmap === nothing ? nothing : tok.invmap[id]
-end
-
-function decode(tok::Tokenizer, vec::Dict{UInt64,S}) where S
-    tok.invmap === nothing ? nothing : Dict(tok.invmap[k] => v for (k,v) in vec)
-end
 
 function Base.empty!(tok::Tokenizer)
     empty!(tok.normtext)
     empty!(tok.tokens)
     empty!(tok.unigrams)
 end
-
-#=function tokenize__(config::TextConfig, textlist::AbstractVector, tok::Tokenizer=Tokenizer())
-    n = length(textlist) * length(first(textlist))
-
-    for text in textlist
-        empty!(tok)
-        if text isa AbstractString
-            normalize_text(config, text, tok.normtext)
-            tokenize_(tok)
-        else
-            tokenize(tok, text)
-        end
-    end
-
-    tok.tokens
-end=#
 
 """
     tokenize_corpus(tok::Tokenizer, arr)
@@ -111,7 +71,6 @@ end
 Tokenizes `text` using the given configuration
 """
 function tokenize(tok::Tokenizer, text::AbstractString)
-    #@info text
     empty!(tok)
     normalize_text(tok.config, text, tok.normtext)
     tokenize_(tok)
@@ -152,7 +111,7 @@ function flush_token!(tok::Tokenizer)
     io = tok.io
     if io.size > 0
         s = String(take!(io))
-        push!(tok.tokens, encode(tok, s))
+        push!(tok.tokens, s)
         s
     else
         nothing
