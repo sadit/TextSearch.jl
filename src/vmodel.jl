@@ -186,12 +186,15 @@ function vectorize(model::VectorModel{_G,_L}, bow::BOW; normalize=true, mindocs=
     for (tokenID, freq) in bow
         voc.ndocs[tokenID] < mindocs && continue
         w = local_weighting(model.local_weighting, freq, maxoccs, numtokens) * global_weighting(model, tokenID)
-        # @show _G => global_weighting(model, tokenID), _L => local_weighting(model.local_weighting, freq, maxoccs, numtokens)
-        # @show w, tokenID => voc.token[tokenID], vec
         w >= minweight && (vec[tokenID] = w)
     end
 
-    normalize && length(vec) > 0 && normalize!(vec)
+    if length(vec) == 0
+        vec[0] = 1f0
+    else
+        normalize && normalize!(vec)
+    end
+
     vec
 end
 

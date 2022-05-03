@@ -121,7 +121,8 @@ end
     @show corpus
     @show text1
     @show text2
-    @test 0 == length(vectorize(model, tok, text2))
+    v = vectorize(model, tok, text2)
+    @test 1 == length(v) && v[0] == 1 # empty vectors use 0 as centinel
 end
 
 @testset "tokenize list of strings as a single message" begin
@@ -129,7 +130,6 @@ end
     model = VectorModel(BinaryGlobalWeighting(), FreqWeighting(), tok, corpus)
     @test vectorize(model, tok, ["hello ;)", "#jello world."]) == vectorize(model, tok, "hello ;) #jello world.")
 end
-
 
 ###########
 ###########
@@ -265,3 +265,5 @@ end
     expected = Dict("la" => 0.7366651330405098, "verde" => 0.39921969741172364, "azul" => 0.11248181187626208, "pera" => 0.08712803682959973, "esta" => 0.17425607365919946, "roja" => 0.22496362375252416, "hoja" => 0.11248181187626208, "casa" => 0.33744543562878626, "rica" => 0.17425607365919946, "manzana" => 0.19960984870586182)
     @test 0.999 < dot(vec, expected)
 end
+
+@info "FINISH"
