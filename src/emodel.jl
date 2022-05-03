@@ -71,7 +71,7 @@ function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, tok::Tokenizer, 
 
     for i in eachindex(corpus)
         empty!(bow)
-        vectorize(voc, tok, corpus[i], bow)
+        vectorize(voc, tok, corpus[i]; bow)
         
         code = labels.refs[i]
         for (tokenID, _) in bow

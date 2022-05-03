@@ -68,6 +68,15 @@ end
     @test tokenize(m, text1) == map(p -> "\ts" * p, ["hello !!", "world @user", "!! ;)", "@user #jello", ";) .", "#jello world", ". :)"])
 end
 
+@testset "vocabulary of different kinds of docs" begin
+    tok = Tokenizer(TextConfig(nlist=[1]))
+    A = Vocabulary(tok, ["hello ;)", "#jello world."])
+    B = Vocabulary(tok, [["hello ;)", "#jello world."]])
+    @test A.occs == B.occs
+    @test A.token == B.token
+    @test A.corpuslen == 2 && B.corpuslen == 1
+end
+
 @testset "Normalize and tokenize" begin
     tok = Tokenizer(TextConfig(del_punc=true, group_usr=true, nlist=[1, 2, 3]))
     @test tokenize(tok, text1) == ["hello", "world", "_usr", "#jello", "world", "\tnhello world", "\tnworld _usr", "\tn_usr #jello", "\tn#jello world", "\tnhello world _usr", "\tnworld _usr #jello", "\tn_usr #jello world"]
@@ -114,6 +123,13 @@ end
     @show text2
     @test 0 == length(vectorize(model, tok, text2))
 end
+
+@testset "tokenize list of strings as a single message" begin
+    tok = Tokenizer(TextConfig(nlist=[1]))
+    model = VectorModel(BinaryGlobalWeighting(), FreqWeighting(), tok, corpus)
+    @test vectorize(model, tok, ["hello ;)", "#jello world."]) == vectorize(model, tok, "hello ;) #jello world.")
+end
+
 
 ###########
 ###########

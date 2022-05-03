@@ -196,7 +196,7 @@ function vectorize(model::VectorModel{_G,_L}, bow::BOW; normalize=true, mindocs=
 end
 
 function vectorize(model::VectorModel, tok::Tokenizer, text; bow=BOW(), normalize=true, mindocs=model.mindocs, minweight=1e-6)
-    vectorize(model, vectorize(model.voc, tok, text, bow); normalize, mindocs, minweight)
+    vectorize(model, vectorize(model.voc, tok, text; bow); normalize, mindocs, minweight)
 end
 
 function vectorize_corpus(model::VectorModel, tok::Tokenizer, corpus; bow=BOW(), normalize=true)

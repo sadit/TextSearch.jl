@@ -37,8 +37,17 @@ function Vocabulary(tok::Tokenizer, corpus)
     voc = Vocabulary(length(corpus))
 
     for doc in corpus
-        for token in tokenize(tok, doc)
-            push!(voc, token, 1, 1, 0f0)
+        if doc isa AbstractString
+            for token in tokenize(tok, doc)
+                push!(voc, token, 1, 1, 0f0)
+            end
+        else
+            for text in doc
+                for token in tokenize(tok, text)
+                    push!(voc, token, 1, 1, 0f0)
+                end
+    
+            end
         end
     end
 
