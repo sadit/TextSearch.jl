@@ -1,6 +1,6 @@
 # This file is a part of TextSearch.jl
 
-export Vocabulary
+export Vocabulary, occs, ndocs, weight, token, vocsize, trainsize
 
 struct Vocabulary
     token::Vector{String}
