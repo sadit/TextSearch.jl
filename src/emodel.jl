@@ -36,7 +36,7 @@ end
 
 Creates a vector model using the input corpus. 
 """
-function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, voc::Vocabulary, corpus::AbstractVector{BOW}, labels::CategoricalArray;
+function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, voc::Vocabulary, corpus::AbstractVector{BOW}, labels;
             mindocs=1,
             smooth::Float64=0.0,
             weights=:balance
@@ -45,8 +45,7 @@ function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, voc::Vocabulary,
     D = fill(smooth, nclasses, vocsize(voc))
 
     for (i, bow) in enumerate(corpus)
-        code = labels.refs[i]
-
+        code = levelcode(labels[i])
         for (tokenID, _) in bow
             D[code, tokenID] += 1 # occs/M # log2(1 + occs)
         end
@@ -57,7 +56,7 @@ function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, voc::Vocabulary,
     VectorModel(ent, lw, voc; mindocs)
 end
 
-function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, tok::Tokenizer, corpus::AbstractVector, labels::CategoricalArray;
+function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, tok::Tokenizer, corpus::AbstractVector, labels;
             bow=BOW(),
             mindocs=1,
             smooth::Float64=0.0,
@@ -71,7 +70,7 @@ function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, tok::Tokenizer, 
         empty!(bow)
         vectorize(voc, tok, corpus[i]; bow)
         
-        code = labels.refs[i]
+        code = levelcode(labels[i])
         for (tokenID, _) in bow
             D[code, tokenID] += 1 # occs/M # log2(1 + occs)
         end
