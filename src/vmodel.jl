@@ -105,8 +105,14 @@ function Base.copy(
     VectorModel(global_weighting, local_weighting, voc, maxoccs, mindocs)
 end
 
-trainsize(model::VectorModel) = model.voc.corpuslen
-vocsize(model::VectorModel) = length(model.voc)
+@inline trainsize(model::VectorModel) = trainsize(model.voc)
+@inline vocsize(model::VectorModel) = vocsize(model.voc)
+@inline Base.length(model::VectorModel) = length(model.voc)
+@inline occs(model::VectorModel, tokenID::Integer) = occs(model.voc, tokenID)
+@inline ndocs(model::VectorModel, tokenID::Integer) = ndocs(model.voc, tokenID)
+@inline weight(model::VectorModel, tokenID::Integer) = weight(model.voc, tokenID)
+@inline token(model::VectorModel, tokenID::Integer) = token(model.voc, tokenID)
+@inline Base.eachindex(model) = eachindex(model.voc)
 
 """
     VectorModel(global_weighting::GlobalWeighting, local_weighting::LocalWeighting, voc::Vocabulary; mindocs=1)
@@ -137,13 +143,13 @@ Creates a new vector model without terms with smaller global weights than `lower
 function prune(model::VectorModel, lowerweight::AbstractFloat)
     voc = Vocabulary(trainsize(model))
     old = model.voc
-    for tokenID in eachindex(old.occs)
+    for tokenID in eachindex(old)
         if prune_global_weighting(model, tokenID) >= lowerweight
             push!(voc, old.token[tokenID], old.occs[tokenID], old.ndocs[tokenID], old.weight[tokenID])
         end
     end
 
-    VectorModel(model.global_weighting, model.local_weighting, voc, model.maxoccs, model.mindocs)
+    VectorModel(model.global_weighting, model.local_weighting, voc, maximum(voc.occs), model.mindocs)
 end
 
 """
@@ -155,7 +161,7 @@ Creates a new vector model with the best `k` tokens from `model` based on global
 """
 function prune_select_top(model::VectorModel, k::Integer)
     voc = model.voc
-    w = [prune_global_weighting(model, tokenID) for tokenID in eachindex(voc.token)]
+    w = [prune_global_weighting(model, tokenID) for tokenID in eachindex(voc)]
     sort!(w, rev=true)
     prune(model, float(w[k]))
 end
@@ -164,19 +170,19 @@ prune_select_top(model::VectorModel, ratio::AbstractFloat) =
     prune_select_top(model, floor(Int, length(model.voc) * ratio))
 
 """
-    vectorize(model::VectorModel, bow::BOW; normalize=true, mindocs=model.mindocs, minweight=1e-6) where Tv<:Real
+    vectorize(model::VectorModel, bow::BOW; normalize=true, mindocs=model.mindocs, minweight=1e-9) where Tv<:Real
 
 Computes a weighted vector using the given bag of words and the specified weighting scheme.
 """
-function vectorize(model::VectorModel{_G,_L}, bow::BOW; normalize=true, mindocs=model.mindocs, minweight=1e-6) where {_G,_L}
-    numtokens = 0.0
+function vectorize(model::VectorModel{_G,_L}, bow::BOW; normalize=true, mindocs=model.mindocs, minweight=1e-9) where {_G,_L}
+    numtokens::Int = 0
     if _L === TpWeighting
         for freq in values(bow)
             numtokens += freq
         end
     end
     
-    maxoccs = 0
+    maxoccs::Int = 0
     if _L === TfWeighting
         maxoccs = length(bow) == 0 ? 0 : maximum(bow) 
     end
@@ -198,7 +204,7 @@ function vectorize(model::VectorModel{_G,_L}, bow::BOW; normalize=true, mindocs=
     vec
 end
 
-function vectorize(model::VectorModel, tok::Tokenizer, text; bow=BOW(), normalize=true, mindocs=model.mindocs, minweight=1e-6)
+function vectorize(model::VectorModel, tok::Tokenizer, text; bow=BOW(), normalize=true, mindocs=model.mindocs, minweight=1e-9)
     vectorize(model, vectorize(model.voc, tok, text; bow); normalize, mindocs, minweight)
 end
 
@@ -220,11 +226,11 @@ end
 # local weightings: TfWeighting, TpWeighting, FreqWeighting, BinaryLocalWeighting
 # global weightings: IdfWeighting, BinaryGlobalWeighting
 
-local_weighting(::TfWeighting, occs, maxoccs, numtokens) = occs / maxoccs
-local_weighting(::FreqWeighting, occs, maxoccs, numtokens) = occs
-local_weighting(::TpWeighting, occs, maxoccs, numtokens) = occs / numtokens
-local_weighting(::BinaryLocalWeighting, occs, maxoccs, numtokens) = 1.0
-global_weighting(m::VectorModel{IdfWeighting}, tokenID) = @inbounds log2(1 + trainsize(m) / (0.01 + m.voc.ndocs[tokenID]))
-global_weighting(m::VectorModel{BinaryGlobalWeighting}, tokenID) = 1.0
-prune_global_weighting(m::VectorModel, tokenID) = global_weighting(m, tokenID)
-prune_global_weighting(m::VectorModel{BinaryGlobalWeighting}, tokenID) = @inbounds -m.voc.ndocs[tokenID]
+@inline local_weighting(::TfWeighting, occs, maxoccs, numtokens) = occs / maxoccs
+@inline local_weighting(::FreqWeighting, occs, maxoccs, numtokens) = occs
+@inline local_weighting(::TpWeighting, occs, maxoccs, numtokens) = occs / numtokens
+@inline local_weighting(::BinaryLocalWeighting, occs, maxoccs, numtokens) = 1.0
+@inline global_weighting(model::VectorModel{IdfWeighting}, tokenID) = @inbounds log2(trainsize(model) / (1 + ndocs(model, tokenID)))
+@inline global_weighting(model::VectorModel{BinaryGlobalWeighting}, tokenID) = 1.0
+@inline prune_global_weighting(model::VectorModel, tokenID) = global_weighting(model, tokenID)
+@inline prune_global_weighting(model::VectorModel{BinaryGlobalWeighting}, tokenID) = @inbounds 1 / (1 + ndocs(model, tokenID))

@@ -72,9 +72,17 @@ function Vocabulary(corpus)
 end
 
 Base.length(voc::Vocabulary) = length(voc.occs)
+Base.eachindex(voc::Vocabulary) = eachindex(voc.occs)
+vocsize(voc::Vocabulary) = length(voc)
+trainsize(voc::Vocabulary) = voc.corpuslen
+ndocs(voc::Vocabulary, tokenID::Integer) = tokenID == 0 ? zero(eltype(voc.ndocs)) : voc.ndocs[tokenID]
+occs(voc::Vocabulary, tokenID::Integer) = tokenID == 0 ? zero(eltype(voc.occs)) : voc.occs[tokenID]
+weight(voc::Vocabulary, tokenID::Integer) = tokenID == 0 ? zero(eltype(voc.weight)) : voc.weight[tokenID]
+token(voc::Vocabulary, tokenID::Integer) = tokenID == 0 ? "" : voc.token[tokenID]
 
 function Base.push!(voc::Vocabulary, token::String, occs::Integer, ndocs::Integer, weight::Real)
-    id = get(voc.token2id, token, UInt32(0))
+    id = get(voc.token2id, token, zero(UInt32))
+
     if id == 0
         id = length(voc) + 1
         push!(voc.token, token)
@@ -91,4 +99,18 @@ function Base.push!(voc::Vocabulary, token::String, occs::Integer, ndocs::Intege
     voc
 end
 
-Base.get(voc::Vocabulary, token::String, default) = get(voc.token2id, token, default)
+Base.get(voc::Vocabulary, token::String, default)::UInt32 = get(voc.token2id, token, default)
+
+function Base.getindex(voc::Vocabulary, token::String)
+    getindex(voc, get(voc, token, 0))
+end
+
+function Base.getindex(voc::Vocabulary, tokenID::Integer)
+    id = convert(UInt32, tokenID)
+
+    if id == 0
+        (; id=id, occs=zero(eltype(voc.occs)), ndocs=zero(eltype(voc.ndocs)), weight=zero(eltype(voc.weight)))
+    else
+        (; id=id, occs=voc.occs[id], ndocs=voc.ndocs[id], weight=voc.weight[id])
+    end
+end

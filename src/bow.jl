@@ -14,7 +14,7 @@ When `config` is given, the text is parsed according to it.
 function vectorize(voc::Vocabulary, tokenlist::AbstractVector; bow::BOW=BOW())
     z = zero(UInt32)
     for token in tokenlist
-        tokenID = get(voc, token, z)::UInt32
+        tokenID = get(voc, token, z)
         if z != tokenID
             bow[tokenID] = get(bow, tokenID, Int32(0)) + Int32(1)
         end

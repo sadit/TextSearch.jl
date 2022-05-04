@@ -11,7 +11,6 @@ Entropy weighting uses the empirical entropy of the vocabulary along classes to 
 """
 struct EntropyWeighting <: GlobalWeighting end
 
-
 function entropy(dist)
     e = 0.0
     ipop = 1/sum(dist)
@@ -43,13 +42,12 @@ function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, voc::Vocabulary,
             weights=:balance
         )
     nclasses = length(levels(labels))
-    D = fill(smooth, nclasses, length(voc))
+    D = fill(smooth, nclasses, vocsize(voc))
 
-    for i in eachindex(corpus)
-        bow = corpus[i]
+    for (i, bow) in enumerate(corpus)
         code = labels.refs[i]
-        
-        for (tokenID, occs) in bow
+
+        for (tokenID, _) in bow
             D[code, tokenID] += 1 # occs/M # log2(1 + occs)
         end
     end
@@ -97,19 +95,19 @@ function _compute_weights(weights, D, nclasses)
     weights
 end
 
-function _compute_entropy(V, D, weights, nclasses, mindocs)
+function _compute_entropy(voc, D, weights, nclasses, mindocs)
     maxent = log2(nclasses)
 
-    @inbounds for tokenID in eachindex(V.occs)
-        if V.ndocs[tokenID] < mindocs
-            V.weight[tokenID] = 0.0
+    @inbounds for tokenID in eachindex(voc)
+        if voc.ndocs[tokenID] < mindocs
+            voc.weight[tokenID] = 0.0
         else
             dist = @view D[:, tokenID]
             dist .= dist .* weights
             e = 1.0 - entropy(dist) / maxent
-            V.weight[tokenID] = e
+            voc.weight[tokenID] = e
         end
     end
 end
 
-global_weighting(m::VectorModel{EntropyWeighting}, tokenID) = @inbounds m.voc.weight[tokenID]
+@inline global_weighting(model::VectorModel{EntropyWeighting}, tokenID) = weight(model, tokenID)
