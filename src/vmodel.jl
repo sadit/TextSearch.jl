@@ -112,7 +112,7 @@ end
 @inline ndocs(model::VectorModel, tokenID::Integer) = ndocs(model.voc, tokenID)
 @inline weight(model::VectorModel, tokenID::Integer) = weight(model.voc, tokenID)
 @inline token(model::VectorModel, tokenID::Integer) = token(model.voc, tokenID)
-@inline Base.eachindex(model) = eachindex(model.voc)
+@inline Base.eachindex(model::VectorModel) = eachindex(model.voc)
 
 """
     VectorModel(global_weighting::GlobalWeighting, local_weighting::LocalWeighting, voc::Vocabulary; mindocs=1)
