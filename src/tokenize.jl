@@ -20,10 +20,6 @@ end
 
 const EXTRA_PUNCT = Set(['~', '+', '^', '$', '|', '<', '>'])
 
-function Tokenizer(config::TextConfig)
-    Tokenizer(config)
-end
-
 function Base.show(io::IO, tok::Tokenizer) 
     print(io, "{Tokenizer config=", tok.config, "\n}")
 end
