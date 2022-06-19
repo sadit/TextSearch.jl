@@ -57,18 +57,19 @@ function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, voc::Vocabulary,
 end
 
 function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, tok::Tokenizer, corpus::AbstractVector, labels;
-            bow=BOW(),
             mindocs=1,
             smooth::Float64=0.0,
             weights=:balance
         )
     nclasses = length(levels(labels))
-    voc = Vocabulary(tok, corpus)
+    corpus_tokens = tokenize_corpus(tok, corpus)
+    voc = Vocabulary(tok, corpus_tokens)
     D = fill(smooth, nclasses, length(voc))
-
-    for i in eachindex(corpus)
+    bow = BOW()
+    
+    for (i, tokens) in enumerate(corpus_tokens)
         empty!(bow)
-        vectorize(voc, tok, corpus[i]; bow)
+        vectorize(voc, tokens, bow)
         
         code = levelcode(labels[i])
         for (tokenID, _) in bow

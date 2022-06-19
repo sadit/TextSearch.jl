@@ -34,20 +34,37 @@ end
 Computes a vocabulary from a corpus using the tokenizer `tok`
 """
 function Vocabulary(tok::Tokenizer, corpus)
-    voc = Vocabulary(length(corpus))
+    n = length(corpus)
+    voc = Vocabulary(n)
+    l = Threads.SpinLock()
+    minbatch = getminbatch(0, n)
 
-    for doc in corpus
-        if doc isa AbstractString
-            for token in tokenize(tok, doc)
+    function locked_tokenize_and_push(voc, doc, buff, l)
+        empty!(buff)
+
+        for token in tokenize(tok, doc, buff)
+            lock(l)
+            try
                 push!(voc, token, 1, 1, 0f0)
+            finally
+                unlock(l)
             end
-        else
-            for text in doc
-                for token in tokenize(tok, text)
-                    push!(voc, token, 1, 1, 0f0)
+        end
+    end
+
+    @batch minbatch=minbatch per=thread for i in 1:n
+        doc = corpus[i]
+        buff = take!(CACHES)
+        try
+            if doc isa AbstractString
+                locked_tokenize_and_push(voc, doc, buff, l)
+            else
+                for text in doc
+                    locked_tokenize_and_push(voc, text, buff, l)
                 end
-    
             end
+        finally
+            put!(CACHES, buff)
         end
     end
 

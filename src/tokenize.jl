@@ -16,43 +16,19 @@ Note: non-thread safe, make a copy of this structure for each thread.
 """
 struct Tokenizer
     config::TextConfig
-    normtext::Vector{Char}
-    tokens::Vector{String}
-    unigrams::Vector{String}
-    io::IOBuffer
 end
 
 const EXTRA_PUNCT = Set(['~', '+', '^', '$', '|', '<', '>'])
 
-function Tokenizer(
-        config::TextConfig;
-        n=128
-    )
-    normtext = Vector{Char}(undef, n)
-    tokens = Vector{UInt64}(undef, n)
-    unigrams = Vector{String}(undef, n)
-    resize!(normtext, 0)
-    resize!(tokens, 0)
-    resize!(unigrams, 0)
-
-    Tokenizer(config, normtext, tokens, unigrams, IOBuffer())
-end
-
-function Tokenizer(tok::Tokenizer; n=128)
-    Tokenizer(tok.config, n=n)
+function Tokenizer(config::TextConfig)
+    Tokenizer(config)
 end
 
 function Base.show(io::IO, tok::Tokenizer) 
-    print(io, "{Tokenizer config=$(tok.config)\n}")
+    print(io, "{Tokenizer config=", tok.config, "\n}")
 end
 
 Base.broadcastable(m::Tokenizer) = (m,)
-
-function Base.empty!(tok::Tokenizer)
-    empty!(tok.normtext)
-    empty!(tok.tokens)
-    empty!(tok.unigrams)
-end
 
 """
     tokenize_corpus(tok::Tokenizer, arr)
@@ -60,56 +36,79 @@ end
 Tokenize a list of texts.
 """
 function tokenize_corpus(tok::Tokenizer, arr)
-    [copy(tokenize(tok, text)) for text in arr]
+    n = length(arr)
+    minbatch = getminbatch(0, n)
+    L = Vector{Vector{String}}(undef, n)
+    if minbatch < 0
+        buff = take!(CACHES)
+        empty!(buff)
+        try
+            for i in eachindex(arr)
+                L[i] = copy(tokenize(tok, arr[i], buff))
+            end
+        finally
+            put!(CACHES, buff)
+        end
+    else
+        @batch minbatch=minbatch per=thread for i in 1:n
+            buff = take!(CACHES)
+            empty!(buff)
+            try
+                L[i] = copy(tokenize(tok, arr[i]))
+            finally
+                put!(CACHES, buff)
+            end
+        end
+    end
+
+    L
 end
 
 """
-    tokenize(tok::Tokenizer, text::AbstractString)
+    tokenize(tok::Tokenizer, text::AbstractString, buff=TextSearchBuffer())
 
 Tokenizes `text` using the given configuration
 """
-function tokenize(tok::Tokenizer, text::AbstractString)
-    empty!(tok)
-    normalize_text(tok.config, text, tok.normtext)
-    tokenize_(tok)
+function tokenize(tok::Tokenizer, text::AbstractString, buff=TextSearchBuffer())
+    normalize_text(tok.config, text, buff.normtext)
+    tokenize_(tok.config, buff)
 end
 
-function tokenize_(tok::Tokenizer)
-    config = tok.config
+function tokenize_(config::TextConfig, buff::TextSearchBuffer)
     for q in config.qlist
-        qgrams(tok, q)
+        qgrams(q, buff)
     end
     
     if length(config.nlist) > 0 || length(config.slist) > 0
-        n1 = length(tok.tokens)
-        unigrams(tok)  # unigrams are always activated if any |nlist| > 0 or |slist| > 0
+        n1 = length(buff.tokens)
+        unigrams(buff)  # unigrams are always activated if any |nlist| > 0 or |slist| > 0
 
         if length(config.nlist) == 0 || config.nlist[1] != 1 # always sorted
-            resize!(tok.tokens, n1)
+            resize!(buff.tokens, n1)
         end
 
         for q in config.nlist 
-            q != 1 && nwords(tok, q)
+            q != 1 && nwords(q, buff)
         end
 
         for q in config.slist
-            skipgrams(tok, q)
+            skipgrams(q, buff)
         end
     end
 
-    tok.tokens
+    buff.tokens
 end
 
 """
-    flush_token!(tok::Tokenizer)
+    flush_token!(buff::TextSearchBuffer)
 
-Pushes the word inside buffer into token list; it discards empty strings.
+Pushes the word inside the buffer to the token list; it discards empty strings.
 """
-function flush_token!(tok::Tokenizer)
-    io = tok.io
+function flush_token!(buff::TextSearchBuffer)
+    io = buff.io
     if io.size > 0
         s = String(take!(io))
-        push!(tok.tokens, s)
+        push!(buff.tokens, s)
         s
     else
         nothing
@@ -117,127 +116,127 @@ function flush_token!(tok::Tokenizer)
 end
 
 """
-    qgrams(tok::Tokenizer, q::Integer)
+    qgrams(q::Integer, buff::TextSearchBuffer)
 
 Computes character q-grams for the given input
 """
-function qgrams(tok::Tokenizer, q::Integer)
-    n = length(tok.normtext)
+function qgrams(q::Integer, buff::TextSearchBuffer)
+    n = length(buff.normtext)
 
     for i in 1:(n - q + 1)
-        write(tok.io, '\t', 'q')
+        write(buff.io, '\t', 'q')
         for j in i:i+q-1
-            @inbounds write(tok.io, tok.normtext[j])
+            @inbounds write(buff.io, buff.normtext[j])
         end
-        flush_token!(tok)
+        flush_token!(buff)
     end
 
-    tok.tokens
+    buff.tokens
 end
 
 ispunct2(c) = ispunct(c) || c in EXTRA_PUNCT
 
 """
-    unigrams(tok::Tokenizer)
+    unigrams(buff::TextSearchBuffer)
 
 Performs the word tokenization
 """
-function unigrams(tok::Tokenizer)
-    n = length(tok.normtext)
-    # @info tok.normtext
+function unigrams(buff::TextSearchBuffer)
+    n = length(buff.normtext)
+    # @info buff.normtext
     @inbounds for i in 2:n  # normtext[1] is BLANK
-        c = tok.normtext[i]
-        p = tok.normtext[i-1]
+        c = buff.normtext[i]
+        p = buff.normtext[i-1]
 
         ## @show i, p, c
         if ispunct2(c) && !ispunct2(p) && p !== BLANK
             ## @show :a
-            s = flush_token!(tok)
-            s !== nothing && push!(tok.unigrams, s)
-            write(tok.io, c)
+            s = flush_token!(buff)
+            s !== nothing && push!(buff.unigrams, s)
+            write(buff.io, c)
         elseif ispunct2(p)
-            if ispunct2(c) && tok.io.size > 2
-                s = flush_token!(tok)
-                s !== nothing && push!(tok.unigrams, s)
-                write(tok.io, c)
+            if ispunct2(c) && buff.io.size > 2
+                s = flush_token!(buff)
+                s !== nothing && push!(buff.unigrams, s)
+                write(buff.io, c)
             elseif !ispunct2(c) && !(p in ('#', '@', '_'))
                 ## @show :b
-                s = flush_token!(tok)
-                s !== nothing && push!(tok.unigrams, s)
-                c !== BLANK && write(tok.io, c)
+                s = flush_token!(buff)
+                s !== nothing && push!(buff.unigrams, s)
+                c !== BLANK && write(buff.io, c)
             else
-                write(tok.io, c)
+                write(buff.io, c)
             end
         elseif isemoji(c)
-            s = flush_token!(tok)
-            s !== nothing && push!(tok.unigrams, s)
-            write(tok.io, c)
-            s = flush_token!(tok)
-            s !== nothing && push!(tok.unigrams, s)
+            s = flush_token!(buff)
+            s !== nothing && push!(buff.unigrams, s)
+            write(buff.io, c)
+            s = flush_token!(buff)
+            s !== nothing && push!(buff.unigrams, s)
         elseif c == BLANK
             if p !== BLANK
-                s = flush_token!(tok)
-                #write(tok.io, c)
-                s !== nothing && push!(tok.unigrams, s)
+                s = flush_token!(buff)
+                #write(buff.io, c)
+                s !== nothing && push!(buff.unigrams, s)
             end
         else
             ## @show :d
-            write(tok.io, c)
+            write(buff.io, c)
         end
     end
 
-    s = flush_token!(tok)
-    s !== nothing && push!(tok.unigrams, s)
-    tok.tokens
+    s = flush_token!(buff)
+    s !== nothing && push!(buff.unigrams, s)
+    buff.tokens
 end
 
 """
-    nwords(tok::Tokenizer, q::Integer)
+    nwords(q::Integer, buff::TextSearchBuffer)
 """
-function nwords(tok::Tokenizer, q::Integer)
-    n = length(tok.unigrams)
+function nwords(q::Integer, buff::TextSearchBuffer)
+    n = length(buff.unigrams)
 
     @inbounds for i in 1:(n - q + 1)
         _last = i + q - 1
-        write(tok.io, '\t', 'n')
+        write(buff.io, '\t', 'n')
         for j in i:_last-1
-            write(tok.io, tok.unigrams[j])
-            write(tok.io, BLANK)
+            write(buff.io, buff.unigrams[j])
+            write(buff.io, BLANK)
         end
 
-        write(tok.io, tok.unigrams[_last])
-        flush_token!(tok)
+        write(buff.io, buff.unigrams[_last])
+        flush_token!(buff)
     end
 
-    tok.tokens
+    buff.tokens
 end
 
 """
-    skipgrams(tok::Tokenizer, q::Skipgram)
+    skipgrams(q::Skipgram, buff::TextSearchBuffer)
 
 Tokenizes using skipgrams
 """
-function skipgrams(tok::Tokenizer, q::Skipgram)
-    n = length(tok.unigrams)
+function skipgrams(q::Skipgram, buff::TextSearchBuffer)
+    n = length(buff.unigrams)
 
     for start in 1:(n - (q.qsize + (q.qsize - 1) * q.skip) + 1)
-        write(tok.io, '\t', 's')
+        write(buff.io, '\t', 's')
         if q.qsize == 2
-            write(tok.io, tok.unigrams[start])
-            write(tok.io, BLANK)
-            write(tok.io, tok.unigrams[start + 1 + q.skip])
+            write(buff.io, buff.unigrams[start])
+            write(buff.io, BLANK)
+            write(buff.io, buff.unigrams[start + 1 + q.skip])
         else
             ep = q.qsize - 2
             for i in 0:ep
-                write(tok.io, tok.unigrams[start + i * (1+q.skip)])
-                write(tok.io, BLANK)
+                write(buff.io, buff.unigrams[start + i * (1+q.skip)])
+                write(buff.io, BLANK)
             end
             ep += 1
-            write(tok.io, tok.unigrams[start + ep * (1+q.skip)])
+            write(buff.io, buff.unigrams[start + ep * (1+q.skip)])
         end
 
-        flush_token!(tok)
+        flush_token!(buff)
     end
 
-    tok.tokens
+    buff.tokens
 end

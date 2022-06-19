@@ -204,16 +204,34 @@ function vectorize(model::VectorModel{_G,_L}, bow::BOW; normalize=true, mindocs=
     vec
 end
 
-function vectorize(model::VectorModel, tok::Tokenizer, text; bow=BOW(), normalize=true, mindocs=model.mindocs, minweight=1e-9)
-    vectorize(model, vectorize(model.voc, tok, text; bow); normalize, mindocs, minweight)
+function vectorize(model::VectorModel, tok::Tokenizer, text, buff::TextSearchBuffer; normalize=true, mindocs=model.mindocs, minweight=1e-9)
+    empty!(buff)
+    bow = vectorize(model.voc, tok, text, buff)
+    vectorize(model, bow; normalize, mindocs, minweight)
 end
 
-function vectorize_corpus(model::VectorModel, tok::Tokenizer, corpus; bow=BOW(), normalize=true)
-    V = Vector{SVEC}(undef, length(corpus))
+function vectorize(model::VectorModel, tok::Tokenizer, text; normalize=true, mindocs=model.mindocs, minweight=1e-9)
+    buff = take!(CACHES)
+    try
+        copy(vectorize(model, tok, text, buff; normalize, mindocs, minweight))
+    finally
+        put!(CACHES, buff)
+    end
+end
 
-    for (i, text) in enumerate(corpus)
-        empty!(bow)
-        V[i] = vectorize(model, tok, text; bow, normalize)
+function vectorize_corpus(model::VectorModel, tok::Tokenizer, corpus; normalize=true)
+    n = length(corpus)
+    V = Vector{SVEC}(undef, n)
+    minbatch = getminbatch(0, n)
+
+    @batch minbatch=minbatch per=thread for i in 1:n
+        text = corpus[i]
+        buff = take!(CACHES)
+        try
+            V[i] = copy(vectorize(model, tok, text, buff; normalize))
+        catch
+            put!(CACHES, buff)
+        end
     end
 
     V

@@ -73,7 +73,8 @@ end
     A = Vocabulary(tok, ["hello ;)", "#jello world."])
     B = Vocabulary(tok, [["hello ;)", "#jello world."]])
     @test A.occs == B.occs
-    @test A.token == B.token
+    @test sort(A.token) == sort(B.token)
+    @info A.corpuslen, B.corpuslen
     @test A.corpuslen == 2 && B.corpuslen == 1
 end
 
