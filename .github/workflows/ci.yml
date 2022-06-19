@@ -69,7 +69,8 @@ jobs:
             using Documenter: doctest
             using TextSearch
             doctest(TextSearch)'
-        env: JULIA_NUM_THREADS=auto
+        env:
+          JULIA_NUM_THREADS: auto
       - run: julia --project=docs docs/make.jl
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
