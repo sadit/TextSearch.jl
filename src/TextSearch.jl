@@ -48,6 +48,15 @@ function __init__()
     end
 end
 
+@inline function textbuffer(f)
+    buff = take!(CACHES)
+    try
+        f(buff)
+    finally
+        put!(CACHES, buff)
+    end
+end
+
 include("textconfig.jl")
 include("normalize.jl")
 include("tokenize.jl")

@@ -4,8 +4,6 @@ export tokenize, tokenize_corpus, qgrams, unigrams, encode, decode
 
 const EXTRA_PUNCT = Set(['~', '+', '^', '$', '|', '<', '>'])
 
-Base.broadcastable(m::TextConfig) = (m,)
-
 """
     tokenize_corpus(textconfig::TextConfig, arr; minbatch=0)
 
@@ -16,7 +14,8 @@ function tokenize_corpus(textconfig::TextConfig, arr; minbatch=0)
     L = Vector{Vector{String}}(undef, n)
     minbatch = getminbatch(minbatch, n)
     
-    @batch minbatch=minbatch per=thread for i in 1:n
+    # @batch minbatch=minbatch per=thread
+    Threads.@threads for i in 1:n
         buff = take!(CACHES)
         empty!(buff)
         try

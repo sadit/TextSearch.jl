@@ -73,7 +73,8 @@ function vectorize_corpus(voc::Vocabulary, textconfig::TextConfig, corpus::Abstr
     X = Vector{BOW}(undef, n)
     minbatch = getminbatch(minbatch, n)
 
-    @batch minbatch=minbatch per=thread for i in 1:n
+    #@batch minbatch=minbatch per=thread 
+    Threads.@threads for i in 1:n
         X[i] = vectorize(voc, textconfig, corpus[i])
     end
 
