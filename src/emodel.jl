@@ -56,14 +56,15 @@ function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, voc::Vocabulary,
     VectorModel(ent, lw, voc; mindocs)
 end
 
-function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, tok::Tokenizer, corpus::AbstractVector, labels;
+function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, textconfig::TextConfig, corpus::AbstractVector, labels;
             mindocs=1,
             smooth::Float64=0.0,
-            weights=:balance
+            weights=:balance,
+            minbatch=0
         )
     nclasses = length(levels(labels))
-    corpus_tokens = tokenize_corpus(tok, corpus)
-    voc = Vocabulary(tok, corpus_tokens)
+    corpus_tokens = tokenize_corpus(textconfig, corpus; minbatch)
+    voc = Vocabulary(textconfig, corpus_tokens)
     D = fill(smooth, nclasses, length(voc))
     bow = BOW()
     

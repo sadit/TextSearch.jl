@@ -1,59 +1,29 @@
 # This file is a part of TextSearch.jl
 
-export Tokenizer, tokenize, tokenize_corpus, qgrams, unigrams, encode, decode
-
-"""
-    struct Tokenizer
-
-A tokenizer converts a text into a set of tokens, and in particular, each token
-in this implementation is represented as the hash code of the corresponding string token.
-This methods also normalize and preprocess the text following instructions in the given `TextConfig` object.
-The structure has several fields:
-- the text config object
-- the rest of the fields are used as buffers (multithreaded applications need independent copies of tokenizers)
-
-Note: non-thread safe, make a copy of this structure for each thread.
-"""
-struct Tokenizer
-    config::TextConfig
-end
+export tokenize, tokenize_corpus, qgrams, unigrams, encode, decode
 
 const EXTRA_PUNCT = Set(['~', '+', '^', '$', '|', '<', '>'])
 
-function Base.show(io::IO, tok::Tokenizer) 
-    print(io, "{Tokenizer config=", tok.config, "\n}")
-end
-
-Base.broadcastable(m::Tokenizer) = (m,)
+Base.broadcastable(m::TextConfig) = (m,)
 
 """
-    tokenize_corpus(tok::Tokenizer, arr)
+    tokenize_corpus(textconfig::TextConfig, arr; minbatch=0)
 
 Tokenize a list of texts.
 """
-function tokenize_corpus(tok::Tokenizer, arr)
+function tokenize_corpus(textconfig::TextConfig, arr; minbatch=0)
     n = length(arr)
-    minbatch = getminbatch(0, n)
     L = Vector{Vector{String}}(undef, n)
-    if minbatch < 0
+    minbatch = getminbatch(minbatch, n)
+    
+    # @batch minbatch=minbatch per=thread
+    for i in 1:n
         buff = take!(CACHES)
         empty!(buff)
         try
-            for i in eachindex(arr)
-                L[i] = copy(tokenize(tok, arr[i], buff))
-            end
+            L[i] = copy(tokenize(textconfig, arr[i]))
         finally
             put!(CACHES, buff)
-        end
-    else
-        @batch minbatch=minbatch per=thread for i in 1:n
-            buff = take!(CACHES)
-            empty!(buff)
-            try
-                L[i] = copy(tokenize(tok, arr[i]))
-            finally
-                put!(CACHES, buff)
-            end
         end
     end
 
@@ -61,13 +31,13 @@ function tokenize_corpus(tok::Tokenizer, arr)
 end
 
 """
-    tokenize(tok::Tokenizer, text::AbstractString, buff=TextSearchBuffer())
+    tokenize(textconfig::TextConfig, text::AbstractString, buff=TextSearchBuffer())
 
 Tokenizes `text` using the given configuration
 """
-function tokenize(tok::Tokenizer, text::AbstractString, buff=TextSearchBuffer())
-    normalize_text(tok.config, text, buff.normtext)
-    tokenize_(tok.config, buff)
+function tokenize(textconfig::TextConfig, text::AbstractString, buff=TextSearchBuffer())
+    normalize_text(textconfig, text, buff.normtext)
+    tokenize_(textconfig, buff)
 end
 
 function tokenize_(config::TextConfig, buff::TextSearchBuffer)

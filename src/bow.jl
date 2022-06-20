@@ -4,7 +4,7 @@ export vectorize_corpus, vectorize, bow
 
 """
     vectorize(voc::Vocabulary, tokenlist::AbstractVector, buff=BOW())
-    vectorize(voc::Vocabulary, tok::Tokenizer, text::AbstractString, buff=BOW())
+    vectorize(voc::Vocabulary, textconfig::TextConfig, text::AbstractString, buff=BOW())
 
 Creates a bag of words from the given text (a string or a list of strings).
 If bow is given then updates the bag with the text.
@@ -22,58 +22,59 @@ function vectorize(voc::Vocabulary, tokenlist::AbstractVector, bow=BOW())
     bow
 end
 
-function vectorize(voc::Vocabulary, tok::Tokenizer, text::AbstractString, buff)
-    tokens = tokenize(tok, text)
-    vectorize(voc, tokens, buff.bow)
+function vectorize(voc::Vocabulary, textconfig::TextConfig, text::AbstractString, buff)
+    tokens = tokenize(textconfig, text, buff)
+    v = vectorize(voc, tokens, buff.bow)
+    v
 end
 
-function vectorize(voc::Vocabulary, tok::Tokenizer, text::AbstractString)
+function vectorize(voc::Vocabulary, textconfig::TextConfig, text::AbstractString)
     buff = take!(CACHES)
     empty!(buff)
     try
-        copy(vectorize(voc, tok, text, buff))
+        copy(vectorize(voc, textconfig, text, buff))
     finally
         put!(CACHES, buff)
     end
 end
 
 """
-    vectorize(voc::Vocabulary, tok::Tokenizer, messages::AbstractVector)
+    vectorize(voc::Vocabulary, textconfig::TextConfig, messages::AbstractVector)
 
 Computes a bag of words from messages
 """
-function vectorize(voc::Vocabulary, tok::Tokenizer, messages::AbstractVector, buff)
+function vectorize(voc::Vocabulary, textconfig::TextConfig, messages::AbstractVector, buff)
     empty!(buff.bow)
     for text in messages
         empty!(buff.normtext); empty!(buff.tokens); empty!(buff.unigrams); 
-        tokens = tokenize(tok, text)
+        tokens = tokenize(textconfig, text)
         vectorize(voc, tokens, buff.bow)
     end
 
     buff.bow
 end
 
-function vectorize(voc::Vocabulary, tok::Tokenizer, messages::AbstractVector)
+function vectorize(voc::Vocabulary, textconfig::TextConfig, messages::AbstractVector)
     buff = take!(CACHES)
     try
-        copy(vectorize(voc, tok, messages, buff))
+        copy(vectorize(voc, textconfig, messages, buff))
     finally
         put!(CACHES, buff)
     end
 end
 
 """
-    vectorize_corpus(tok::Tokenizer, tok::Tokenizer, corpus::AbstractVector)
+    vectorize_corpus(textconfig::TextConfig, textconfig::TextConfig, corpus::AbstractVector; minbatch=0)
 
 Computes a list of bag of words from a corpus
 """
-function vectorize_corpus(voc::Vocabulary, tok::Tokenizer, corpus::AbstractVector)
+function vectorize_corpus(voc::Vocabulary, textconfig::TextConfig, corpus::AbstractVector; minbatch=0)
     n = length(corpus)
     X = Vector{BOW}(undef, n)
-    minbatch = getminbatch(0, n)
+    minbatch = getminbatch(minbatch, n)
 
     @batch minbatch=minbatch per=thread for i in 1:n
-        X[i] = vectorize(voc, tok, corpus[i])
+        X[i] = vectorize(voc, textconfig, corpus[i])
     end
 
     X

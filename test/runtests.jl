@@ -50,26 +50,26 @@ const corpus = ["hello world :)", "@user;) excellent!!", "#jello world."]
 end
 
 @testset "individual tokenizers" begin
-    m = Tokenizer(TextConfig(nlist=[1]))
+    m = TextConfig(nlist=[1])
     @test tokenize(m, text0) == ["@user", ";)", "#jello", ".", "world"]
 
-    m = Tokenizer(TextConfig(nlist=[2]))
+    m = TextConfig(nlist=[2])
     @test tokenize(m, text0) == ["\tn@user ;)", "\tn;) #jello", "\tn#jello .", "\tn. world"]
 
-    m = Tokenizer(TextConfig(nlist=[3]))
+    m = TextConfig(nlist=[3])
     @test tokenize(m, text0) == ["\tn@user ;) #jello", "\tn;) #jello .", "\tn#jello . world"]
 
-    m = Tokenizer(TextConfig(qlist=[3]))
+    m = TextConfig(qlist=[3])
     @test tokenize(m, text0) == map(p -> "\tq" * p, [" @u", "@us", "use", "ser", "er;", "r;)", ";) ", ") #", " #j", "#je", "jel", "ell", "llo", "lo.", "o.w", ".wo", "wor", "orl", "rld", "ld "])
-    m = Tokenizer(TextConfig(nlist=[1]))
+    m = TextConfig(nlist=[1])
     @test tokenize(m, text1) == ["hello", "world", "!!", "@user", ";)", "#jello", ".", "world", ":)"]
 
-    m = Tokenizer(TextConfig(slist=[Skipgram(2,1)]))
+    m = TextConfig(slist=[Skipgram(2,1)])
     @test tokenize(m, text1) == map(p -> "\ts" * p, ["hello !!", "world @user", "!! ;)", "@user #jello", ";) .", "#jello world", ". :)"])
 end
 
 @testset "vocabulary of different kinds of docs" begin
-    tok = Tokenizer(TextConfig(nlist=[1]))
+    tok = TextConfig(nlist=[1])
     A = Vocabulary(tok, ["hello ;)", "#jello world."])
     B = Vocabulary(tok, [["hello ;)", "#jello world."]])
     @test A.occs == B.occs
@@ -79,42 +79,42 @@ end
 end
 
 @testset "Normalize and tokenize" begin
-    tok = Tokenizer(TextConfig(del_punc=true, group_usr=true, nlist=[1, 2, 3]))
+    tok = TextConfig(del_punc=true, group_usr=true, nlist=[1, 2, 3])
     @test tokenize(tok, text1) == ["hello", "world", "_usr", "#jello", "world", "\tnhello world", "\tnworld _usr", "\tn_usr #jello", "\tn#jello world", "\tnhello world _usr", "\tnworld _usr #jello", "\tn_usr #jello world"]
 end
 
 @testset "Normalize and tokenize bigrams and trigrams" begin
-    tok = Tokenizer(TextConfig(del_punc=true, group_usr=true, nlist=[2, 3]))
+    tok = TextConfig(del_punc=true, group_usr=true, nlist=[2, 3])
     @test tokenize(tok, text1) == ["\tnhello world", "\tnworld _usr", "\tn_usr #jello", "\tn#jello world", "\tnhello world _usr", "\tnworld _usr #jello", "\tn_usr #jello world"]
 end
 
 @testset "Normalize and tokenize" begin
-    tok = Tokenizer(TextConfig(del_punc=false, group_usr=true, nlist=[1]))
+    tok = TextConfig(del_punc=false, group_usr=true, nlist=[1])
     text3 = "a ab __b @@c ..!d ''e \"!\"f +10 -20 30 40.00 .50 6.0 7.. ======= !()[]{}"
     @test tokenize(tok, text3) == ["a", "ab", "__b", "@_usr", "..!", "d", "''", "e", "\"!\"", "f", "0", "0", "0", "0", "0", "0", "0", ".", "=======", "!()", "[]{", "}"]
 end
 
 @testset "Tokenize skipgrams" begin
-    tok = Tokenizer(TextConfig(del_punc=false, group_usr=false, slist=[Skipgram(3,1)]))
+    tok = TextConfig(del_punc=false, group_usr=false, slist=[Skipgram(3,1)])
     tokens = tokenize(tok, text1)
     @show text1 tokens
     @test tokens == ["\tshello !! ;)", "\tsworld @user #jello", "\ts!! ;) .", "\ts@user #jello world", "\ts;) . :)"]
 
-    config = Tokenizer(TextConfig(del_punc=false, group_usr=false, nlist=[], slist=[Skipgram(3,1), Skipgram(2, 1)]))
+    config = TextConfig(del_punc=false, group_usr=false, nlist=[], slist=[Skipgram(3,1), Skipgram(2, 1)])
     tokens = tokenize(config, text1)
     @show text1 tokens
     @test tokens == ["\tshello !!", "\tsworld @user", "\ts!! ;)", "\ts@user #jello", "\ts;) .", "\ts#jello world", "\ts. :)", "\tshello !! ;)", "\tsworld @user #jello", "\ts!! ;) .", "\ts@user #jello world", "\ts;) . :)"]
 end
 
 @testset "Vocabulary and BOW" begin
-    tok = Tokenizer(TextConfig(nlist=[1]))
+    tok = TextConfig(nlist=[1])
     C = tokenize_corpus(tok, corpus)
     voc = Vocabulary(C)
     @test vectorize_corpus(voc, tok, C) == Dict{UInt32, Int32}[Dict(0x00000002 => 1, 0x00000003 => 1, 0x00000001 => 1), Dict(0x00000005 => 1, 0x00000004 => 1, 0x00000006 => 1, 0x00000007 => 1), Dict(0x00000002 => 1, 0x00000009 => 1, 0x00000008 => 1)]
 end
 
 @testset "Tokenizer, DVEC, and vectorize" begin
-    tok = Tokenizer(TextConfig(group_usr=true, nlist=[1]))
+    tok = TextConfig(group_usr=true, nlist=[1])
     voc = Vocabulary(tok, corpus)
     model = VectorModel(BinaryGlobalWeighting(), FreqWeighting(), voc)
     x = vectorize(model, tok, text1)
@@ -127,7 +127,7 @@ end
 end
 
 @testset "tokenize list of strings as a single message" begin
-    tok = Tokenizer(TextConfig(nlist=[1]))
+    tok = TextConfig(nlist=[1])
     model = VectorModel(BinaryGlobalWeighting(), FreqWeighting(), tok, corpus)
     @test vectorize(model, tok, ["hello ;)", "#jello world."]) == vectorize(model, tok, "hello ;) #jello world.")
 end
@@ -142,7 +142,7 @@ const sentiment_labels = categorical(["pos", "pos", "neg", "neg", "pos"])
 const sentiment_msg = "lol, esto me encanta"
 
 @testset "Tokenizer, DVEC, and vectorize" begin
-    tok = Tokenizer(TextConfig(group_usr=true, nlist=[1]))
+    tok = TextConfig(group_usr=true, nlist=[1])
     voc = Vocabulary(tok, sentiment_corpus)
     corpus_bows = vectorize_corpus(voc, tok, corpus)
     model = VectorModel(EntropyWeighting(), BinaryLocalWeighting(), voc, corpus_bows, sentiment_labels)
@@ -153,7 +153,7 @@ const sentiment_msg = "lol, esto me encanta"
 end
 
 @testset "Weighting schemes" begin
-    tok = Tokenizer(TextConfig(group_usr=true, nlist=[1]))
+    tok = TextConfig(group_usr=true, nlist=[1])
     for (gw, lw, dot_) in [
             (BinaryGlobalWeighting(), FreqWeighting(), 0.3162),
             (BinaryGlobalWeighting(), TfWeighting(), 0.3162),
@@ -248,7 +248,7 @@ function are_posting_lists_sorted(invindex)
 end
 
 @testset "invindex" begin
-    tok = Tokenizer(TextConfig(nlist=[1]))
+    tok = TextConfig(nlist=[1])
     model = VectorModel(IdfWeighting(), TfWeighting(), tok, _corpus)
     db = vectorize_corpus(model, tok, _corpus)
     invindex = WeightedInvertedFile(length(model.voc))
@@ -261,7 +261,7 @@ end
 end
 
 @testset "centroid computing" begin
-    tok = Tokenizer(TextConfig(nlist=[1]))
+    tok = TextConfig(nlist=[1])
     model = VectorModel(BinaryGlobalWeighting(), FreqWeighting(), tok, _corpus)
     X = vectorize_corpus(model, tok, _corpus)
     vec = sum(X) |> normalize!

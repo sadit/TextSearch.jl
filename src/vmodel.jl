@@ -126,8 +126,8 @@ function VectorModel(global_weighting::GlobalWeighting, local_weighting::LocalWe
     VectorModel(global_weighting, local_weighting, voc, maxocc, mindocs)
 end
 
-function VectorModel(global_weighting::GlobalWeighting, local_weighting::LocalWeighting, tok::Tokenizer, corpus::AbstractVector; mindocs=1)
-    voc = Vocabulary(tok, corpus)
+function VectorModel(global_weighting::GlobalWeighting, local_weighting::LocalWeighting, textconfig::TextConfig, corpus::AbstractVector; mindocs=1, minbatch=0)
+    voc = Vocabulary(textconfig, corpus; minbatch)
     maxocc = convert(Int32, maximum(voc.occs))
     mindocs = convert(Int32, mindocs)
     VectorModel(global_weighting, local_weighting, voc, maxocc, mindocs)
@@ -204,32 +204,33 @@ function vectorize(model::VectorModel{_G,_L}, bow::BOW; normalize=true, mindocs=
     vec
 end
 
-function vectorize(model::VectorModel, tok::Tokenizer, text, buff::TextSearchBuffer; normalize=true, mindocs=model.mindocs, minweight=1e-9)
+function vectorize(model::VectorModel, textconfig::TextConfig, text, buff::TextSearchBuffer; normalize=true, mindocs=model.mindocs, minweight=1e-9)
     empty!(buff)
-    bow = vectorize(model.voc, tok, text, buff)
+    bow = vectorize(model.voc, textconfig, text, buff)
     vectorize(model, bow; normalize, mindocs, minweight)
 end
 
-function vectorize(model::VectorModel, tok::Tokenizer, text; normalize=true, mindocs=model.mindocs, minweight=1e-9)
+function vectorize(model::VectorModel, textconfig::TextConfig, text; normalize=true, mindocs=model.mindocs, minweight=1e-9)
     buff = take!(CACHES)
     try
-        copy(vectorize(model, tok, text, buff; normalize, mindocs, minweight))
+        copy(vectorize(model, textconfig, text, buff; normalize, mindocs, minweight))
     finally
         put!(CACHES, buff)
     end
 end
 
-function vectorize_corpus(model::VectorModel, tok::Tokenizer, corpus; normalize=true)
+function vectorize_corpus(model::VectorModel, textconfig::TextConfig, corpus::AbstractVector; normalize=true, minbatch=0)
     n = length(corpus)
     V = Vector{SVEC}(undef, n)
-    minbatch = getminbatch(0, n)
+    minbatch = getminbatch(minbatch, n)
 
-    @batch minbatch=minbatch per=thread for i in 1:n
+    # @batch minbatch=minbatch per=thread
+     for i in 1:n
         text = corpus[i]
         buff = take!(CACHES)
         try
-            V[i] = copy(vectorize(model, tok, text, buff; normalize))
-        catch
+            V[i] = copy(vectorize(model, textconfig, text, buff; normalize))
+        finally
             put!(CACHES, buff)
         end
     end

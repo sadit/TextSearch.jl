@@ -28,39 +28,40 @@ function Vocabulary(n::Integer)
     voc
 end
 
-"""
-    Vocabulary(tok, corpus)
+function locked_tokenize_and_push(voc, textconfig, doc, buff, l)
+    empty!(buff)
 
-Computes a vocabulary from a corpus using the tokenizer `tok`
+    for token in tokenize(textconfig, doc, buff)
+        lock(l)
+        try
+            push!(voc, token, 1, 1, 0f0)
+        finally
+            unlock(l)
+        end
+    end
+end
+
 """
-function Vocabulary(tok::Tokenizer, corpus)
+    Vocabulary(textconfig, corpus; minbatch=0)
+
+Computes a vocabulary from a corpus using the TextConfig `textconfig`
+"""
+function Vocabulary(textconfig::TextConfig, corpus::AbstractVector; minbatch=0)
     n = length(corpus)
     voc = Vocabulary(n)
     l = Threads.SpinLock()
-    minbatch = getminbatch(0, n)
+    minbatch = getminbatch(minbatch, n)
 
-    function locked_tokenize_and_push(voc, doc, buff, l)
-        empty!(buff)
-
-        for token in tokenize(tok, doc, buff)
-            lock(l)
-            try
-                push!(voc, token, 1, 1, 0f0)
-            finally
-                unlock(l)
-            end
-        end
-    end
-
-    @batch minbatch=minbatch per=thread for i in 1:n
+    # @batch minbatch=minbatch per=thread
+    for i in 1:n
         doc = corpus[i]
         buff = take!(CACHES)
         try
             if doc isa AbstractString
-                locked_tokenize_and_push(voc, doc, buff, l)
+                locked_tokenize_and_push(voc, textconfig, doc, buff, l)
             else
                 for text in doc
-                    locked_tokenize_and_push(voc, text, buff, l)
+                    locked_tokenize_and_push(voc, textconfig, text, buff, l)
                 end
             end
         finally
