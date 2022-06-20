@@ -16,8 +16,7 @@ function tokenize_corpus(textconfig::TextConfig, arr; minbatch=0)
     L = Vector{Vector{String}}(undef, n)
     minbatch = getminbatch(minbatch, n)
     
-    # @batch minbatch=minbatch per=thread
-    for i in 1:n
+    @batch minbatch=minbatch per=thread for i in 1:n
         buff = take!(CACHES)
         empty!(buff)
         try

@@ -52,8 +52,7 @@ function Vocabulary(textconfig::TextConfig, corpus::AbstractVector; minbatch=0)
     l = Threads.SpinLock()
     minbatch = getminbatch(minbatch, n)
 
-    # @batch minbatch=minbatch per=thread
-    for i in 1:n
+    @batch minbatch=minbatch per=thread for i in 1:n
         doc = corpus[i]
         buff = take!(CACHES)
         try
