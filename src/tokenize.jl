@@ -19,7 +19,7 @@ function tokenize_corpus(textconfig::TextConfig, arr; minbatch=0)
         buff = take!(CACHES)
         empty!(buff)
         try
-            L[i] = copy(tokenize(textconfig, arr[i]))
+            L[i] = tokenize(textconfig, arr[i], buff, true)
         finally
             put!(CACHES, buff)
         end
@@ -29,13 +29,27 @@ function tokenize_corpus(textconfig::TextConfig, arr; minbatch=0)
 end
 
 """
-    tokenize(textconfig::TextConfig, text::AbstractString, buff=TextSearchBuffer())
+    tokenize(textconfig::TextConfig, text::AbstractString, buff=TextSearchBuffer(), makecopy=true)
 
 Tokenizes `text` using the given configuration
 """
-function tokenize(textconfig::TextConfig, text::AbstractString, buff=TextSearchBuffer())
+function tokenize(textconfig::TextConfig, text::AbstractString, buff=TextSearchBuffer(), makecopy=true)
     normalize_text(textconfig, text, buff.normtext)
+    t = tokenize_(textconfig, buff)
+    makecopy ? copy(t) : t
+end
+
+function tokenize(textconfig::TextConfig, arr::AbstractVector, buff=TextSearchBuffer(), makecopy=true)
+    normalize_text(textconfig, arr[1], buff.normtext)
     tokenize_(textconfig, buff)
+
+    for i in 2:length(arr)
+        empty!(buff.normtext); empty!(buff.unigrams)
+        normalize_text(textconfig, arr[i], buff.normtext)
+        tokenize_(textconfig, buff)
+    end
+
+    makecopy ? copy(buff.tokens) : buff.tokens
 end
 
 function tokenize_(config::TextConfig, buff::TextSearchBuffer)

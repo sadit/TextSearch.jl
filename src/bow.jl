@@ -23,7 +23,7 @@ function vectorize(voc::Vocabulary, tokenlist::AbstractVector, bow=BOW())
 end
 
 function vectorize(voc::Vocabulary, textconfig::TextConfig, text::AbstractString, buff)
-    tokens = tokenize(textconfig, text, buff)
+    tokens = tokenize(textconfig, text, buff, false)
     v = vectorize(voc, tokens, buff.bow)
     v
 end
@@ -46,8 +46,8 @@ Computes a bag of words from messages
 function vectorize(voc::Vocabulary, textconfig::TextConfig, messages::AbstractVector, buff)
     empty!(buff.bow)
     for text in messages
-        empty!(buff.normtext); empty!(buff.tokens); empty!(buff.unigrams); 
-        tokens = tokenize(textconfig, text)
+        empty!(buff.normtext); empty!(buff.tokens); empty!(buff.unigrams) 
+        tokens = tokenize(textconfig, text, buff)
         vectorize(voc, tokens, buff.bow)
     end
 

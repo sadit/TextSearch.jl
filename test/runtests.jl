@@ -66,6 +66,16 @@ end
 
     m = TextConfig(slist=[Skipgram(2,1)])
     @test tokenize(m, text1) == map(p -> "\ts" * p, ["hello !!", "world @user", "!! ;)", "@user #jello", ";) .", "#jello world", ". :)"])
+
+end
+
+@testset "message vectors" begin
+    m = TextConfig(nlist=[1, 2])
+    A = tokenize(m, "hello ;) #jello world.")
+    B = tokenize(m, ["hello ;)", "#jello world."])
+    push!(B, "\tn;) #jello")
+    @test sort(A) == sort(B)
+    # @show sort(A) sort(B)
 end
 
 @testset "vocabulary of different kinds of docs" begin
