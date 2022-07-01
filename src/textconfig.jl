@@ -1,9 +1,45 @@
 # This file is a part of TextSearch.jl
 
-export TextConfig, Skipgram
+export TextConfig, Skipgram, AbstractTokenTransformation
 
-# SKIP_WORDS = set(["…", "..", "...", "...."])
+abstract type AbstractTokenTransformation end
+struct IdentityTokenTransformation <: AbstractTokenTransformation end
 
+"""
+    transform_unigram(::AbstractTokenTransformation, tok)
+
+Hook applied in the tokenization stage to change the input token `tok` if needed.
+For instance, it can be used to apply stemming or any other kind of normalization.
+Return `nothing` to ignore the `tok` occurence (e.g., stop words).
+"""
+transform_unigram(::AbstractTokenTransformation, tok) = tok
+
+"""
+    transform_nword(::AbstractTokenTransformation, tok)
+
+Hook applied in the tokenization stage to change the input token `tok` if needed.
+For instance, it can be used to apply stemming or any other kind of normalization.
+Return `nothing` to ignore the `tok` occurence (e.g., stop words).
+"""
+transform_nword(::AbstractTokenTransformation, tok) = tok
+
+"""
+    transform_qgram(::AbstractTokenTransformation, tok)
+
+Hook applied in the tokenization stage to change the input token `tok` if needed.
+For instance, it can be used to apply stemming or any other kind of normalization.
+Return `nothing` to ignore the `tok` occurence (e.g., stop words).
+"""
+transform_qgram(::AbstractTokenTransformation, tok) = tok
+
+"""
+    transform_skipgram(::AbstractTokenTransformation, tok)
+
+Hook applied in the tokenization stage to change the input token `tok` if needed.
+For instance, it can be used to apply stemming or any other kind of normalization.
+Return `nothing` to ignore the `tok` occurence (e.g., stop words).
+"""
+transform_skipgram(::AbstractTokenTransformation, tok) = tok
 
 """
     Skipgram(qsize, skip)
@@ -30,7 +66,8 @@ Base.isequal(a::Skipgram, b::Skipgram) = a.qsize == b.qsize && a.skip == b.skip
         lc::Bool=true,
         qlist::Vector=Int8[],
         nlist::Vector=Int8[],
-        slist::Vector{Skipgram}=Skipgram[]
+        slist::Vector{Skipgram}=Skipgram[],
+        tt=IdentityTokenTransformation()
     )
 
 Defines a preprocessing and tokenization pipeline
@@ -46,6 +83,7 @@ Defines a preprocessing and tokenization pipeline
 - `qlist`: a list of character q-grams to use
 - `nlist`: a list of words n-grams to use
 - `slist`: a list of skip-grams tokenizers to use
+- `tt`: An `AbstractTokenTransformation` struct
 
 Note: If qlist, nlist, and slists are all empty arrays, then it defaults to nlist=[1]
 """
@@ -61,8 +99,10 @@ struct TextConfig
     qlist::Vector{Int8}
     nlist::Vector{Int8}
     slist::Vector{Skipgram}
+    tt::AbstractTokenTransformation
 
-    function TextConfig(del_diac, del_dup, del_punc, group_num, group_url, group_usr, group_emo, lc, qlist, nlist, slist)
+
+    function TextConfig(del_diac, del_dup, del_punc, group_num, group_url, group_usr, group_emo, lc, qlist, nlist, slist, tt=IdentityTokenTransformation())
         if length(qlist) == length(nlist) == length(slist) == 0
             nlist = [1]
         end
@@ -70,7 +110,7 @@ struct TextConfig
         nlist = sort!(Vector{Int8}(nlist))
         slist = sort!(Vector{Skipgram}(slist))
 
-        new(del_diac, del_dup, del_punc, group_num, group_url, group_usr, group_emo, lc, qlist, nlist, slist)
+        new(del_diac, del_dup, del_punc, group_num, group_url, group_usr, group_emo, lc, qlist, nlist, slist, tt)
     end
 end
 
@@ -85,10 +125,11 @@ function TextConfig(;
         lc::Bool=true,
         qlist::AbstractVector=[],
         nlist::AbstractVector=[],
-        slist::AbstractVector=[]
+        slist::AbstractVector=[],
+        tt = IdentityTokenTransformation()
     )
  
-    TextConfig(del_diac, del_dup, del_punc, group_num, group_url, group_usr, group_emo, lc, qlist, nlist, slist)
+    TextConfig(del_diac, del_dup, del_punc, group_num, group_url, group_usr, group_emo, lc, qlist, nlist, slist, tt)
 end
 
 function Base.copy(c::TextConfig;
@@ -102,11 +143,12 @@ function Base.copy(c::TextConfig;
         lc=c.lc,
         qlist=c.qlist,
         nlist=c.nlist,
-        slist=c.slist
+        slist=c.slist,
+        tt=c.tt
     )
     
     TextConfig(del_diac, del_dup, del_punc, group_num, group_url, group_usr, group_emo,
-        lc, qlist, nlist, slist)
+        lc, qlist, nlist, slist, tt)
 end
 
 Base.broadcastable(c::TextConfig) = (c,)
