@@ -140,16 +140,13 @@ Base.show(io::IO, model::VectorModel) = print(io, "{VectorModel global_weighting
 
 Creates a new vector model without terms with smaller global weights than `lowerweight`.
 """
-function prune(model::VectorModel, lowerweight::AbstractFloat)
-    voc = Vocabulary(trainsize(model))
-    old = model.voc
-    for tokenID in eachindex(old)
-        if prune_global_weighting(model, tokenID) >= lowerweight
-            push!(voc, old.token[tokenID], old.occs[tokenID], old.ndocs[tokenID], old.weight[tokenID])
-        end
+function prune(vmodel::VectorModel, lowerweight::AbstractFloat)
+    voc = filter_tokens(vmodel.voc) do t
+        prune_global_weighting(vmodel, t.id) >= lowerweight
     end
 
-    VectorModel(model.global_weighting, model.local_weighting, voc, maximum(voc.occs), model.mindocs)
+    maxoccs = convert(Int32, maximum(voc.occs))
+    VectorModel(vmodel.global_weighting, vmodel.local_weighting, voc, maxoccs, vmodel.mindocs)
 end
 
 """
@@ -168,6 +165,12 @@ end
 
 prune_select_top(model::VectorModel, ratio::AbstractFloat) =
     prune_select_top(model, floor(Int, length(model.voc) * ratio))
+
+function filter_tokens(pred::Function, vmodel::VectorModel)
+    voc = filter_tokens(pred, vmodel.voc)
+    maxoccs = convert(Int32, maximum(voc.occs))
+    VectorModel(vmodel.global_weighting, vmodel.local_weighting, voc, maxoccs, vmodel.mindocs)
+end
 
 """
     vectorize(model::VectorModel, bow::BOW; normalize=true, mindocs=model.mindocs, minweight=1e-9) where Tv<:Real

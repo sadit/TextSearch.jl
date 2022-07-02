@@ -189,8 +189,9 @@ end
         @test abs(dot(x, y) - dot_) < 1e-3
     end
 
+    
     for (gw, lw, dot_, p) in [
-            (EntropyWeighting(), BinaryLocalWeighting(), 0.70711, 0.9),
+            (EntropyWeighting(), BinaryLocalWeighting(), 0.7071, 0.9),
             (IdfWeighting(), TfWeighting(), 0.3162, 0.9),
         ]
         if gw isa EntropyWeighting
@@ -205,12 +206,12 @@ end
 
         x = vectorize(model_, tok, sentiment_corpus[3])
         y = vectorize(model_, tok, sentiment_corpus[4])
-        @show gw, lw, dot_, dot(x, y), x, y
+        @show "=========", x, y, norm(x), norm(y)
+        @show gw, lw, dot(x, y), dot_, x, y
         @test abs(dot(x, y) - dot_) < 1e-3
     end
 end
 
-exit(0)
 @testset "distances" begin
     u = Dict(:el => 0.9, :hola => 0.1, :mundo => 0.2) |> normalize!
     v = Dict(:el => 0.4, :hola => 0.2, :mundo => 0.4) |> normalize!

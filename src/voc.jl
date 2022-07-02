@@ -1,6 +1,6 @@
 # This file is a part of TextSearch.jl
 
-export Vocabulary, occs, ndocs, weight, token, vocsize, trainsize
+export Vocabulary, occs, ndocs, weight, token, vocsize, trainsize, filter_tokens
 
 struct Vocabulary
     token::Vector{String}
@@ -127,8 +127,27 @@ function Base.getindex(voc::Vocabulary, tokenID::Integer)
     id = convert(UInt32, tokenID)
 
     if id == 0
-        (; id=id, occs=zero(eltype(voc.occs)), ndocs=zero(eltype(voc.ndocs)), weight=zero(eltype(voc.weight)))
+        (; id=id, occs=zero(eltype(voc.occs)), ndocs=zero(eltype(voc.ndocs)), weight=zero(eltype(voc.weight)), token="")
     else
-        (; id=id, occs=voc.occs[id], ndocs=voc.ndocs[id], weight=voc.weight[id])
+        (; id=id, occs=voc.occs[id], ndocs=voc.ndocs[id], weight=voc.weight[id], token=voc.token[id])
     end
+end
+
+
+"""
+    filter_tokens(pred::Function, voc::Vocabulary)
+
+Returns a copy of reduced vocabulary based on evaluating `pred` function for each entry in `voc`
+"""
+function filter_tokens(pred::Function, voc::Vocabulary)
+    V = Vocabulary(voc.corpuslen)
+
+    for i in eachindex(voc)
+        v = voc[i]
+        if pred(v)
+            push!(V, v.token, v.occs, v.ndocs, v.weight)
+        end
+    end
+
+    V
 end
