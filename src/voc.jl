@@ -1,6 +1,6 @@
 # This file is a part of TextSearch.jl
 
-export Vocabulary, occs, ndocs, weight, token, vocsize, trainsize, filter_tokens
+export Vocabulary, occs, ndocs, weight, token, vocsize, trainsize, filter_tokens, tokenize_and_append!
 
 struct Vocabulary
     token::Vector{String}
@@ -47,9 +47,18 @@ end
 Computes a vocabulary from a corpus using the TextConfig `textconfig`
 """
 function Vocabulary(textconfig::TextConfig, corpus::AbstractVector; minbatch=0)
-    n = length(corpus)
-    voc = Vocabulary(n)
+    voc = Vocabulary(length(corpus))
+    tokenize_and_append!(voc, textconfig, corpus; minbatch)
+end
+
+"""
+    tokenize_and_append!(voc::Vocabulary, textconfig::TextConfig, corpus; minbatch=0)
+
+Parsers each document in the given corpus and appends each token in corpus to the vocabulary.
+"""
+function tokenize_and_append!(voc::Vocabulary, textconfig::TextConfig, corpus; minbatch=0)
     l = Threads.SpinLock()
+    n = length(corpus)
     minbatch = getminbatch(minbatch, n)
 
     Threads.@threads for i in 1:n
@@ -115,6 +124,10 @@ function Base.push!(voc::Vocabulary, token::String, occs::Integer, ndocs::Intege
     end
 
     voc
+end
+
+function Base.push!(voc::Vocabulary, token::String; occs::Integer=0, ndocs::Integer=0, weight::Real=0)
+    push!(voc, token, occs, ndocs, weight)
 end
 
 Base.get(voc::Vocabulary, token::String, default)::UInt32 = get(voc.token2id, token, default)
