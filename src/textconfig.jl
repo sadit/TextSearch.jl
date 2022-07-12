@@ -1,6 +1,6 @@
 # This file is a part of TextSearch.jl
 
-export TextConfig, Skipgram, AbstractTokenTransformation
+export TextConfig, Skipgram, AbstractTokenTransformation, IdentityTokenTransformation
 
 abstract type AbstractTokenTransformation end
 struct IdentityTokenTransformation <: AbstractTokenTransformation end
