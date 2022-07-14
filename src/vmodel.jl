@@ -222,7 +222,8 @@ function vectorize_corpus(copy_::Function, model::VectorModel, textconfig::TextC
     minbatch = getminbatch(minbatch, n)
 
     #@batch minbatch=minbatch per=thread
-    Threads.@threads for i in 2:n
+    #Threads.@threads 
+    for i in 2:n
         text = corpus[i]
         buff = take!(CACHES)
         try
