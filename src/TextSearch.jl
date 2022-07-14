@@ -18,18 +18,22 @@ struct TextSearchBuffer
     unigrams::Vector{String}
     io::IOBuffer
     bow::BOW
+    vec::SVEC
 
     function TextSearchBuffer(n=128)
         normtext = Char[]
         tokens = UInt64[]
         unigrams = String[]
         bow = BOW()
+        vec = SVEC()
+
         sizehint!(normtext, n)
         sizehint!(tokens, n)
         sizehint!(unigrams, n)
         sizehint!(bow, n)
+        sizehint!(vec, n)
 
-        new(normtext, tokens, unigrams, IOBuffer(), bow)
+        new(normtext, tokens, unigrams, IOBuffer(), bow, vec)
     end
 end
 
@@ -40,6 +44,7 @@ function Base.empty!(buff::TextSearchBuffer)
     empty!(buff.tokens)
     empty!(buff.unigrams)
     empty!(buff.bow)
+    empty!(buff.vec)
 end
 
 function __init__()

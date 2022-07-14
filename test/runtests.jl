@@ -1,5 +1,11 @@
 using SimilaritySearch, TextSearch, InvertedFiles
 using Test, SparseArrays, LinearAlgebra, CategoricalArrays, StatsBase, Random
+
+using Aqua
+Aqua.test_all(TextSearch, ambiguities=false)
+Aqua.test_ambiguities([TextSearch, Core])
+
+
 const fit = TextSearch.fit
 
 const text0 = "@user;) #jello.world"
@@ -79,9 +85,9 @@ end
 end
 
 @testset "vocabulary of different kinds of docs" begin
-    tok = TextConfig(nlist=[1])
-    A = Vocabulary(tok, ["hello ;)", "#jello world."])
-    B = Vocabulary(tok, [["hello ;)", "#jello world."]])
+    textconfig = TextConfig(nlist=[1])
+    A = Vocabulary(textconfig, ["hello ;)", "#jello world."])
+    B = Vocabulary(textconfig, [["hello ;)", "#jello world."]])
     @test A.occs == B.occs
     @test sort(A.token) == sort(B.token)
     @info A.corpuslen, B.corpuslen
@@ -89,24 +95,24 @@ end
 end
 
 @testset "Normalize and tokenize" begin
-    tok = TextConfig(del_punc=true, group_usr=true, nlist=[1, 2, 3])
-    @test tokenize(tok, text1) == ["hello", "world", "_usr", "#jello", "world", "\tnhello world", "\tnworld _usr", "\tn_usr #jello", "\tn#jello world", "\tnhello world _usr", "\tnworld _usr #jello", "\tn_usr #jello world"]
+    textconfig = TextConfig(del_punc=true, group_usr=true, nlist=[1, 2, 3])
+    @test tokenize(textconfig, text1) == ["hello", "world", "_usr", "#jello", "world", "\tnhello world", "\tnworld _usr", "\tn_usr #jello", "\tn#jello world", "\tnhello world _usr", "\tnworld _usr #jello", "\tn_usr #jello world"]
 end
 
 @testset "Normalize and tokenize bigrams and trigrams" begin
-    tok = TextConfig(del_punc=true, group_usr=true, nlist=[2, 3])
-    @test tokenize(tok, text1) == ["\tnhello world", "\tnworld _usr", "\tn_usr #jello", "\tn#jello world", "\tnhello world _usr", "\tnworld _usr #jello", "\tn_usr #jello world"]
+    textconfig = TextConfig(del_punc=true, group_usr=true, nlist=[2, 3])
+    @test tokenize(textconfig, text1) == ["\tnhello world", "\tnworld _usr", "\tn_usr #jello", "\tn#jello world", "\tnhello world _usr", "\tnworld _usr #jello", "\tn_usr #jello world"]
 end
 
 @testset "Normalize and tokenize" begin
-    tok = TextConfig(del_punc=false, group_usr=true, nlist=[1])
+    textconfig = TextConfig(del_punc=false, group_usr=true, nlist=[1])
     text3 = "a ab __b @@c ..!d ''e \"!\"f +10 -20 30 40.00 .50 6.0 7.. ======= !()[]{}"
-    @test tokenize(tok, text3) == ["a", "ab", "__b", "@_usr", "..!", "d", "''", "e", "\"!\"", "f", "0", "0", "0", "0", "0", "0", "0", ".", "=======", "!()", "[]{", "}"]
+    @test tokenize(textconfig, text3) == ["a", "ab", "__b", "@_usr", "..!", "d", "''", "e", "\"!\"", "f", "0", "0", "0", "0", "0", "0", "0", ".", "=======", "!()", "[]{", "}"]
 end
 
 @testset "Tokenize skipgrams" begin
-    tok = TextConfig(del_punc=false, group_usr=false, slist=[Skipgram(3,1)])
-    tokens = tokenize(tok, text1)
+    textconfig = TextConfig(del_punc=false, group_usr=false, slist=[Skipgram(3,1)])
+    tokens = tokenize(textconfig, text1)
     @show text1 tokens
     @test tokens == ["\tshello !! ;)", "\tsworld @user #jello", "\ts!! ;) .", "\ts@user #jello world", "\ts;) . :)"]
 
@@ -117,29 +123,29 @@ end
 end
 
 @testset "Vocabulary and BOW" begin
-    tok = TextConfig(nlist=[1])
-    C = tokenize_corpus(tok, corpus)
+    textconfig = TextConfig(nlist=[1])
+    C = tokenize_corpus(textconfig, corpus)
     voc = Vocabulary(C)
-    @test vectorize_corpus(voc, tok, C) == Dict{UInt32, Int32}[Dict(0x00000002 => 1, 0x00000003 => 1, 0x00000001 => 1), Dict(0x00000005 => 1, 0x00000004 => 1, 0x00000006 => 1, 0x00000007 => 1), Dict(0x00000002 => 1, 0x00000009 => 1, 0x00000008 => 1)]
+    @test vectorize_corpus(voc, textconfig, C) == Dict{UInt32, Int32}[Dict(0x00000002 => 1, 0x00000003 => 1, 0x00000001 => 1), Dict(0x00000005 => 1, 0x00000004 => 1, 0x00000006 => 1, 0x00000007 => 1), Dict(0x00000002 => 1, 0x00000009 => 1, 0x00000008 => 1)]
 end
 
 @testset "Tokenizer, DVEC, and vectorize" begin
-    tok = TextConfig(group_usr=true, nlist=[1])
-    voc = Vocabulary(tok, corpus)
+    textconfig = TextConfig(group_usr=true, nlist=[1])
+    voc = Vocabulary(textconfig, corpus)
     model = VectorModel(BinaryGlobalWeighting(), FreqWeighting(), voc)
-    x = vectorize(model, tok, text1)
+    x = vectorize(model, textconfig, text1)
     @show text1 => x
     @show corpus
     @show text1
     @show text2
-    v = vectorize(model, tok, text2)
+    v = vectorize(model, textconfig, text2)
     @test 1 == length(v) && v[0] == 1 # empty vectors use 0 as centinel
 end
 
 @testset "tokenize list of strings as a single message" begin
-    tok = TextConfig(nlist=[1])
-    model = VectorModel(BinaryGlobalWeighting(), FreqWeighting(), tok, corpus)
-    @test vectorize(model, tok, ["hello ;)", "#jello world."]) == vectorize(model, tok, "hello ;) #jello world.")
+    textconfig = TextConfig(nlist=[1])
+    model = VectorModel(BinaryGlobalWeighting(), FreqWeighting(), textconfig, corpus)
+    @test vectorize(model, textconfig, ["hello ;)", "#jello world."]) == vectorize(model, textconfig, "hello ;) #jello world.")
 end
 
 ###########
@@ -152,18 +158,17 @@ const sentiment_labels = categorical(["pos", "pos", "neg", "neg", "pos"])
 const sentiment_msg = "lol, esto me encanta"
 
 @testset "Tokenizer, DVEC, and vectorize" begin
-    tok = TextConfig(group_usr=true, nlist=[1])
-    voc = Vocabulary(tok, sentiment_corpus)
-    corpus_bows = vectorize_corpus(voc, tok, corpus)
+    textconfig = TextConfig(group_usr=true, nlist=[1])
+    voc = Vocabulary(textconfig, sentiment_corpus)
+    corpus_bows = vectorize_corpus(voc, textconfig, corpus)
     model = VectorModel(EntropyWeighting(), BinaryLocalWeighting(), voc, corpus_bows, sentiment_labels)
-    @info sum(voc.weight)
-    @test (7.059714 - sum(model.voc.weight)) < 1e-5
-    model = VectorModel(EntropyWeighting(), BinaryLocalWeighting(), tok, corpus, sentiment_labels)
-    @test (7.059714 - sum(model.voc.weight)) < 1e-5
+    @test (7.059714 - sum(model.weight)) < 1e-5
+    model = VectorModel(EntropyWeighting(), BinaryLocalWeighting(), textconfig, corpus, sentiment_labels)
+    @test (7.059714 - sum(model.weight)) < 1e-5
 end
 
 @testset "Weighting schemes" begin
-    tok = TextConfig(group_usr=true, nlist=[1])
+    textconfig = TextConfig(group_usr=true, nlist=[1])
     for (gw, lw, dot_) in [
             (BinaryGlobalWeighting(), FreqWeighting(), 0.3162),
             (BinaryGlobalWeighting(), TfWeighting(), 0.3162),
@@ -178,34 +183,36 @@ end
         ]
 
         if gw isa EntropyWeighting
-            model = VectorModel(gw, lw, tok, sentiment_corpus, sentiment_labels)
+            model = VectorModel(gw, lw, textconfig, sentiment_corpus, sentiment_labels)
         else
-            model = VectorModel(gw, lw, tok, sentiment_corpus)
+            model = VectorModel(gw, lw, textconfig, sentiment_corpus)
         end
 
-        x = vectorize(model, tok, sentiment_corpus[3])
-        y = vectorize(model, tok, sentiment_corpus[4])
+        x = vectorize(model, textconfig, sentiment_corpus[3])
+        y = vectorize(model, textconfig, sentiment_corpus[4])
         @show gw, lw, dot_, dot(x, y), x, y
         @test abs(dot(x, y) - dot_) < 1e-3
     end
 
     
     for (gw, lw, dot_, p) in [
-            (EntropyWeighting(), BinaryLocalWeighting(), 0.7071, 0.9),
-            (IdfWeighting(), TfWeighting(), 0.3162, 0.9),
+            (EntropyWeighting(), BinaryLocalWeighting(), 0.7071067690849304, 0.9),
+            (IdfWeighting(), TfWeighting(), 1.0, 0.9),
         ]
         if gw isa EntropyWeighting
-            model = VectorModel(gw, lw, tok, sentiment_corpus, sentiment_labels)
+            model = VectorModel(gw, lw, textconfig, sentiment_corpus, sentiment_labels)
         else
-            model = VectorModel(gw, lw, tok, sentiment_corpus)
+            model = VectorModel(gw, lw, textconfig, sentiment_corpus)
         end
-
-        model_ = prune_select_top(model, p)
+        
+        q = quantile(model.weight, p)
+        model_ = filter_tokens(t -> q <= t.weight, model)
+        @show model.weight model_.weight
         @test trainsize(model) == trainsize(model_)
         @test vocsize(model) > vocsize(model_)
 
-        x = vectorize(model_, tok, sentiment_corpus[3])
-        y = vectorize(model_, tok, sentiment_corpus[4])
+        x = vectorize(model_, textconfig, sentiment_corpus[3])
+        y = vectorize(model_, textconfig, sentiment_corpus[4])
         @show "=========", x, y, norm(x), norm(y)
         @show gw, lw, dot(x, y), dot_, x, y
         @test abs(dot(x, y) - dot_) < 1e-3
@@ -259,22 +266,22 @@ function are_posting_lists_sorted(invindex)
 end
 
 @testset "invindex" begin
-    tok = TextConfig(nlist=[1])
-    model = VectorModel(IdfWeighting(), TfWeighting(), tok, _corpus)
-    db = vectorize_corpus(model, tok, _corpus)
+    textconfig = TextConfig(nlist=[1])
+    model = VectorModel(IdfWeighting(), TfWeighting(), textconfig, _corpus)
+    db = vectorize_corpus(model, textconfig, _corpus)
     invindex = WeightedInvertedFile(length(model.voc))
     append!(invindex, VectorDatabase(db))
     begin # searching
-        q = vectorize(model, tok, "la casa roja")
+        q = vectorize(model, textconfig, "la casa roja")
         p = search(invindex, q, KnnResult(4))
         @test sort!(collect(idview(p.res))) == [1, 2, 3, 4]
     end
 end
 
 @testset "centroid computing" begin
-    tok = TextConfig(nlist=[1])
-    model = VectorModel(BinaryGlobalWeighting(), FreqWeighting(), tok, _corpus)
-    X = vectorize_corpus(model, tok, _corpus)
+    textconfig = TextConfig(nlist=[1])
+    model = VectorModel(BinaryGlobalWeighting(), FreqWeighting(), textconfig, _corpus)
+    X = vectorize_corpus(model, textconfig, _corpus)
     vec = sum(X) |> normalize!
     vec = Dict(model.voc.token[t] => w for (t, w) in vec)
     expected = Dict("la" => 0.7366651330405098, "verde" => 0.39921969741172364, "azul" => 0.11248181187626208, "pera" => 0.08712803682959973, "esta" => 0.17425607365919946, "roja" => 0.22496362375252416, "hoja" => 0.11248181187626208, "casa" => 0.33744543562878626, "rica" => 0.17425607365919946, "manzana" => 0.19960984870586182)

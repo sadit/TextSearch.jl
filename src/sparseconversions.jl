@@ -18,7 +18,7 @@ end
 
 Creates a sparse vector from a DVEC sparse vector
 """
-function sparsevec(vec::DVEC{Ti,Tv}, m=0) where {Ti<:Integer,Tv<:Number}
+function sparsevec(vec::DVEC{Ti,Tv}, m::Integer=0) where {Ti<:Integer,Tv<:Number}
     I = Ti[]
     F = Tv[]
 

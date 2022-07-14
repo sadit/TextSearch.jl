@@ -52,8 +52,9 @@ function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, voc::Vocabulary,
     end
 
     weights = _compute_weights(weights, D, nclasses)
-    _compute_entropy(voc, D, weights, nclasses, mindocs)
-    VectorModel(ent, lw, voc; mindocs)
+    model = VectorModel(ent, lw, voc)
+    _compute_entropy(model, D, weights, nclasses, mindocs)
+    model
 end
 
 function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, textconfig::TextConfig, corpus::AbstractVector, labels;
@@ -79,8 +80,9 @@ function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, textconfig::Text
     end
 
     weights = _compute_weights(weights, D, nclasses)
-    _compute_entropy(voc, D, weights, nclasses, mindocs)
-    VectorModel(ent, lw, voc; mindocs)
+    model = VectorModel(ent, lw, voc)
+    _compute_entropy(model, D, weights, nclasses, mindocs)
+    model
 end
 
 function _compute_weights(weights, D, nclasses)
@@ -96,17 +98,17 @@ function _compute_weights(weights, D, nclasses)
     weights
 end
 
-function _compute_entropy(voc, D, weights, nclasses, mindocs)
+function _compute_entropy(model, D, weights, nclasses, mindocs)
     maxent = log2(nclasses)
 
-    @inbounds for tokenID in eachindex(voc)
-        if voc.ndocs[tokenID] < mindocs
-            voc.weight[tokenID] = 0.0
+    @inbounds for tokenID in eachindex(model)
+        if ndocs(model, tokenID) < mindocs
+            model.weight[tokenID] = 0.0
         else
             dist = @view D[:, tokenID]
             dist .= dist .* weights
             e = 1.0 - entropy(dist) / maxent
-            voc.weight[tokenID] = e
+            model.weight[tokenID] = e
         end
     end
 end

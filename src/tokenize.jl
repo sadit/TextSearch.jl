@@ -1,15 +1,16 @@
 # This file is a part of TextSearch.jl
 
-export tokenize, tokenize_corpus, qgrams, unigrams, encode, decode
+export tokenize, tokenize_corpus, qgrams, unigrams
 
 const EXTRA_PUNCT = Set(['~', '+', '^', '$', '|', '<', '>'])
 
 """
     tokenize_corpus(textconfig::TextConfig, arr; minbatch=0)
+    tokenize_corpus(copy_::Function, textconfig::TextConfig, arr; minbatch=0)
 
-Tokenize a list of texts.
+Tokenize a list of texts. The `copy_` function is passed to [`tokenize`](@ref) as first argument.
 """
-function tokenize_corpus(textconfig::TextConfig, arr; minbatch=0)
+function tokenize_corpus(copy_::Function, textconfig::TextConfig, arr; minbatch=0)
     n = length(arr)
     L = Vector{Vector{String}}(undef, n)
     minbatch = getminbatch(minbatch, n)
@@ -19,7 +20,7 @@ function tokenize_corpus(textconfig::TextConfig, arr; minbatch=0)
         buff = take!(CACHES)
         empty!(buff)
         try
-            L[i] = tokenize(textconfig, arr[i], buff, true)
+            L[i] = tokenize(copy_, textconfig, arr[i], buff)
         finally
             put!(CACHES, buff)
         end
@@ -28,18 +29,29 @@ function tokenize_corpus(textconfig::TextConfig, arr; minbatch=0)
     L
 end
 
-"""
-    tokenize(textconfig::TextConfig, text::AbstractString, buff=TextSearchBuffer(), makecopy=true)
+tokenize_corpus(textconfig::TextConfig, arr; minbatch=0) = tokenize_corpus(copy, textconfig, arr; minbatch)
 
-Tokenizes `text` using the given configuration
 """
-function tokenize(textconfig::TextConfig, text::AbstractString, buff=TextSearchBuffer(), makecopy=true)
+    tokenize(textconfig::TextConfig, text)
+    tokenize(copy_::Function, textconfig::TextConfig, text)
+
+    tokenize(textconfig::TextConfig, text, buff)
+    tokenize(copy_::Function, textconfig::TextConfig, text, buff)
+
+Tokenizes `text` using the given configuration. The `tokenize` makes heavy usage of buffers,
+and when these buffers are shared it is mandatory to create a copy of the result (`buff.tokens`).
+
+Change the default `copy` function to make an additional filtering of the tokens.
+You can also pass the `identity` function to avoid copying.
+
+"""
+function tokenize(copy_::Function, textconfig::TextConfig, text::AbstractString, buff::TextSearchBuffer)
     normalize_text(textconfig, text, buff.normtext)
     t = tokenize_(textconfig, buff)
-    makecopy ? copy(t) : t
+    copy_(t)
 end
 
-function tokenize(textconfig::TextConfig, arr::AbstractVector, buff=TextSearchBuffer(), makecopy=true)
+function tokenize(copy_::Function, textconfig::TextConfig, arr::AbstractVector, buff::TextSearchBuffer)
     normalize_text(textconfig, arr[1], buff.normtext)
     tokenize_(textconfig, buff)
 
@@ -49,7 +61,19 @@ function tokenize(textconfig::TextConfig, arr::AbstractVector, buff=TextSearchBu
         tokenize_(textconfig, buff)
     end
 
-    makecopy ? copy(buff.tokens) : buff.tokens
+    copy_(buff.tokens)
+end
+
+tokenize(textconfig::TextConfig, text) = tokenize(copy, textconfig, text)
+
+function tokenize(copy_::Function, textconfig::TextConfig, text)
+    buff = take!(CACHES)
+    empty!(buff)
+    try
+        tokenize(copy_, textconfig, text, buff)
+    finally
+        put!(CACHES, buff)
+    end
 end
 
 function tokenize_(config::TextConfig, buff::TextSearchBuffer)
