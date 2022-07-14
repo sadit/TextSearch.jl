@@ -75,11 +75,12 @@ Computes a list of bag of words from a corpus
 """
 function vectorize_corpus(copy_::Function, voc::Vocabulary, textconfig::TextConfig, corpus::AbstractVector; minbatch=0)
     n = length(corpus)
-    X = Vector{BOW}(undef, n)
+    X = [vectorize(copy_, voc, textconfig, corpus[1])]
+    resize!(X, n)
     minbatch = getminbatch(minbatch, n)
 
     #@batch minbatch=minbatch per=thread 
-    Threads.@threads for i in 1:n
+    Threads.@threads for i in 2:n
         X[i] = vectorize(copy_, voc, textconfig, corpus[i])
     end
 
