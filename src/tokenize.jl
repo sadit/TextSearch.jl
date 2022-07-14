@@ -5,33 +5,6 @@ export tokenize, tokenize_corpus, qgrams, unigrams
 const EXTRA_PUNCT = Set(['~', '+', '^', '$', '|', '<', '>'])
 
 """
-    tokenize_corpus(textconfig::TextConfig, arr; minbatch=0)
-    tokenize_corpus(copy_::Function, textconfig::TextConfig, arr; minbatch=0)
-
-Tokenize a list of texts. The `copy_` function is passed to [`tokenize`](@ref) as first argument.
-"""
-function tokenize_corpus(copy_::Function, textconfig::TextConfig, arr; minbatch=0)
-    n = length(arr)
-    L = Vector{Vector{String}}(undef, n)
-    minbatch = getminbatch(minbatch, n)
-    
-    # @batch minbatch=minbatch per=thread
-    Threads.@threads for i in 1:n
-        buff = take!(CACHES)
-        empty!(buff)
-        try
-            L[i] = tokenize(copy_, textconfig, arr[i], buff)
-        finally
-            put!(CACHES, buff)
-        end
-    end
-
-    L
-end
-
-tokenize_corpus(textconfig::TextConfig, arr; minbatch=0) = tokenize_corpus(copy, textconfig, arr; minbatch)
-
-"""
     tokenize(textconfig::TextConfig, text)
     tokenize(copy_::Function, textconfig::TextConfig, text)
 
@@ -67,14 +40,36 @@ end
 tokenize(textconfig::TextConfig, text) = tokenize(copy, textconfig, text)
 
 function tokenize(copy_::Function, textconfig::TextConfig, text)
-    buff = take!(CACHES)
+    buff = take!(TEXT_SEARCH_CACHES)
     empty!(buff)
     try
         tokenize(copy_, textconfig, text, buff)
     finally
-        put!(CACHES, buff)
+        put!(TEXT_SEARCH_CACHES, buff)
     end
 end
+
+
+"""
+    tokenize_corpus(textconfig::TextConfig, arr; minbatch=0)
+    tokenize_corpus(copy_::Function, textconfig::TextConfig, arr; minbatch=0)
+
+Tokenize a list of texts. The `copy_` function is passed to [`tokenize`](@ref) as first argument.
+"""
+function tokenize_corpus(copy_::Function, textconfig::TextConfig, arr; minbatch=0)
+    n = length(arr)
+    L = Vector{Vector{String}}(undef, n)
+    minbatch = getminbatch(minbatch, n)
+    
+    # @batch minbatch=minbatch per=thread
+    Threads.@threads for i in 1:n
+        L[i] = tokenize(copy_, textconfig, arr[i])
+    end
+
+    L
+end
+
+tokenize_corpus(textconfig::TextConfig, arr; minbatch=0) = tokenize_corpus(copy, textconfig, arr; minbatch)
 
 function tokenize_(config::TextConfig, buff::TextSearchBuffer)
     for q in config.qlist
@@ -107,9 +102,8 @@ end
 Pushes the word inside the buffer to the token list; it discards empty strings.
 """
 function flush_unigram!(buff::TextSearchBuffer, tt::AbstractTokenTransformation)
-    io = buff.io
-    io.size == 0 && return nothing
-    s = transform_unigram(tt, String(take!(io)))
+    buff.io.size == 0 && return nothing
+    s = transform_unigram(tt, String(take!(buff.io)))
     s === nothing && return nothing
     push!(buff.tokens, s)
     s
@@ -121,9 +115,8 @@ end
 Pushes the nword inside the buffer to the token list; it discards empty strings.
 """
 function flush_nword!(buff::TextSearchBuffer, tt::AbstractTokenTransformation)
-    io = buff.io
-    io.size == 0 && return nothing
-    s = transform_nword(tt, String(take!(io)))
+    buff.io.size == 0 && return nothing
+    s = transform_nword(tt, String(take!(buff.io)))
     s === nothing && return nothing
     push!(buff.tokens, s)
     s
@@ -135,9 +128,8 @@ end
 Pushes the qgram inside the buffer to the token list; it discards empty strings.
 """
 function flush_qgram!(buff::TextSearchBuffer, tt::AbstractTokenTransformation)
-    io = buff.io
-    io.size == 0 && return nothing
-    s = transform_qgram(tt, String(take!(io)))
+    buff.io.size == 0 && return nothing
+    s = transform_qgram(tt, String(take!(buff.io)))
     s === nothing && return nothing
     push!(buff.tokens, s)
     s
@@ -149,9 +141,8 @@ end
 Pushes the skipgram inside the buffer to the token list; it discards empty strings.
 """
 function flush_skipgram!(buff::TextSearchBuffer, tt::AbstractTokenTransformation)
-    io = buff.io
-    io.size == 0 && return nothing
-    s = transform_skipgram(tt, String(take!(io)))
+    buff.io.size == 0 && return nothing
+    s = transform_skipgram(tt, String(take!(buff.io)))
     s === nothing && return nothing
     push!(buff.tokens, s)
     s

@@ -24,6 +24,7 @@ struct TextSearchBuffer
         normtext = Char[]
         tokens = UInt64[]
         unigrams = String[]
+        io = IOBuffer()
         bow = BOW()
         vec = SVEC()
 
@@ -33,11 +34,11 @@ struct TextSearchBuffer
         sizehint!(bow, n)
         sizehint!(vec, n)
 
-        new(normtext, tokens, unigrams, IOBuffer(), bow, vec)
+        new(normtext, tokens, unigrams, io, bow, vec)
     end
 end
 
-const CACHES = Channel{TextSearchBuffer}(Inf)
+const TEXT_SEARCH_CACHES = Channel{TextSearchBuffer}(Inf)
 
 function Base.empty!(buff::TextSearchBuffer)
     empty!(buff.normtext)
@@ -49,16 +50,16 @@ end
 
 function __init__()
     for _ in 1:Threads.nthreads()
-        put!(CACHES, TextSearchBuffer())
+        put!(TEXT_SEARCH_CACHES, TextSearchBuffer())
     end
 end
 
 @inline function textbuffer(f)
-    buff = take!(CACHES)
+    buff = take!(TEXT_SEARCH_CACHES)
     try
         f(buff)
     finally
-        put!(CACHES, buff)
+        put!(TEXT_SEARCH_CACHES, buff)
     end
 end
 

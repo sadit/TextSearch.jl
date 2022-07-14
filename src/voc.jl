@@ -71,7 +71,7 @@ function tokenize_and_append!(voc::Vocabulary, textconfig::TextConfig, corpus; m
     Threads.@threads for i in 1:n
         doc = corpus[i]
         
-        buff = take!(CACHES)
+        buff = take!(TEXT_SEARCH_CACHES)
         try
             if doc isa AbstractString
                 locked_tokenize_and_push(voc, textconfig, doc, buff, l; ignore_new_tokens)
@@ -81,7 +81,7 @@ function tokenize_and_append!(voc::Vocabulary, textconfig::TextConfig, corpus; m
                 end
             end
         finally
-            put!(CACHES, buff)
+            put!(TEXT_SEARCH_CACHES, buff)
         end
     end
 
@@ -136,7 +136,7 @@ function Base.push!(voc::Vocabulary, token::String; occs::Integer=0, ndocs::Inte
     push!(voc, token, occs, ndocs; ignore_new_tokens)
 end
 
-Base.get(voc::Vocabulary, token::String, default)::UInt32 = get(voc.token2id, token, default)
+Base.get(voc::Vocabulary, token::String, default::UInt32)::UInt32 = get(voc.token2id, token, default)
 
 function Base.getindex(voc::Vocabulary, token::String)
     getindex(voc, get(voc, token, 0))

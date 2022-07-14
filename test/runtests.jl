@@ -139,6 +139,7 @@ end
     @show text1
     @show text2
     v = vectorize(model, textconfig, text2)
+    @show text2 => v
     @test 1 == length(v) && v[0] == 1 # empty vectors use 0 as centinel
 end
 

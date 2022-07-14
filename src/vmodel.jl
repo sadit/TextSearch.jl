@@ -162,11 +162,11 @@ function filter_tokens(pred::Function, model::VectorModel)
 end
 
 """
-    vectorize(copy_::Function, model::VectorModel, bow::BOW, vec::SVEC=SVEC(); normalize=true, minweight=1e-9) where Tv<:Real
+    vectorize(copy_::Function, model::VectorModel, bow::BOW, vec::SVEC; normalize=true, minweight=1e-9) where Tv<:Real
 
 Computes a weighted vector using the given bag of words and the specified weighting scheme.
 """
-function vectorize(copy_::Function, model::VectorModel{G_,L_}, bow::BOW, vec::SVEC=SVEC(); normalize=true, minweight=1e-9) where {G_,L_}
+function vectorize(copy_::Function, model::VectorModel{G_,L_}, bow::BOW, vec::SVEC; normalize=true, minweight=1e-9) where {G_,L_}
     numtokens::Int = 0
 
     if L_ === TpWeighting
@@ -202,11 +202,11 @@ function vectorize(copy_::Function, model::VectorModel, textconfig::TextConfig, 
 end
 
 function vectorize(copy_::Function, model::VectorModel, textconfig::TextConfig, text; normalize=true, minweight=1e-9)
-    buff = take!(CACHES)
+    buff = take!(TEXT_SEARCH_CACHES)
     try
         vectorize(copy_, model, textconfig, text, buff; normalize, minweight)
     finally
-        put!(CACHES, buff)
+        put!(TEXT_SEARCH_CACHES, buff)
     end
 end
 
@@ -215,21 +215,13 @@ vectorize(model::VectorModel, textconfig::TextConfig, text; normalize=true, minw
 
 function vectorize_corpus(copy_::Function, model::VectorModel, textconfig::TextConfig, corpus::AbstractVector; normalize=true, minweight=1e-9, minbatch=0)
     n = length(corpus)
-    buff = take!(CACHES)
-    V = [vectorize(copy_, model, textconfig, corpus[1], buff; normalize, minweight)] # Vector{SVEC}(undef, n)
+    V = [vectorize(copy_, model, textconfig, corpus[1]; normalize, minweight)] # Vector{SVEC}(undef, n)
     resize!(V, n)
-    put!(CACHES, buff)
     minbatch = getminbatch(minbatch, n)
 
     #@batch minbatch=minbatch per=thread
     Threads.@threads for i in 2:n
-        text = corpus[i]
-        buff = take!(CACHES)
-        try
-            V[i] = vectorize(copy_, model, textconfig, text, buff; normalize, minweight)
-        finally
-            put!(CACHES, buff)
-        end
+        V[i] = vectorize(copy_, model, textconfig, corpus[i]; normalize, minweight)
     end
 
     V
