@@ -2,7 +2,7 @@
 
 #####
 using CategoricalArrays
-export EntropyWeighting
+export EntropyWeighting, categorical
 
 """
     EntropyWeighting(; smooth=0.0, lowerweight=0.0, weights=:balance)

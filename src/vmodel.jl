@@ -93,7 +93,9 @@ mutable struct VectorModel{_G<:GlobalWeighting, _L<:LocalWeighting} <: TextModel
     weight::Vector{Float32}
 end
 
+
 function VectorModel(gw::GlobalWeighting, lw::LocalWeighting, voc::Vocabulary; weight=nothing)
+    length(voc.occs) > 0 || error("empty vocabulary")
     maxoccs = convert(Int32, maximum(voc.occs))
     W = weight === nothing ? Vector{Float32}(undef, vocsize(voc)) : weight
     model = VectorModel(gw, lw, voc, maxoccs, W)

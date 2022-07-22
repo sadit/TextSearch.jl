@@ -6,7 +6,7 @@ import LinearAlgebra: dot, norm, normalize!
 import SparseArrays: nnz
 using SimilaritySearch
 import SimilaritySearch: evaluate
-export centroid, evaluate, NormalizedAngleDistance, NormalizedCosineDistance, AngleDistance, CosineDistance
+export centroid, evaluate, NormalizedAngleDistance, NormalizedCosineDistance, AngleDistance, CosineDistance, l1norm, l1normalize!
 
 const DVEC{Ti,Tv<:Number} = Dict{Ti,Tv}
 const SVEC = DVEC{UInt32,Float32}
@@ -52,9 +52,9 @@ Base.minimum(voc::DVEC{I,F}) where {I,F} = first(findmin(voc))
 Inplace normalization of `bow`
 """
 function normalize!(bow::DVEC{Ti,Tv}) where {Ti,Tv<:AbstractFloat}
-    s = 1.0 / norm(bow)
+    s = one(Tv) / norm(bow)
     for (k, v) in bow
-        bow[k] = convert(Tv, v * s)
+        bow[k] = v * s
     end
 
     bow
@@ -77,12 +77,51 @@ function normalize!(matrix::AbstractVector{<:DVEC})
     matrix
 end
 
+function l1norm(v::AbstractVector{T}) where T
+    s = zero(T)
+    @inbounds @simd for i in eachindex(v)
+        s += v[i]
+    end
+    
+    s
+end
+
+function l1normalize!(v::AbstractVector{T}) where T
+    invl1 = one(T) / l1norm(v)
+
+    @inbounds @simd for i in eachindex(v)
+        v[i] = v[i] * invl1
+    end
+    
+    v
+end
+
+function l1norm(V::DVEC{Ti,Tv}) where {Ti,Tv}
+    s = zero(Tv)
+
+    for (_, v) in V
+        s += v[i]
+    end
+    
+    s
+end
+
+function l1normalize!(V::DVEC{Ti,Tv}) where {Ti,Tv}
+    invl1 = one(Tv) / l1norm(V)
+
+    for (k, v) in V
+        v[k] = v * invl1
+    end
+    
+    v
+end
+
 """
     dot(a::DVEC, b::DVEC)::Float64 
 
 Computes the dot product for two DVEC vectors
 """
-function dot(a::DVEC, b::DVEC)::Float64 
+function dot(a::DVEC, b::DVEC)::Float64
     if length(b) < length(a)
         a, b = b, a  # a must be the smallest bow
     end
@@ -97,14 +136,14 @@ function dot(a::DVEC, b::DVEC)::Float64
 end
 
 """
-    norm(a::DVEC)::Float64
+    norm(a::DVEC)
 
 Computes a normalized DVEC vector
 """
-function norm(a::DVEC)::Float64
-    s = 0.0
-    for w in values(a)
-        s += w * w
+function norm(a::DVEC{Ti,Tv}) where {Ti,Tv}
+    s = zero(Tv)
+    for (_, w) in a
+        s = muladd(w, w, s)
     end
 
     sqrt(s)
