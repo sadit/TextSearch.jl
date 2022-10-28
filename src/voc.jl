@@ -29,13 +29,24 @@ end
 function locked_tokenize_and_push(voc, textconfig, doc, buff, l; ignore_new_tokens=false)
     empty!(buff)
 
+    id = 0
     for token in tokenize(identity, textconfig, doc, buff)
         lock(l)
-        try
-            push!(voc, token, 1, 1; ignore_new_tokens)
+        try            
+            id = push_token!(voc, token, 1, 0; ignore_new_tokens)
         finally
             unlock(l)
+            buff.bow[id] = 1
         end
+    end
+
+    lock(l)
+    try
+        for id in keys(buff.bow)
+            voc.ndocs[id] += 1
+        end
+    finally
+        unlock(l)
     end
 end
 
@@ -51,7 +62,7 @@ function Vocabulary(textconfig::TextConfig, corpus::AbstractVector; minbatch=0, 
         tokenize_and_append!(voc, textconfig, corpus; minbatch)
     else
         for v in thesaurus
-            push!(voc, v)
+            push_token!(voc, v)
         end
 
         tokenize_and_append!(voc, textconfig, corpus; minbatch, ignore_new_tokens=true)
@@ -95,10 +106,16 @@ Computes a vocabulary from an already tokenized corpus
 """
 function Vocabulary(corpus)
     voc = Vocabulary(length(corpus))
-    
+    bow = Set{Int32}()
     for tokens in corpus
+        empty!(bow)
         for token in tokens
-            push!(voc, token, 1, 1)
+            id = push_token!(voc, token, 1, 0)
+            push!(bow, id)
+        end
+
+        for id in bow
+            voc.ndocs[id] += 1
         end
     end
 
@@ -113,7 +130,7 @@ ndocs(voc::Vocabulary, tokenID::Integer) = tokenID == 0 ? zero(eltype(voc.ndocs)
 occs(voc::Vocabulary, tokenID::Integer) = tokenID == 0 ? zero(eltype(voc.occs)) : voc.occs[tokenID]
 token(voc::Vocabulary, tokenID::Integer) = tokenID == 0 ? "" : voc.token[tokenID]
 
-function Base.push!(voc::Vocabulary, token::String, occs::Integer, ndocs::Integer; ignore_new_tokens::Bool=false)
+function push_token!(voc::Vocabulary, token::String, occs::Integer, ndocs::Integer; ignore_new_tokens::Bool=false)
     id = get(voc.token2id, token, zero(UInt32))
 
     if id == 0
@@ -129,11 +146,11 @@ function Base.push!(voc::Vocabulary, token::String, occs::Integer, ndocs::Intege
         voc.ndocs[id] += ndocs
     end
 
-    voc
+    id
 end
 
-function Base.push!(voc::Vocabulary, token::String; occs::Integer=0, ndocs::Integer=0, ignore_new_tokens=false)
-    push!(voc, token, occs, ndocs; ignore_new_tokens)
+function push_token!(voc::Vocabulary, token::String; occs::Integer=0, ndocs::Integer=0, ignore_new_tokens=false)
+    push_token!(voc, token, occs, ndocs; ignore_new_tokens)
 end
 
 Base.get(voc::Vocabulary, token::String, default::UInt32)::UInt32 = get(voc.token2id, token, default)
@@ -164,7 +181,7 @@ function filter_tokens(pred::Function, voc::Vocabulary)
     for i in eachindex(voc)
         v = voc[i]
         if pred(v)
-            push!(V, v.token, v.occs, v.ndocs)
+            push_token!(V, v.token, v.occs, v.ndocs)
         end
     end
 

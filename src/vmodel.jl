@@ -102,7 +102,8 @@ function VectorModel(gw::GlobalWeighting, lw::LocalWeighting, voc::Vocabulary; w
 
     if weight === nothing
         for tokenID in eachindex(voc)
-            model.weight[tokenID] = global_weighting(model, tokenID)
+            model.weight[tokenID] = w_ = global_weighting(model, tokenID)
+            # @assert w_ >= 0 "NEGATIVE WEIGHT $tokenID -- $w_"
         end
     end
 
@@ -155,7 +156,7 @@ function filter_tokens(pred::Function, model::VectorModel)
     for i in eachindex(voc)
         t = model[i]
         if pred(t)
-            push!(V, t.token, t.occs, t.ndocs)
+            push_token!(V, t.token, t.occs, t.ndocs)
             push!(W, t.weight)
         end
     end
@@ -221,7 +222,7 @@ function vectorize_corpus(copy_::Function, model::VectorModel, textconfig::TextC
     resize!(V, n)
     minbatch = getminbatch(minbatch, n)
 
-    #@batch minbatch=minbatch per=thread
+    # @batch minbatch=minbatch per=thread
     Threads.@threads for i in 2:n
         V[i] = vectorize(copy_, model, textconfig, corpus[i]; normalize, minweight)
     end
@@ -243,5 +244,5 @@ end
 @inline local_weighting(::FreqWeighting, occs, maxoccs, numtokens) = occs
 @inline local_weighting(::TpWeighting, occs, maxoccs, numtokens) = occs / numtokens
 @inline local_weighting(::BinaryLocalWeighting, occs, maxoccs, numtokens) = 1.0
-@inline global_weighting(model::VectorModel{IdfWeighting}, tokenID) = @inbounds log2(trainsize(model) / (1 + ndocs(model, tokenID)))
+@inline global_weighting(model::VectorModel{IdfWeighting}, tokenID) = @inbounds log2((0.5 + trainsize(model)) / (0.5 + ndocs(model, tokenID)))
 @inline global_weighting(model::VectorModel{BinaryGlobalWeighting}, tokenID) = 1.0

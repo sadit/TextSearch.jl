@@ -174,13 +174,13 @@ end
             (BinaryGlobalWeighting(), FreqWeighting(), 0.3162),
             (BinaryGlobalWeighting(), TfWeighting(), 0.3162),
             (BinaryGlobalWeighting(), TpWeighting(), 0.3162),
-            (IdfWeighting(), BinaryLocalWeighting(), 0.5000),
-            (IdfWeighting(), TfWeighting(), 0.3162),
+            (IdfWeighting(), BinaryLocalWeighting(), 0.3668),
+            (IdfWeighting(), TfWeighting(), 0.2053),
 
             (EntropyWeighting(), FreqWeighting(), 0.44456),
             (EntropyWeighting(), TfWeighting(), 0.44456),
             (EntropyWeighting(), TpWeighting(), 0.44456),
-            (EntropyWeighting(), BinaryLocalWeighting(), 0.70290)
+            (EntropyWeighting(), BinaryLocalWeighting(), 0.7029)
         ]
 
         if gw isa EntropyWeighting
@@ -195,7 +195,7 @@ end
         @test abs(dot(x, y) - dot_) < 1e-3
     end
 
-    
+    exit(0)
     for (gw, lw, dot_, p) in [
             (EntropyWeighting(), BinaryLocalWeighting(), 0.7071067690849304, 0.9),
             (IdfWeighting(), TfWeighting(), 1.0, 0.9),
