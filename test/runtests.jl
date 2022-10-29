@@ -3,8 +3,7 @@ using Test, SparseArrays, LinearAlgebra, CategoricalArrays, StatsBase, Random
 
 using Aqua
 Aqua.test_all(TextSearch, ambiguities=false)
-Aqua.test_ambiguities([TextSearch, Core])
-
+Aqua.test_ambiguities([TextSearch])
 
 const fit = TextSearch.fit
 
@@ -195,10 +194,9 @@ end
         @test abs(dot(x, y) - dot_) < 1e-3
     end
 
-    exit(0)
     for (gw, lw, dot_, p) in [
             (EntropyWeighting(), BinaryLocalWeighting(), 0.7071067690849304, 0.9),
-            (IdfWeighting(), TfWeighting(), 1.0, 0.9),
+            (IdfWeighting(), TfWeighting(), 0.0, 0.9),
         ]
         if gw isa EntropyWeighting
             model = VectorModel(gw, lw, textconfig, sentiment_corpus, sentiment_labels)
@@ -208,10 +206,13 @@ end
         
         q = quantile(model.weight, p)
         model_ = filter_tokens(t -> q <= t.weight, model)
-        @show model.weight model_.weight
+        @info "====== weight:"
+        @info model.weight
+        @info model_.weight
         @test trainsize(model) == trainsize(model_)
         @test vocsize(model) > vocsize(model_)
-
+        @info "====== token:", model_.voc.token
+        @info sentiment_corpus[3], sentiment_corpus[4]
         x = vectorize(model_, textconfig, sentiment_corpus[3])
         y = vectorize(model_, textconfig, sentiment_corpus[4])
         @show "=========", x, y, norm(x), norm(y)

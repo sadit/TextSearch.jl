@@ -153,6 +153,7 @@ function filter_tokens(pred::Function, model::VectorModel)
     voc = model.voc
     V = Vocabulary(voc.corpuslen)
     W = Vector{Float32}(undef, 0)
+    
     for i in eachindex(voc)
         t = model[i]
         if pred(t)
