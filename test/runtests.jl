@@ -91,6 +91,12 @@ end
     @test sort(A.token) == sort(B.token)
     @info A.corpuslen, B.corpuslen
     @test A.corpuslen == 2 && B.corpuslen == 1
+    C = merge_voc(A, B)
+    @test C.token == A.token
+    @test C.occs == 2 .* A.occs
+    @test C.corpuslen == 3
+    @test vocsize(C) == vocsize(A)
+    @show A.corpuslen, B.corpuslen, C.corpuslen
 end
 
 @testset "Normalize and tokenize" begin

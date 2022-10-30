@@ -1,6 +1,6 @@
 # This file is a part of TextSearch.jl
 
-export Vocabulary, occs, ndocs, token, vocsize, trainsize, filter_tokens, tokenize_and_append!
+export Vocabulary, occs, ndocs, token, vocsize, trainsize, filter_tokens, tokenize_and_append!, merge_voc, update_voc!
 
 struct Vocabulary
     token::Vector{String}
@@ -48,6 +48,58 @@ function locked_tokenize_and_push(voc, textconfig, doc, buff, l; ignore_new_toke
     finally
         unlock(l)
     end
+end
+
+"""
+    update_voc!(voc::Vocabulary, another::Vocabulary)
+    update_voc!(pred::Function, voc::Vocabulary, another::Vocabulary)
+
+Update `voc` vocabulary using another one.
+Optionally a predicate can be given to filter vocabularies.
+
+Note 1: `corpuslen` remains unchanged (the structure is immutable and a new `Vocabulary` should be created to update this field).
+Note 2: Both `voc` and `another` vocabularies should had been created with a _compatible_ [`Textconfig`](@ref) to be able to work on them.
+"""
+update_voc!(voc::Vocabulary, another::Vocabulary) = update_voc!(t->true, voc, another)
+
+function update_voc!(pred::Function, voc::Vocabulary, another::Vocabulary)
+    for i in eachindex(another)
+        v = another[i]
+        if pred(v)
+            push_token!(voc, v.token, v.occs, v.ndocs)
+        end
+    end
+
+    voc
+end
+
+"""
+    merge_voc(voc1::Vocabulary, voc2::Vocabulary[, ...])
+    merge_voc(pred::Function, voc1::Vocabulary, voc2::Vocabulary[, ...])
+
+Merges two or more vocabularies into a new one. A predicate function can be used to filter token entries.
+
+Note: All vocabularies should had been created with a _compatible_ [`Textconfig`](@ref) to be able to work on them.
+"""
+merge_voc(voc1::Vocabulary, voc2::Vocabulary, voclist...) = merge_voc(x->true, voc1, voc2, voclist...)
+
+function merge_voc(pred::Function, voc1::Vocabulary, voc2::Vocabulary, voclist...)
+    #all(v -> v isa Vocabulary, voclist) || throw(ArgumentError("arguments should be of type `Vocabulary`"))
+    
+    L = [voc1, voc2]
+    for v in voclist
+        push!(L, v)
+    end
+
+    sort!(L, by=vocsize, rev=true)
+    #@show length(L) vocsize(voc1) vocsize(voc2) vocsize.(L) sum(vocsize(v) for v in L)
+    voc = Vocabulary(sum(v.corpuslen for v in L))
+
+    for v in L
+        update_voc!(pred, voc, v)
+    end
+
+    voc
 end
 
 """
