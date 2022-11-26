@@ -93,7 +93,6 @@ mutable struct VectorModel{_G<:GlobalWeighting, _L<:LocalWeighting} <: TextModel
     weight::Vector{Float32}
 end
 
-
 function VectorModel(gw::GlobalWeighting, lw::LocalWeighting, voc::Vocabulary; weight=nothing)
     length(voc.occs) > 0 || error("empty vocabulary")
     maxoccs = convert(Int32, maximum(voc.occs))
@@ -124,13 +123,17 @@ end
 
 @inline trainsize(model::VectorModel) = trainsize(model.voc)
 @inline vocsize(model::VectorModel) = vocsize(model.voc)
+
 @inline Base.length(model::VectorModel) = length(model.voc)
 @inline occs(model::VectorModel, tokenID::Integer) = occs(model.voc, tokenID)
 @inline ndocs(model::VectorModel, tokenID::Integer) = ndocs(model.voc, tokenID)
 @inline token(model::VectorModel, tokenID::Integer) = token(model.voc, tokenID)
 @inline Base.eachindex(model::VectorModel) = eachindex(model.voc)
 @inline weight(model::VectorModel, tokenID::Integer) = tokenID == 0 ? zero(eltype(model.weight)) : model.weight[tokenID]
-@inline weights(model::VectorModel) = model.weight
+@inline weight(model::VectorModel) = model.weight
+@inline occs(model::VectorModel) = occs(model.voc)
+@inline ndocs(model::VectorModel) = ndocs(model.voc)
+@inline token(model::VectorModel) = token(model.voc)
 
 function Base.getindex(model::VectorModel, tokenID::Integer)
     id = convert(UInt32, tokenID)

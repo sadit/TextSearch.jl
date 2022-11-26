@@ -28,11 +28,11 @@ end
 
 function locked_tokenize_and_push(voc, textconfig, doc, buff, l; ignore_new_tokens=false)
     empty!(buff)
-
     id = 0
+
     for token in tokenize(identity, textconfig, doc, buff)
         lock(l)
-        try            
+        try
             id = push_token!(voc, token, 1, 0; ignore_new_tokens)
         finally
             unlock(l)
@@ -92,7 +92,6 @@ function merge_voc(pred::Function, voc1::Vocabulary, voc2::Vocabulary, voclist..
     end
 
     sort!(L, by=vocsize, rev=true)
-    #@show length(L) vocsize(voc1) vocsize(voc2) vocsize.(L) sum(vocsize(v) for v in L)
     voc = Vocabulary(sum(v.corpuslen for v in L))
 
     for v in L
@@ -124,7 +123,7 @@ end
 """
     tokenize_and_append!(voc::Vocabulary, textconfig::TextConfig, corpus; minbatch=0, ignore_new_tokens=false)
 
-Parsers each document in the given corpus and appends each token in corpus to the vocabulary.
+Parse each document in the given corpus and appends each token to the vocabulary.
 """
 function tokenize_and_append!(voc::Vocabulary, textconfig::TextConfig, corpus; minbatch=0, ignore_new_tokens=false)
     l = Threads.SpinLock()
@@ -182,6 +181,10 @@ ndocs(voc::Vocabulary, tokenID::Integer) = tokenID == 0 ? zero(eltype(voc.ndocs)
 occs(voc::Vocabulary, tokenID::Integer) = tokenID == 0 ? zero(eltype(voc.occs)) : voc.occs[tokenID]
 token(voc::Vocabulary, tokenID::Integer) = tokenID == 0 ? "" : voc.token[tokenID]
 
+@inline occs(voc::Vocabulary) = voc.occs
+@inline ndocs(voc::Vocabulary) = voc.ndocs
+@inline token(voc::Vocabulary) = voc.token
+
 function push_token!(voc::Vocabulary, token::String, occs::Integer, ndocs::Integer; ignore_new_tokens::Bool=false)
     id = get(voc.token2id, token, zero(UInt32))
 
@@ -205,7 +208,7 @@ function push_token!(voc::Vocabulary, token::String; occs::Integer=0, ndocs::Int
     push_token!(voc, token, occs, ndocs; ignore_new_tokens)
 end
 
-Base.get(voc::Vocabulary, token::String, default::UInt32)::UInt32 = get(voc.token2id, token, default)
+Base.get(voc::Vocabulary, token::String, default::Integer)::UInt32 = get(voc.token2id, token, default)
 
 function Base.getindex(voc::Vocabulary, token::String)
     getindex(voc, get(voc, token, 0))
