@@ -109,7 +109,7 @@ function VectorModel(gw::GlobalWeighting, lw::LocalWeighting, voc::Vocabulary; w
     model
 end
 
-function Base.copy(
+function VectorModel(
         e::VectorModel;
         local_weighting=e.local_weighting,
         global_weighting=e.global_weighting,
@@ -120,6 +120,8 @@ function Base.copy(
 
     VectorModel(global_weighting, local_weighting, voc, maxoccs, weight)
 end
+
+Base.copy(e::VectorModel; kwargs...) = VectorModel(e::VectorModel; kwargs...)
 
 @inline trainsize(model::VectorModel) = trainsize(model.voc)
 @inline vocsize(model::VectorModel) = vocsize(model.voc)

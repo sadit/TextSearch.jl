@@ -101,7 +101,6 @@ struct TextConfig
     slist::Vector{Skipgram}
     tt::AbstractTokenTransformation
 
-
     function TextConfig(del_diac, del_dup, del_punc, group_num, group_url, group_usr, group_emo, lc, qlist, nlist, slist, tt=IdentityTokenTransformation())
         if length(qlist) == length(nlist) == length(slist) == 0
             nlist = [1]
@@ -114,41 +113,30 @@ struct TextConfig
     end
 end
 
-function TextConfig(;
-        del_diac::Bool=true,
-        del_dup::Bool=false,
-        del_punc::Bool=false,
-        group_num::Bool=true,
-        group_url::Bool=true,
-        group_usr::Bool=false,
-        group_emo::Bool=false,
-        lc::Bool=true,
-        qlist::AbstractVector=[],
-        nlist::AbstractVector=[],
-        slist::AbstractVector=[],
-        tt = IdentityTokenTransformation()
-    )
- 
-    TextConfig(del_diac, del_dup, del_punc, group_num, group_url, group_usr, group_emo, lc, qlist, nlist, slist, tt)
-end
-
-function Base.copy(c::TextConfig;
-        del_diac=c.del_diac,
-        del_dup=c.del_dup,
-        del_punc=c.del_punc,
-        group_num=c.group_num,
-        group_url=c.group_url,
-        group_usr=c.group_usr,
-        group_emo=c.group_emo,
-        lc=c.lc,
+function TextConfig(c::TextConfig;
+        del_diac::Bool=c.del_diac,
+        del_dup::Bool=c.del_dup,
+        del_punc::Bool=c.del_punc,
+        group_num::Bool=c.group_num,
+        group_url::Bool=c.group_url,
+        group_usr::Bool=c.group_usr,
+        group_emo::Bool=c.group_emo,
+        lc::Bool=c.lc,
         qlist=c.qlist,
         nlist=c.nlist,
         slist=c.slist,
-        tt=c.tt
+        tt::AbstractTokenTransformation=c.tt
     )
-    
-    TextConfig(del_diac, del_dup, del_punc, group_num, group_url, group_usr, group_emo,
+
+    TextConfig(del_diac, del_dup, del_punc,
+        group_num, group_url, group_usr, group_emo,
         lc, qlist, nlist, slist, tt)
 end
 
+function TextConfig(; kwargs...)
+    tc = TextConfig(true, false, false, true, true, false, false, true, [], [], [], IdentityTokenTransformation())
+    TextConfig(tc; kwargs...)
+end
+
+Base.copy(c::TextConfig; kwargs...) = TextConfig(c; kwargs...)
 Base.broadcastable(c::TextConfig) = (c,)
