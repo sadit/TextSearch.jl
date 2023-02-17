@@ -87,21 +87,21 @@ Defines a preprocessing and tokenization pipeline
 
 Note: If qlist, nlist, and slists are all empty arrays, then it defaults to nlist=[1]
 """
-struct TextConfig
-    del_diac::Bool
-    del_dup::Bool
-    del_punc::Bool
-    group_num::Bool
-    group_url::Bool
-    group_usr::Bool
-    group_emo::Bool
-    lc::Bool
-    qlist::Vector{Int8}
-    nlist::Vector{Int8}
-    slist::Vector{Skipgram}
-    tt::AbstractTokenTransformation
+Base.@kwdef struct TextConfig
+    del_diac::Bool  = true
+    del_dup::Bool   = false
+    del_punc::Bool  = false
+    group_num::Bool = true
+    group_url::Bool = true
+    group_usr::Bool = false
+    group_emo::Bool = false
+    lc::Bool        = true
+    qlist::Vector{Int8} = Int8[]
+    nlist::Vector{Int8} = Int8[]
+    slist::Vector{Skipgram} = Skipgram[]
+    tt::AbstractTokenTransformation = IdentityTokenTransformation()
 
-    function TextConfig(del_diac, del_dup, del_punc, group_num, group_url, group_usr, group_emo, lc, qlist, nlist, slist, tt=IdentityTokenTransformation())
+    function TextConfig(del_diac, del_dup, del_punc, group_num, group_url, group_usr, group_emo, lc, qlist, nlist, slist, tt)
         if length(qlist) == length(nlist) == length(slist) == 0
             nlist = [1]
         end
@@ -133,10 +133,4 @@ function TextConfig(c::TextConfig;
         lc, qlist, nlist, slist, tt)
 end
 
-function TextConfig(; kwargs...)
-    tc = TextConfig(true, false, false, true, true, false, false, true, [], [], [], IdentityTokenTransformation())
-    TextConfig(tc; kwargs...)
-end
-
-Base.copy(c::TextConfig; kwargs...) = TextConfig(c; kwargs...)
 Base.broadcastable(c::TextConfig) = (c,)

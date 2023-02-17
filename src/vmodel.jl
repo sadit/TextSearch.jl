@@ -3,7 +3,7 @@
 export TextModel, VectorModel, trainsize, vocsize,
     TfWeighting, IdfWeighting, TpWeighting,
     FreqWeighting, BinaryLocalWeighting, BinaryGlobalWeighting,
-    LocalWeighting, GlobalWeighting, weight, weights, fit
+    LocalWeighting, GlobalWeighting, weight, fit
 
 #####
 ##

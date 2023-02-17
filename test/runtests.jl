@@ -54,23 +54,35 @@ const corpus = ["hello world :)", "@user;) excellent!!", "#jello world."]
     end
 end
 
+function test_equals(a, b)
+    if a != b
+        @info :diff => setdiff(a, b)
+        @info :intersection => intersect(a, b)
+        @info :evaluated => a
+        @info :correct => b
+    end
+
+    @test a == b
+end
+
 @testset "individual tokenizers" begin
     m = TextConfig(nlist=[1])
-    @test tokenize(m, text0) == ["@user", ";)", "#jello", ".", "world"]
+    test_equals(tokenize(m, text0), ["@user", ";)", "#jello", ".", "world"])
 
     m = TextConfig(nlist=[2])
-    @test tokenize(m, text0) == ["\tn@user ;)", "\tn;) #jello", "\tn#jello .", "\tn. world"]
+    test_equals(tokenize(m, text0), ["\tn@user ;)", "\tn;) #jello", "\tn#jello .", "\tn. world"])
 
     m = TextConfig(nlist=[3])
-    @test tokenize(m, text0) == ["\tn@user ;) #jello", "\tn;) #jello .", "\tn#jello . world"]
+    test_equals(tokenize(m, text0), ["\tn@user ;) #jello", "\tn;) #jello .", "\tn#jello . world"])
 
     m = TextConfig(qlist=[3])
-    @test tokenize(m, text0) == map(p -> "\tq" * p, [" @u", "@us", "use", "ser", "er;", "r;)", ";) ", ") #", " #j", "#je", "jel", "ell", "llo", "lo.", "o.w", ".wo", "wor", "orl", "rld", "ld "])
+    test_equals(tokenize(m, text0), map(p -> "\tq" * p, [" @u", "@us", "use", "ser", "er;", "r;)", ";) ", ") #", " #j", "#je", "jel", "ell", "llo", "lo.", "o.w", ".wo", "wor", "orl", "rld", "ld "]))
+    
     m = TextConfig(nlist=[1])
-    @test tokenize(m, text1) == ["hello", "world", "!!", "@user", ";)", "#jello", ".", "world", ":)"]
+    test_equals(tokenize(m, text1), ["hello", "world", "!!", "@user", ";)", "#jello", ".", "world", ":)"])
 
     m = TextConfig(slist=[Skipgram(2,1)])
-    @test tokenize(m, text1) == map(p -> "\ts" * p, ["hello !!", "world @user", "!! ;)", "@user #jello", ";) .", "#jello world", ". :)"])
+    test_equals(tokenize(m, text1), map(p -> "\ts" * p, ["hello !!", "world @user", "!! ;)", "@user #jello", ";) .", "#jello world", ". :)"]))
 
 end
 
@@ -278,13 +290,14 @@ end
     model = VectorModel(IdfWeighting(), TfWeighting(), textconfig, _corpus)
     db = vectorize_corpus(model, textconfig, _corpus)
     invindex = WeightedInvertedFile(length(model.voc))
-    append!(invindex, VectorDatabase(db))
+    append_items!(invindex, VectorDatabase(db))
     begin # searching
         q = vectorize(model, textconfig, "la casa roja")
         p = search(invindex, q, KnnResult(4))
         @test sort!(collect(idview(p.res))) == [1, 2, 3, 4]
     end
 end
+
 
 @testset "centroid computing" begin
     textconfig = TextConfig(nlist=[1])
@@ -295,5 +308,20 @@ end
     expected = Dict("la" => 0.7366651330405098, "verde" => 0.39921969741172364, "azul" => 0.11248181187626208, "pera" => 0.08712803682959973, "esta" => 0.17425607365919946, "roja" => 0.22496362375252416, "hoja" => 0.11248181187626208, "casa" => 0.33744543562878626, "rica" => 0.17425607365919946, "manzana" => 0.19960984870586182)
     @test 0.999 < dot(vec, expected)
 end
+
+@testset "bm25 invindex" begin
+    for (i, m) in enumerate(_corpus)
+        @info i => m
+    end
+    invfile = BM25InvertedFile(TextConfig(nlist=[1]), _corpus) do t
+        1 < t.ndocs < 5
+    end
+    append_items!(invfile, _corpus)
+    R = search(invfile, "la casa de la manzana verde", KnnResult(3))
+    @show R.res
+    @show invfile.voc
+    @show invfile.bm25
+end
+
 
 @info "FINISH"

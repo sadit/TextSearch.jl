@@ -1,8 +1,8 @@
 # This file is part of TextSearch.jl
 
-function push_posting_list!(Q, idx::WeightedInvertedFile, tokenID, freq)
-	@inbounds p = PostingList(idx.lists[tokenID], idx.freqs[tokenID], tokenID, convert(Float32, freq))
-	push!(Q, p)
+function SimilaritySearch.search(idx::BM25InvertedFile, qtext::AbstractString, res::KnnResult; pools=nothing)
+	v = vectorize(idx.voc, idx.textconfig, qtext)
+	search(idx, v, res)
 end
 
 """
@@ -16,17 +16,20 @@ Find candidates for solving query `Q` using `idx`. It calls `callback` on each c
 - `Q`: the set of involved posting lists, see [`prepare_posting_lists_for_querying`](@ref)
 - `P`: a vector of starting positions in Q (initial state as ones)
 """
-function search(callback::Function, idx::BM25InvertedFile, Q, P_, t)
+function InvertedFiles.search_invfile(callback::Function, idx::BM25InvertedFile, Q, P_, t)
+	#@show "----------------"
 	umerge(Q, P_; t) do L, P, m
-		@inbounds docID = L[1].I[P[1]]
+		@inbounds docID = L[1].list[P[1]].id
 		doclen = idx.doclens[docID]
-		s = 0f0
+		S = 0f0
 		@inbounds @simd for i in 1:m
-			freq = L[i].W[P[i]]
+			freq = L[i].list[P[i]].weight
 			tokndocs = ndocs(idx.voc, L[i].tokenID)
-			s -= bm25tokenscore(idx.bm25, tokndocs, doclen, freq)
+			s = tokenscore(idx.bm25, tokndocs, doclen, freq)
+			#@show i, docID, idx.voc[L[i].tokenID], s, tokndocs, doclen, freq
+			S -= s
 		end
 
-		callback(docID, s)
+		callback(docID, S)
 	end
 end
