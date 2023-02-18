@@ -293,8 +293,8 @@ end
     append_items!(invindex, VectorDatabase(db))
     begin # searching
         q = vectorize(model, textconfig, "la casa roja")
-        p = search(invindex, q, KnnResult(4))
-        @test sort!(collect(idview(p.res))) == [1, 2, 3, 4]
+        R = search(invindex, q, KnnResult(4))
+        @test sort!([p.id for p in R.res]) == [1, 2, 3, 4]
     end
 end
 
@@ -318,7 +318,8 @@ end
     end
     append_items!(invfile, _corpus)
     R = search(invfile, "la casa de la manzana verde", KnnResult(3))
-    @show R.res
+    @test collect(IdView(R.res)) == UInt32[0x00000006, 0x00000002, 0x00000004]
+    @test evaluate(SqL2Distance(), collect(DistView(R.res)), Float32[-3.3956785, -3.1118512, -2.5816276]) <= 1e-4
     @show invfile.voc
     @show invfile.bm25
 end

@@ -16,7 +16,7 @@ struct BM25InvertedFile{DbType<:Union{<:AbstractDatabase,Nothing}} <: AbstractIn
     textconfig::TextConfig
     voc::Vocabulary
     bm25::BM25
-    adj::AdjacencyList{IWeightedEndPoint}
+    adj::AdjacencyList{IdIntWeight}
     doclens::Vector{Int32}  ## number of tokens per document
 end
 
@@ -63,7 +63,7 @@ function BM25InvertedFile(filter_tokens_::Union{Nothing,Function}, textconfig::T
         textconfig,
         voc,
         bm25,
-        AdjacencyList(IWeightedEndPoint; n=vocsize(voc)),
+        AdjacencyList(IdIntWeight; n=vocsize(voc)),
         Vector{Int32}(undef, 0),
     )
 end
@@ -82,9 +82,9 @@ end
 
 function InvertedFiles.internal_push!(idx::BM25InvertedFile, tokenID, objID, freq, sort)
     if sort
-        add_edge!(idx.adj, tokenID, IWeightedEndPoint(objID, freq), IdOrder)
+        add_edge!(idx.adj, tokenID, IdIntWeight(objID, freq), IdOrder)
     else
-        add_edge!(idx.adj, tokenID, IWeightedEndPoint(objID, freq), nothing)
+        add_edge!(idx.adj, tokenID, IdIntWeight(objID, freq), nothing)
     end
 end
 
