@@ -1,12 +1,12 @@
 # This file is part of TextSearch.jl
 
-function SimilaritySearch.search(idx::BM25InvertedFile, qtext::AbstractString, res::KnnResult; pools=nothing)
-	v = vectorize(idx.voc, idx.textconfig, qtext)
-	search(idx, v, res)
+function SimilaritySearch.search(idx::BM25InvertedFile, qtext::AbstractString, res::KnnResult; pools=nothing, maxfreq=0.1)
+	q = vectorize(idx.voc, idx.textconfig, qtext)
+	search(idx, q, res)
 end
 
 """
-search(callback::Function, idx::BM25InvertedFile, Q, P; t=1)
+	search_invfile(callback::Function, idx::BM25InvertedFile, Q, P_, t)
 
 Find candidates for solving query `Q` using `idx`. It calls `callback` on each candidate `(docID, dist)`
 
@@ -33,3 +33,4 @@ function InvertedFiles.search_invfile(callback::Function, idx::BM25InvertedFile,
 		callback(docID, S)
 	end
 end
+
