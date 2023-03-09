@@ -1,24 +1,20 @@
 # This file is part of TextSearch.jl
 
-function SimilaritySearch.search(idx::BM25InvertedFile, qtext::AbstractString, res::KnnResult; pools=nothing, maxfreq=0.1)
-	q = vectorize(idx.voc, idx.textconfig, qtext)
-	search(idx, q, res)
-end
+using SimilaritySearch: getpools
+using InvertedFiles: getcachepositions
 
 """
-	search_invfile(callback::Function, idx::BM25InvertedFile, Q, P_, t)
+  search(accept_posting_list::Function, idx::BM25InvertedFile, qtext::AbstractString, res::KnnResult; pools=getpools(idx))
+  search(idx::BM25InvertedFile, qtext::AbstractString, res::KnnResult; pools=getpools(idx))
 
 Find candidates for solving query `Q` using `idx`. It calls `callback` on each candidate `(docID, dist)`
-
-# Arguments:
-- `callback`: callback function on each candidate
-- `idx`: inverted index
-- `Q`: the set of involved posting lists, see [`prepare_posting_lists_for_querying`](@ref)
-- `P`: a vector of starting positions in Q (initial state as ones)
 """
-function InvertedFiles.search_invfile(callback::Function, idx::BM25InvertedFile, Q, P_, t)
-	#@show "----------------"
-	umerge(Q, P_; t) do L, P, m
+function SimilaritySearch.search(accept_posting_list::Function, idx::BM25InvertedFile, qtext::AbstractString, res::KnnResult; pools=getpools(idx))
+	q = vectorize(idx.voc, idx.textconfig, qtext)
+  Q = prepare_posting_lists_for_querying(accept_posting_list, idx, q, pools)
+  P = getcachepositions(length(Q), pools)
+  t = 1
+	cost = umerge(Q, P; t) do L, P, m
 		@inbounds docID = L[1].list[P[1]].id
 		doclen = idx.doclens[docID]
 		S = 0f0
@@ -30,7 +26,15 @@ function InvertedFiles.search_invfile(callback::Function, idx::BM25InvertedFile,
 			S -= s
 		end
 
-		callback(docID, S)
+    push_item!(res, IdWeight(docID, S))
+		# callback(docID, S)
 	end
+
+  SearchResult(res, cost)
 end
 
+function SimilaritySearch.search(idx::BM25InvertedFile, qtext::AbstractString, res::KnnResult; pools=getpools(idx))
+  search(idx, qtext, res; pools) do lst
+    true
+  end
+end
