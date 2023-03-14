@@ -324,5 +324,16 @@ end
     @show invfile.bm25
 end
 
+@testset "bm25 invindex" begin
+    invfile = BM25InvertedFile(TextConfig(nlist=[1]), _corpus)
+    append_items!(invfile, _corpus)
+    filter_lists!(invfile; min_length=2, max_length=3, min_freq=1, max_freq=3)
+    R = search(invfile, "la casa de la manzana verde", KnnResult(3))
+    @test collect(IdView(R.res)) == UInt32[0x00000006, 0x00000002, 0x00000004]
+    @show collect(DistView(R.res))
+    @show invfile.voc
+    @show invfile.bm25
+end
+
 
 @info "FINISH"

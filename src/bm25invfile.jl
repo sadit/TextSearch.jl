@@ -1,7 +1,9 @@
 # This file is part of TextSearch.jl
 
-export BM25InvertedFile
+export BM25InvertedFile, search, filter_lists!, append_items!, push_item!
 using SimilaritySearch.AdjacencyLists
+import SimilaritySearch: saveindex, restoreindex, search, append_items!, push_item!, database, distance
+
 using Intersections
 using InvertedFiles
 using StatsBase
@@ -20,11 +22,11 @@ struct BM25InvertedFile{DbType<:Union{<:AbstractDatabase,Nothing}} <: AbstractIn
     doclens::Vector{Int32}  ## number of tokens per document
 end
 
-SimilaritySearch.length(invfile::BM25InvertedFile) = length(invfile.doclens)
-SimilaritySearch.database(invfile::BM25InvertedFile) = invfile.db
-SimilaritySearch.distance(::BM25InvertedFile) = error("BM25InvertedFile is not a metric index")
+Base.length(invfile::BM25InvertedFile) = length(invfile.doclens)
+database(invfile::BM25InvertedFile) = invfile.db
+distance(::BM25InvertedFile) = error("BM25InvertedFile is not a metric index")
 
-function SimilaritySearch.saveindex(filename::AbstractString, index::BM25InvertedFile, meta::Dict)
+function saveindex(filename::AbstractString, index::BM25InvertedFile, meta::Dict)
     index = InvFileType(index; adj=StaticAdjacencyList(index.adj))
     jldsave(filename; index, meta)
 end
@@ -72,11 +74,45 @@ function BM25InvertedFile(textconfig::TextConfig, corpus, db=nothing)
     BM25InvertedFile(nothing, textconfig, corpus, db)
 end
 
-function SimilaritySearch.append_items!(idx::BM25InvertedFile, corpus::AbstractVector{T}) where {T<:AbstractString}
+function filter_lists!(
+        idx::BM25InvertedFile;
+        min_length=96,
+        max_length=1024,
+        min_freq=3,
+        max_freq=1e5
+    )
+    adj = idx.adj
+    @assert adj isa AdjacencyList
+    buff = IdIntWeight[]
+    sizehint!(buff, max_freq)
+
+    for i in eachindex(adj)
+        L = neighbors(adj, i)
+        n = length(L)
+        n <= min_length && continue
+        empty!(buff)
+        for item in L
+            if min_freq <= item.weight <= max_freq
+                push!(buff, item)
+            end
+        end
+
+        sort!(buff, by=p->p.weight, rev=true)
+        if length(buff) > max_length
+            resize!(buff, max_length)
+        end
+
+        sort!(buff, by=p->p.id)
+        resize!(L, length(buff))
+        L .= buff
+    end
+end
+
+function append_items!(idx::BM25InvertedFile, corpus::AbstractVector{T}) where {T<:AbstractString}
     append_items!(idx, VectorDatabase(vectorize_corpus(idx.voc, idx.textconfig, corpus)))
 end
 
-function SimilaritySearch.push_item!(idx::BM25InvertedFile, doc::AbstractString)
+function push_item!(idx::BM25InvertedFile, doc::AbstractString)
     push_item!(idx, vectorize(idx.voc, idx.textconfig, corpus))
 end
 

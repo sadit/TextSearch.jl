@@ -14,11 +14,10 @@ function SimilaritySearch.search(accept_posting_list::Function, idx::BM25Inverte
   search(accept_posting_list, idx, q, res; pools)
 end
 
-function SimilaritySearch.search(accept_posting_list::Function, idx::BM25InvertedFile, q::DVEC, res::KnnResult; pools=getpools(idx))
-  Q = prepare_posting_lists_for_querying(accept_posting_list, idx, q, pools)
+function SimilaritySearch.search(accept_posting_list::Function, idx::BM25InvertedFile, q::DVEC, res::KnnResult; pools=getpools(idx), t::Int=1)
+  Q = select_posting_lists(accept_posting_list, idx, q; pools)
   P_ = getcachepositions(length(Q), pools)
-  t = 1
-	cost = umergefun(Q, P_; t) do L, P, m
+	cost = xmergefun(Q, P_; t) do L, P, m
 		@inbounds docID = L[1].list[P[1]].id
 		doclen = idx.doclens[docID]
 		S = 0f0
