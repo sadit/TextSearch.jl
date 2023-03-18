@@ -74,5 +74,6 @@ include("emodel.jl")
 include("bm25.jl")
 include("bm25invfile.jl")
 include("bm25invfilesearch.jl")
+include("langmodel.jl")
 
 end

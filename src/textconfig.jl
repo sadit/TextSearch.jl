@@ -67,6 +67,7 @@ Base.isequal(a::Skipgram, b::Skipgram) = a.qsize == b.qsize && a.skip == b.skip
         qlist::Vector=Int8[],
         nlist::Vector=Int8[],
         slist::Vector{Skipgram}=Skipgram[],
+        mark_token_type::Bool = true
         tt=IdentityTokenTransformation()
     )
 
@@ -83,6 +84,7 @@ Defines a preprocessing and tokenization pipeline
 - `qlist`: a list of character q-grams to use
 - `nlist`: a list of words n-grams to use
 - `slist`: a list of skip-grams tokenizers to use
+- `mark_token_type`: each token is `marked` with its type (qgram, skipgram, nword) when is true. 
 - `tt`: An `AbstractTokenTransformation` struct
 
 Note: If qlist, nlist, and slists are all empty arrays, then it defaults to nlist=[1]
@@ -99,9 +101,10 @@ Base.@kwdef struct TextConfig
     qlist::Vector{Int8} = Int8[]
     nlist::Vector{Int8} = Int8[]
     slist::Vector{Skipgram} = Skipgram[]
+    mark_token_type::Bool = true
     tt::AbstractTokenTransformation = IdentityTokenTransformation()
 
-    function TextConfig(del_diac, del_dup, del_punc, group_num, group_url, group_usr, group_emo, lc, qlist, nlist, slist, tt)
+    function TextConfig(del_diac, del_dup, del_punc, group_num, group_url, group_usr, group_emo, lc, qlist, nlist, slist, mark_token_type, tt)
         if length(qlist) == length(nlist) == length(slist) == 0
             nlist = [1]
         end
@@ -109,7 +112,7 @@ Base.@kwdef struct TextConfig
         nlist = sort!(Vector{Int8}(nlist))
         slist = sort!(Vector{Skipgram}(slist))
 
-        new(del_diac, del_dup, del_punc, group_num, group_url, group_usr, group_emo, lc, qlist, nlist, slist, tt)
+        new(del_diac, del_dup, del_punc, group_num, group_url, group_usr, group_emo, lc, qlist, nlist, slist, mark_token_type, tt)
     end
 end
 
@@ -125,12 +128,13 @@ function TextConfig(c::TextConfig;
         qlist=c.qlist,
         nlist=c.nlist,
         slist=c.slist,
+        mark_token_type=c.mark_token_type,
         tt::AbstractTokenTransformation=c.tt
     )
 
     TextConfig(del_diac, del_dup, del_punc,
         group_num, group_url, group_usr, group_emo,
-        lc, qlist, nlist, slist, tt)
+        lc, qlist, nlist, slist, mark_token_type, tt)
 end
 
 Base.broadcastable(c::TextConfig) = (c,)

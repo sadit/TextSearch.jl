@@ -10,12 +10,15 @@ using InvertedFiles: getcachepositions
 Find candidates for solving query `Q` using `idx`. It calls `callback` on each candidate `(docID, dist)`
 """
 function SimilaritySearch.search(accept_posting_list::Function, idx::BM25InvertedFile, qtext::AbstractString, res::KnnResult; pools=getpools(idx))
-	q = vectorize(idx.voc, idx.textconfig, qtext)
-  search(accept_posting_list, idx, q, res; pools)
+    q = vectorize(idx.voc, idx.textconfig, qtext)
+    search(accept_posting_list, idx, q, res; pools)
 end
 
 function SimilaritySearch.search(accept_posting_list::Function, idx::BM25InvertedFile, q::DVEC, res::KnnResult; pools=getpools(idx), t::Int=1)
   Q = select_posting_lists(accept_posting_list, idx, q; pools)
+  if length(Q) == 0
+      return SearchResult(res, 0)
+  end
   P_ = getcachepositions(length(Q), pools)
 	cost = xmergefun(Q, P_; t) do L, P, m
 		@inbounds docID = L[1].list[P[1]].id

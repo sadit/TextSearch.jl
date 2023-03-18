@@ -20,7 +20,7 @@ function BM25(avg_doc_len::AbstractFloat, collection_size::Integer; k1=1.2f0, b=
     )
 end
 
-function score(bm25::BM25, voc::Vocabulary, query::DVEC, doc::DVEC)
+function bm25score(bm25::BM25, voc::Vocabulary, query::DVEC, doc::DVEC)
     s = 0.0
 
     doclen = sum(f for f in values(doc))

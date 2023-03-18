@@ -76,36 +76,38 @@ end
 
 function filter_lists!(
         idx::BM25InvertedFile;
-        min_length=96,
-        max_length=1024,
-        min_freq=3,
-        max_freq=1e5
+        list_min_length_for_checking::Int=96,
+        list_max_allowed_length::Int=1024,
+        doc_min_freq::Int=1,
+        doc_max_freq::Int=128
     )
     adj = idx.adj
     @assert adj isa AdjacencyList
     buff = IdIntWeight[]
-    sizehint!(buff, max_freq)
+    sizehint!(buff, list_max_allowed_length)
 
     for i in eachindex(adj)
         L = neighbors(adj, i)
         n = length(L)
-        n <= min_length && continue
+        n < list_min_length_for_checking && continue
         empty!(buff)
         for item in L
-            if min_freq <= item.weight <= max_freq
+            if doc_min_freq <= item.weight <= doc_max_freq
                 push!(buff, item)
             end
         end
 
         sort!(buff, by=p->p.weight, rev=true)
-        if length(buff) > max_length
-            resize!(buff, max_length)
+        if length(buff) > list_max_allowed_length
+            resize!(buff, list_max_allowed_length)
         end
 
         sort!(buff, by=p->p.id)
         resize!(L, length(buff))
         L .= buff
     end
+
+    idx
 end
 
 function append_items!(idx::BM25InvertedFile, corpus::AbstractVector{T}) where {T<:AbstractString}

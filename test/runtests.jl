@@ -60,6 +60,7 @@ function test_equals(a, b)
         @info :intersection => intersect(a, b)
         @info :evaluated => a
         @info :correct => b
+        error("diff")
     end
 
     @test a == b
@@ -70,19 +71,19 @@ end
     test_equals(tokenize(m, text0), ["@user", ";)", "#jello", ".", "world"])
 
     m = TextConfig(nlist=[2])
-    test_equals(tokenize(m, text0), ["\tn@user ;)", "\tn;) #jello", "\tn#jello .", "\tn. world"])
+    test_equals(tokenize(m, text0), ["@user ;)\tn", ";) #jello\tn", "#jello .\tn", ". world\tn"])
 
     m = TextConfig(nlist=[3])
-    test_equals(tokenize(m, text0), ["\tn@user ;) #jello", "\tn;) #jello .", "\tn#jello . world"])
+    test_equals(tokenize(m, text0), ["@user ;) #jello\tn", ";) #jello .\tn", "#jello . world\tn"])
 
     m = TextConfig(qlist=[3])
-    test_equals(tokenize(m, text0), map(p -> "\tq" * p, [" @u", "@us", "use", "ser", "er;", "r;)", ";) ", ") #", " #j", "#je", "jel", "ell", "llo", "lo.", "o.w", ".wo", "wor", "orl", "rld", "ld "]))
+    test_equals(tokenize(m, text0), map(p -> p*"\tq", [" @u", "@us", "use", "ser", "er;", "r;)", ";) ", ") #", " #j", "#je", "jel", "ell", "llo", "lo.", "o.w", ".wo", "wor", "orl", "rld", "ld "]))
     
     m = TextConfig(nlist=[1])
     test_equals(tokenize(m, text1), ["hello", "world", "!!", "@user", ";)", "#jello", ".", "world", ":)"])
 
     m = TextConfig(slist=[Skipgram(2,1)])
-    test_equals(tokenize(m, text1), map(p -> "\ts" * p, ["hello !!", "world @user", "!! ;)", "@user #jello", ";) .", "#jello world", ". :)"]))
+    test_equals(tokenize(m, text1), map(p -> "$p\ts", ["hello !!", "world @user", "!! ;)", "@user #jello", ";) .", "#jello world", ". :)"]))
 
 end
 
@@ -90,8 +91,8 @@ end
     m = TextConfig(nlist=[1, 2])
     A = tokenize(m, "hello ;) #jello world.")
     B = tokenize(m, ["hello ;)", "#jello world."])
-    push!(B, "\tn;) #jello")
-    @test sort(A) == sort(B)
+    push!(B, ";) #jello\tn")
+    test_equals(sort(A), sort(B))
     # @show sort(A) sort(B)
 end
 
@@ -112,17 +113,17 @@ end
 end
 
 @testset "Normalize and tokenize" begin
-    textconfig = TextConfig(del_punc=true, group_usr=true, nlist=[1, 2, 3])
-    @test tokenize(textconfig, text1) == ["hello", "world", "_usr", "#jello", "world", "\tnhello world", "\tnworld _usr", "\tn_usr #jello", "\tn#jello world", "\tnhello world _usr", "\tnworld _usr #jello", "\tn_usr #jello world"]
+    textconfig = TextConfig(del_punc=true, group_usr=true, nlist=[1, 2, 3], mark_token_type=false)
+    @test tokenize(textconfig, text1) == ["hello", "world", "_usr", "#jello", "world", "hello world", "world _usr", "_usr #jello", "#jello world", "hello world _usr", "world _usr #jello", "_usr #jello world"]
 end
 
 @testset "Normalize and tokenize bigrams and trigrams" begin
-    textconfig = TextConfig(del_punc=true, group_usr=true, nlist=[2, 3])
-    @test tokenize(textconfig, text1) == ["\tnhello world", "\tnworld _usr", "\tn_usr #jello", "\tn#jello world", "\tnhello world _usr", "\tnworld _usr #jello", "\tn_usr #jello world"]
+    textconfig = TextConfig(del_punc=true, group_usr=true, nlist=[2, 3], mark_token_type=false)
+    @test tokenize(textconfig, text1) == ["hello world", "world _usr", "_usr #jello", "#jello world", "hello world _usr", "world _usr #jello", "_usr #jello world"]
 end
 
 @testset "Normalize and tokenize" begin
-    textconfig = TextConfig(del_punc=false, group_usr=true, nlist=[1])
+    textconfig = TextConfig(del_punc=false, group_usr=true, nlist=[1], mark_token_type=false)
     text3 = "a ab __b @@c ..!d ''e \"!\"f +10 -20 30 40.00 .50 6.0 7.. ======= !()[]{}"
     @test tokenize(textconfig, text3) == ["a", "ab", "__b", "@_usr", "..!", "d", "''", "e", "\"!\"", "f", "0", "0", "0", "0", "0", "0", "0", ".", "=======", "!()", "[]{", "}"]
 end
@@ -131,12 +132,12 @@ end
     textconfig = TextConfig(del_punc=false, group_usr=false, slist=[Skipgram(3,1)])
     tokens = tokenize(textconfig, text1)
     @show text1 tokens
-    @test tokens == ["\tshello !! ;)", "\tsworld @user #jello", "\ts!! ;) .", "\ts@user #jello world", "\ts;) . :)"]
+    @test tokens == ["hello !! ;)\ts", "world @user #jello\ts", "!! ;) .\ts", "@user #jello world\ts", ";) . :)\ts"]
 
-    config = TextConfig(del_punc=false, group_usr=false, nlist=[], slist=[Skipgram(3,1), Skipgram(2, 1)])
+    config = TextConfig(del_punc=false, group_usr=false, nlist=[], slist=[Skipgram(3,1), Skipgram(2, 1)], mark_token_type=false)
     tokens = tokenize(config, text1)
     @show text1 tokens
-    @test tokens == ["\tshello !!", "\tsworld @user", "\ts!! ;)", "\ts@user #jello", "\ts;) .", "\ts#jello world", "\ts. :)", "\tshello !! ;)", "\tsworld @user #jello", "\ts!! ;) .", "\ts@user #jello world", "\ts;) . :)"]
+    @test tokens == ["hello !!", "world @user", "!! ;)", "@user #jello", ";) .", "#jello world", ". :)", "hello !! ;)", "world @user #jello", "!! ;) .", "@user #jello world", ";) . :)"]
 end
 
 @testset "Vocabulary and BOW" begin
@@ -161,7 +162,7 @@ end
 end
 
 @testset "tokenize list of strings as a single message" begin
-    textconfig = TextConfig(nlist=[1])
+    textconfig = TextConfig(nlist=[1], mark_token_type=false)
     model = VectorModel(BinaryGlobalWeighting(), FreqWeighting(), textconfig, corpus)
     @test vectorize(model, textconfig, ["hello ;)", "#jello world."]) == vectorize(model, textconfig, "hello ;) #jello world.")
 end
@@ -327,7 +328,11 @@ end
 @testset "bm25 invindex" begin
     invfile = BM25InvertedFile(TextConfig(nlist=[1]), _corpus)
     append_items!(invfile, _corpus)
-    filter_lists!(invfile; min_length=2, max_length=3, min_freq=1, max_freq=3)
+    filter_lists!(invfile;
+                  list_min_length_for_checking=2,
+                  list_max_allowed_length=3,
+                  doc_min_freq=1,
+                  doc_max_freq=3)
     R = search(invfile, "la casa de la manzana verde", KnnResult(3))
     @test collect(IdView(R.res)) == UInt32[0x00000006, 0x00000002, 0x00000004]
     @show collect(DistView(R.res))

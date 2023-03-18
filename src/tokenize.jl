@@ -73,7 +73,7 @@ tokenize_corpus(textconfig::TextConfig, arr; minbatch=0) = tokenize_corpus(copy,
 
 function tokenize_(config::TextConfig, buff::TextSearchBuffer)
     for q in config.qlist
-        qgrams(q, buff, config.tt)
+        qgrams(q, buff, config.tt, config.mark_token_type)
     end
     
     if length(config.nlist) > 0 || length(config.slist) > 0
@@ -85,11 +85,11 @@ function tokenize_(config::TextConfig, buff::TextSearchBuffer)
         end
 
         for q in config.nlist 
-            q != 1 && nwords(q, buff, config.tt)
+            q != 1 && nwords(q, buff, config.tt, config.mark_token_type)
         end
 
         for q in config.slist
-            skipgrams(q, buff, config.tt)
+            skipgrams(q, buff, config.tt, config.mark_token_type)
         end
     end
 
@@ -110,12 +110,13 @@ function flush_unigram!(buff::TextSearchBuffer, tt::AbstractTokenTransformation)
 end
 
 """
-    flush_nword!(buff::TextSearchBuffer, tt::AbstractTokenTransformation)
+    flush_nword!(buff::TextSearchBuffer, tt::AbstractTokenTransformation, mark_token_type)
 
 Pushes the nword inside the buffer to the token list; it discards empty strings.
 """
-function flush_nword!(buff::TextSearchBuffer, tt::AbstractTokenTransformation)
+function flush_nword!(buff::TextSearchBuffer, tt::AbstractTokenTransformation, mark_token_type)
     buff.io.size == 0 && return nothing
+    mark_token_type && write(buff.io, '\t', 'n')
     s = transform_nword(tt, String(take!(buff.io)))
     s === nothing && return nothing
     push!(buff.tokens, s)
@@ -123,12 +124,13 @@ function flush_nword!(buff::TextSearchBuffer, tt::AbstractTokenTransformation)
 end
 
 """
-    flush_qgram!(buff::TextSearchBuffer, tt::AbstractTokenTransformation)
+    flush_qgram!(buff::TextSearchBuffer, tt::AbstractTokenTransformation, mark_token_type)
 
 Pushes the qgram inside the buffer to the token list; it discards empty strings.
 """
-function flush_qgram!(buff::TextSearchBuffer, tt::AbstractTokenTransformation)
+function flush_qgram!(buff::TextSearchBuffer, tt::AbstractTokenTransformation, mark_token_type)
     buff.io.size == 0 && return nothing
+    mark_token_type && write(buff.io, '\t', 'q')
     s = transform_qgram(tt, String(take!(buff.io)))
     s === nothing && return nothing
     push!(buff.tokens, s)
@@ -136,12 +138,13 @@ function flush_qgram!(buff::TextSearchBuffer, tt::AbstractTokenTransformation)
 end
 
 """
-    flush_skipgram!(buff::TextSearchBuffer, tt::AbstractTokenTransformation)
+    flush_skipgram!(buff::TextSearchBuffer, tt::AbstractTokenTransformation, mark_token_type)
 
 Pushes the skipgram inside the buffer to the token list; it discards empty strings.
 """
-function flush_skipgram!(buff::TextSearchBuffer, tt::AbstractTokenTransformation)
+function flush_skipgram!(buff::TextSearchBuffer, tt::AbstractTokenTransformation, mark_token_type)
     buff.io.size == 0 && return nothing
+    mark_token_type && write(buff.io, '\t', 's')
     s = transform_skipgram(tt, String(take!(buff.io)))
     s === nothing && return nothing
     push!(buff.tokens, s)
@@ -149,19 +152,18 @@ function flush_skipgram!(buff::TextSearchBuffer, tt::AbstractTokenTransformation
 end
 
 """
-    qgrams(q::Integer, buff::TextSearchBuffer, tt::AbstractTokenTransformation)
+    qgrams(q::Integer, buff::TextSearchBuffer, tt::AbstractTokenTransformation, mark_token_type)
 
 Computes character q-grams for the given input
 """
-function qgrams(q::Integer, buff::TextSearchBuffer, tt::AbstractTokenTransformation)
+function qgrams(q::Integer, buff::TextSearchBuffer, tt::AbstractTokenTransformation, mark_token_type)
     n = length(buff.normtext)
 
     for i in 1:(n - q + 1)
-        write(buff.io, '\t', 'q')
         for j in i:i+q-1
             @inbounds write(buff.io, buff.normtext[j])
         end
-        flush_qgram!(buff, tt)
+        flush_qgram!(buff, tt, mark_token_type)
     end
 
     buff.tokens
@@ -224,36 +226,34 @@ function unigrams(buff::TextSearchBuffer, tt::AbstractTokenTransformation)
 end
 
 """
-    nwords(q::Integer, buff::TextSearchBuffer, tt::AbstractTokenTransformation)
+    nwords(q::Integer, buff::TextSearchBuffer, tt::AbstractTokenTransformation, mark_token_type)
 """
-function nwords(q::Integer, buff::TextSearchBuffer, tt::AbstractTokenTransformation)
+function nwords(q::Integer, buff::TextSearchBuffer, tt::AbstractTokenTransformation, mark_token_type)
     n = length(buff.unigrams)
 
     @inbounds for i in 1:(n - q + 1)
         _last = i + q - 1
-        write(buff.io, '\t', 'n')
         for j in i:_last-1
             write(buff.io, buff.unigrams[j])
             write(buff.io, BLANK)
         end
 
         write(buff.io, buff.unigrams[_last])
-        flush_nword!(buff, tt)
+        flush_nword!(buff, tt, mark_token_type)
     end
 
     buff.tokens
 end
 
 """
-    skipgrams(q::Skipgram, buff::TextSearchBuffer, tt::AbstractTokenTransformation)
+    skipgrams(q::Skipgram, buff::TextSearchBuffer, tt::AbstractTokenTransformation, mark_token_type)
 
 Tokenizes using skipgrams
 """
-function skipgrams(q::Skipgram, buff::TextSearchBuffer, tt::AbstractTokenTransformation)
+function skipgrams(q::Skipgram, buff::TextSearchBuffer, tt::AbstractTokenTransformation, mark_token_type)
     n = length(buff.unigrams)
 
     for start in 1:(n - (q.qsize + (q.qsize - 1) * q.skip) + 1)
-        write(buff.io, '\t', 's')
         if q.qsize == 2
             write(buff.io, buff.unigrams[start])
             write(buff.io, BLANK)
@@ -268,8 +268,9 @@ function skipgrams(q::Skipgram, buff::TextSearchBuffer, tt::AbstractTokenTransfo
             write(buff.io, buff.unigrams[start + ep * (1+q.skip)])
         end
 
-        flush_skipgram!(buff, tt)
+        flush_skipgram!(buff, tt, mark_token_type)
     end
 
     buff.tokens
 end
+

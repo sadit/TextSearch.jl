@@ -11,7 +11,7 @@ Entropy weighting uses the empirical entropy of the vocabulary along classes to 
 """
 struct EntropyWeighting <: GlobalWeighting end
 
-function entropy(dist)
+function entropy_(dist)
     e = 0.0
     ipop = 1/sum(dist)
 
@@ -107,7 +107,7 @@ function _compute_entropy(model, D, weights, nclasses, mindocs)
         else
             dist = @view D[:, tokenID]
             dist .= dist .* weights
-            e = 1.0 - entropy(dist) / maxent
+            e = 1.0 - entropy_(dist) / maxent
             model.weight[tokenID] = e
         end
     end
