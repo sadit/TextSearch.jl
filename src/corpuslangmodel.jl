@@ -9,9 +9,22 @@ struct EncodedCorpus
     offset::Vector{UInt64}
 end
 
-function EncodedCorpus(corpus; tc = TextConfig(nlist=[1], mark_token_type=false), bsize::Int=10^4)
+function EncodedCorpus(
+        corpus; kwargs...
+    )
+    tc = TextConfig(nlist=[1], mark_token_type=false),
+    voc = filter_tokens_(Vocabulary(tc, corpus))
+    EncodedCorpus(tc, voc, corpus; kwargs...)
+end
+
+function EncodedCorpus(
+        tc::TextConfig,
+        voc::Vocabulary,
+        corpus;
+        bsize::Int=10^4
+    )
+    
     tc.nlist == [1] && length(tc.qlist) == 0 && length(tc.slist) == 0 || throw(ArgumentError("only unigrams are supported for EncodedCorpus"))
-    voc = Vocabulary(tc, corpus)
     seq = UInt32[]
     offset = UInt64[]
 
@@ -52,22 +65,6 @@ end
 function decode(ecorpus::EncodedCorpus, doc)
     [ecorpus.voc.token[id] for id in doc]
 end
-
-
-
-#=struct Ngram{qsize}
-    pos::UInt64
-end
-
-function fetch(ecorpus, q::Ngram{qsize}) where qsize
-    view(ecorpus.seq, q.pos:q.pos+qsize-1)
-end
-
-function decode(ecorpus, q::Ngram{qsize}) where qsize
-    [ecorpus.voc.token[i] for i in fetch(ecorpus, q)]
-end
-=#
-
 
 struct CorpusLanguageModel
     corpus::EncodedCorpus
