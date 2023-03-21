@@ -85,11 +85,13 @@ function CorpusLanguageModel(corpus::EncodedCorpus, labels=nothing;
     labels = labels === nothing ? Dict{UInt32,Vector{Pair{UInt32,Float32}}}() : labels
 
     n = length(corpus)
+    @info "--lens"
     doclen = Int32[length(text) for text in corpus]
     avg_doc_len = mean(doclen)
     bm25 = BM25(avg_doc_len, n)
     voc = corpus.voc
 
+    @info "--lexidx"
     lexidx = BM25InvertedFile(
         nothing,
         corpus.tc,
@@ -103,9 +105,11 @@ function CorpusLanguageModel(corpus::EncodedCorpus, labels=nothing;
         append_items!(lexidx, VectorDatabase([corpus[i] for i in part]))
     end=#
     DB = VectorDatabase([corpus[i] for i in 1:n])
+    @info "append_items"
     append_items!(lexidx, DB)
 
     doc_max_freq = ceil(Int, vocsize(voc) * doc_max_ratio)
+    @info "filter lists!"
     filter_lists!(lexidx;
                   list_min_length_for_checking,
                   list_max_allowed_length,
@@ -113,8 +117,10 @@ function CorpusLanguageModel(corpus::EncodedCorpus, labels=nothing;
                   doc_max_freq
                  )
 
-    semidx = BinaryInvertedFile(n, JaccardDistance())
+
+    @info "searchbatch"
     @time knns, _ = searchbatch(lexidx, DB, k)
+    semidx = BinaryInvertedFile(n, JaccardDistance())
     @time append_items!(semidx, MatrixDatabase(knns))
 
     CorpusLanguageModel(corpus, labels, lexidx, semidx)
