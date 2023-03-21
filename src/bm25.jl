@@ -1,4 +1,5 @@
 # This file is a part of TextSearch.jl
+export BM25, bm25score, tokenscore
 
 struct BM25
     #k1::Float32

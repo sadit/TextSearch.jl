@@ -14,7 +14,7 @@ function SimilaritySearch.search(accept_posting_list::Function, idx::BM25Inverte
     search(accept_posting_list, idx, q, res; pools)
 end
 
-function SimilaritySearch.search(accept_posting_list::Function, idx::BM25InvertedFile, q::DVEC, res::KnnResult; pools=getpools(idx), t::Int=1)
+function SimilaritySearch.search(accept_posting_list::Function, idx::BM25InvertedFile, q, res::KnnResult; pools=getpools(idx), t::Int=1)
   Q = select_posting_lists(accept_posting_list, idx, q; pools)
   if length(Q) == 0
       return SearchResult(res, 0)

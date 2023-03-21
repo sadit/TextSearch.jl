@@ -1,8 +1,10 @@
 # This file is part of TextSearch.jl
 
 export BM25InvertedFile, search, filter_lists!, append_items!, push_item!
+
 using SimilaritySearch.AdjacencyLists
-import SimilaritySearch: saveindex, restoreindex, search, append_items!, push_item!, database, distance
+import SimilaritySearch: search, append_items!, push_item!, database, distance
+import SimilaritySearch: serializeindex, restoreindex
 
 using Intersections
 using InvertedFiles
@@ -13,12 +15,14 @@ using StatsBase
 
 # Parameters
 """
-struct BM25InvertedFile{DbType<:Union{<:AbstractDatabase,Nothing}} <: AbstractInvertedFile
+struct BM25InvertedFile{
+                        DbType<:Union{<:AbstractDatabase,Nothing},
+                        AdjType<:AbstractAdjacencyList} <: AbstractInvertedFile
     db::DbType
     textconfig::TextConfig
     voc::Vocabulary
     bm25::BM25
-    adj::AdjacencyList{IdIntWeight}
+    adj::AdjType
     doclens::Vector{Int32}  ## number of tokens per document
 end
 
@@ -26,13 +30,22 @@ Base.length(invfile::BM25InvertedFile) = length(invfile.doclens)
 database(invfile::BM25InvertedFile) = invfile.db
 distance(::BM25InvertedFile) = error("BM25InvertedFile is not a metric index")
 
-function saveindex(filename::AbstractString, index::BM25InvertedFile, meta::Dict)
-    index = InvFileType(index; adj=StaticAdjacencyList(index.adj))
-    jldsave(filename; index, meta)
+
+function serializeindex(file, parent::String, index::BM25InvertedFile, meta, options::Dict)
+    adj = StaticAdjacencyList(index.adj)
+    I = copy(index; adj)
+    file[joinpath(parent, "index")] = I
 end
 
-function restoreindex(index::BM25InvertedFile, meta::Dict, f)
-    copy(index; adj=AdjacencyList(index.adj)), meta
+"""
+    loadindex(...; staticgraph=false, parent="/")
+    restoreindex(file, parent::String, index, meta, options::Dict; staticgraph=false)
+
+load the inverted index optionally making the postings lists static or dynamic 
+"""
+function restoreindex(file, parent::String, index::BM25InvertedFile, meta, options::Dict; staticgraph=false)
+    adj = staticgraph ? index.adj : AdjacencyList(index.adj)
+    copy(index; adj)
 end
 
 BM25InvertedFile(invfile::BM25InvertedFile;
@@ -40,9 +53,11 @@ BM25InvertedFile(invfile::BM25InvertedFile;
     textconfig=invfile.textconfig,
     voc=invfile.voc,
     bm25=invfile.bm25,
-    adj=index.adj,
+    adj=invfile.adj,
     doclens=invfile.doclens
 ) = BM25InvertedFile(db, textconfig, voc, bm25, adj, doclens)
+
+Base.copy(I::BM25InvertedFile; kwargs...) = BM25InvertedFile(I; kwargs...)
 
 """
     BM25InvertedFile(textconfig, corpus, db=nothing)

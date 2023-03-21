@@ -1,7 +1,9 @@
 # This file is a part of TextSearch.jl
 
 export LanguageModel, lexicalsearch, semanticsearch,
-    lexicalvectorize, semanticvectorize, subvoc, context, decode 
+    lexicalvectorize, semanticvectorize, subvoc, context, decode,
+    savemodel, loadmodel
+
 """
     struct LanguageModel{LexIndexType<:BM25InvertedFile, SemIndexType<:AbstractInvertedFile}
 
@@ -11,6 +13,38 @@ struct LanguageModel{LexIndexType<:BM25InvertedFile, SemIndexType<:AbstractInver
     vocngrams::Vocabulary
     lexidx::LexIndexType
     semidx::SemIndexType
+end
+
+
+function savemodel(filename::AbstractString, ngrams::LanguageModel; meta=nothing, parent="/")
+    jldopen(filename, "w") do f
+        savemodel(f, ngrams; meta, parent)
+    end
+end
+
+function savemodel(file, ngrams::LanguageModel; meta=nothing, parent="/")
+    file[joinpath(parent, "meta")] = meta
+    file[joinpath(parent, "tc")] = ngrams.vocngrams 
+    file[joinpath(parent, "vocngrams")] = ngrams.semidx
+    saveindex(file, ngrams.lexidx; parent=joinpath(parent, "lexidx"))
+    saveindex(file, ngrams.semidx; parent=joinpath(parent, "semidx"))
+end
+
+function loadmodel(t::Type{<:LanguageModel}, filename::AbstractString; parent="/", staticgraph=false)
+    jldopen(filename) do f
+        loadmodel(t, f; staticgraph, parent)
+    end
+end
+
+function loadmodel(::Type{<:LanguageModel}, file; parent="/", staticgraph=false)
+    meta = file[joinpath(parent, "meta")]
+    tc = file[joinpath(parent, "tc")]
+    vocngrams = file[joinpath(parent, "vocngrams")]
+
+    lexidx, _ = loadindex(file; parent=joinpath(parent, "lexidx"), staticgraph)
+    semidx, _ = loadindex(file; parent=joinpath(parent, "semidx"), staticgraph)
+
+    LanguageModel(tc, vocngrams, lexidx, semidx), meta
 end
 
 function LanguageModel(

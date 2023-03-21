@@ -1,4 +1,4 @@
-using SimilaritySearch, TextSearch, InvertedFiles
+using SimilaritySearch, SimilaritySearch.AdjacencyLists, TextSearch, InvertedFiles
 using Test, SparseArrays, LinearAlgebra, CategoricalArrays, StatsBase, Random
 
 using Aqua
@@ -338,6 +338,19 @@ end
     @show collect(DistView(R.res))
     @show invfile.voc
     @show invfile.bm25
+
+    @testset "saveindex and loadindex BM25InvertedFile" begin
+        tmpfile = tempname()
+        @info "--- load and save!!!"
+        saveindex(tmpfile, invfile; meta=[1, 2, 4, 8], store_db=false)
+
+            G, meta = loadindex(tmpfile, database(invfile); staticgraph=true)
+            @test meta == [1, 2, 4, 8]
+            @test G.adj isa StaticAdjacencyList
+            R = search(G, "la casa de la manzana verde", KnnResult(3))
+            @test collect(IdView(R.res)) == UInt32[0x00000006, 0x00000002, 0x00000004]
+    end
+
 end
 
 
