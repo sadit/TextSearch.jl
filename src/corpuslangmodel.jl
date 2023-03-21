@@ -134,13 +134,12 @@ function enrich_bow!(v::Dict, l)
     v
 end
 
-function lexicalsearch(model::CorpusLanguageModel, text::AbstractString, res::KnnResult; tc=model.lexidx.textconfig)
-    #voc = model.lexidx.vox
-    #v = vectorize(voc, tc, text)
+function lexicalsearch(model::CorpusLanguageModel, text, res::KnnResult; tc=model.lexidx.textconfig)
     search(model.lexidx, text, res).res
 end
 
-function lexicalvectorize(model::CorpusLanguageModel, text::AbstractString, res::KnnResult; normalize=true)
+
+function lexicalvectorize(model::CorpusLanguageModel, text, res::KnnResult; normalize=true)
     D = DVEC{UInt32,Float32}()
     res = lexicalsearch(model, text, res)
     for p in res
@@ -148,18 +147,18 @@ function lexicalvectorize(model::CorpusLanguageModel, text::AbstractString, res:
     end
 
     for tok in keys(D)
-        enrich_bow!(v, get(model.labels, tok, nothing))
+        enrich_bow!(D, get(model.labels, tok, nothing))
     end
 
     normalize && normalize!(D)
     D
 end
 
-function lexicalvectorize(model::CorpusLanguageModel, text::AbstractString; k::Int=15, normalize=true)
+function lexicalvectorize(model::CorpusLanguageModel, text; k::Int=15, normalize=true)
     lexicalvectorize(model, text, getknnresult(k); normalize)
 end
 
-function semanticsearch(model::CorpusLanguageModel, text::AbstractString, res::KnnResult)
+function semanticsearch(model::CorpusLanguageModel, text, res::KnnResult)
     D = lexicalvectorize(model, text, res)
     res = reuse!(res)
     search(model.semidx, D, res).res
@@ -169,9 +168,13 @@ function decode(model::CorpusLanguageModel, idlist)
     [model.corpus.voc[i] for i in itertokenid(idlist)]
 end
 
+function Base.getindex(model::CorpusLanguageModel, i::Int)
+    model.corpus[i]
+end
+
 function semanticvectorize(
         model::CorpusLanguageModel,
-        text::AbstractString;
+        text;
         klex::Int=1,
         ksem=klex,
         normalize::Bool=true,
