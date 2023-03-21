@@ -62,7 +62,7 @@ function LanguageModel(
 
     ngrams = Vocabulary(tc1, corpus)
     if min_ndocs1 > 1
-        ngrams = filter_tokens!(ngrams) do t
+        ngrams = filter_tokens(ngrams) do t
             min_ndocs1 <= t.ndocs # it depends highly on the size of the dataset and rarety of the examples
         end
     end
@@ -71,7 +71,7 @@ function LanguageModel(
         min_ndocs2 <= t.ndocs # again
     end
 
-    append_items!(lexidx, ngrams.token)
+    @time append_items!(lexidx, ngrams.token)
     doc_max_freq = ceil(Int, vocsize(ngrams) * doc_max_ratio)
     filter_lists!(lexidx;
                   list_min_length_for_checking,
