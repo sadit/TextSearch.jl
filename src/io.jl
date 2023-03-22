@@ -1,6 +1,6 @@
 # This file is a part of TextSearch.jl
 
-using JLD2: JLDFile
+using JLD2: jldopen, JLDFile
 export savemodel, loadmodel, loadindex
 
 function serializeindex(file, parent::String, index::BM25InvertedFile, meta, options::Dict)
