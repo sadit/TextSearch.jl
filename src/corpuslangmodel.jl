@@ -12,8 +12,8 @@ end
 function EncodedCorpus(
         corpus; kwargs...
     )
-    tc = TextConfig(nlist=[1], mark_token_type=false),
-    voc = filter_tokens_(Vocabulary(tc, corpus))
+    tc = TextConfig(nlist=[1], mark_token_type=false)
+    voc = Vocabulary(tc, corpus)
     EncodedCorpus(tc, voc, corpus; kwargs...)
 end
 
