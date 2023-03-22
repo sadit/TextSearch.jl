@@ -35,13 +35,13 @@ function savemodel(file::JLDFile, ngrams::LanguageModel; meta=nothing, parent="/
     saveindex(file, ngrams.semidx; parent=joinpath(parent, "semidx"))
 end
 
-function loadmodel(t::Type{<:LanguageModel}, filename::AbstractString; parent="/", staticgraph=false)
+function loadmodel(t::Type{LanguageModel}, filename::AbstractString; parent="/", staticgraph=false)
     jldopen(filename) do f
         loadmodel(t, f; staticgraph, parent)
     end
 end
 
-function loadmodel(::Type{<:LanguageModel}, file::JLDFile; parent="/", staticgraph=false)
+function loadmodel(::Type{LanguageModel}, file::JLDFile; parent="/", staticgraph=false)
     meta = file[joinpath(parent, "meta")]
     tc = file[joinpath(parent, "tc")]
     vocngrams = file[joinpath(parent, "vocngrams")]
@@ -64,7 +64,7 @@ function savemodel(file::JLDFile, model::CorpusLanguageModel; meta=nothing, pare
     saveindex(file, model.semidx; parent=joinpath(parent, "semidx"))
 end
 
-function loadmodel(::Type{<:CorpusLanguageModel}, file::JLDFile; parent="/", staticgraph=false)
+function loadmodel(::Type{CorpusLanguageModel}, file::JLDFile; parent="/", staticgraph=false)
     meta = file[joinpath(parent, "meta")]
     corpus = file[joinpath(parent, "corpus")]
     labels = file[joinpath(parent, "labels")]
