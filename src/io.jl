@@ -1,4 +1,5 @@
 # This file is a part of TextSearch.jl
+export savemodel, loadmodel, loadindex
 
 function serializeindex(file, parent::String, index::BM25InvertedFile, meta, options::Dict)
     adj = StaticAdjacencyList(index.adj)
@@ -18,7 +19,7 @@ function restoreindex(file, parent::String, index::BM25InvertedFile, meta, optio
 end
 
 # lang model
-function savemodel(filename::AbstractString, ngrams::LanguageModel; meta=nothing, parent="/")
+function savemodel(filename::AbstractString, ngrams; meta=nothing, parent="/")
     jldopen(filename, "w") do f
         savemodel(f, ngrams; meta, parent)
     end
