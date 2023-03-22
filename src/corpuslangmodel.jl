@@ -74,7 +74,7 @@ struct CorpusLanguageModel
 end
 
 function CorpusLanguageModel(corpus::EncodedCorpus, labels=nothing;
-        k::Int=15,
+        k::Int=7,
         #bsize::Int=10^5,
         list_min_length_for_checking::Int=32,
         list_max_allowed_length::Int=128,
@@ -85,12 +85,12 @@ function CorpusLanguageModel(corpus::EncodedCorpus, labels=nothing;
     labels = labels === nothing ? Dict{UInt32,Vector{Pair{UInt32,Float32}}}() : labels
 
     n = length(corpus)
-    doclen = Int32[length(text) for text in corpus]
+    DB = VectorDatabase([corpus[i] for i in 1:n])
+    doclen = Int32[length(text) for text in DB]
     avg_doc_len = mean(doclen)
     bm25 = BM25(avg_doc_len, n)
     voc = corpus.voc
 
-    @info "lexidx"
     lexidx = BM25InvertedFile(
         nothing,
         corpus.tc,
@@ -103,7 +103,6 @@ function CorpusLanguageModel(corpus::EncodedCorpus, labels=nothing;
     #=@time for part in Iterators.partition(1:n, bsize)
         append_items!(lexidx, VectorDatabase([corpus[i] for i in part]))
     end=#
-    DB = VectorDatabase([corpus[i] for i in 1:n])
     @info "append_items"
     append_items!(lexidx, DB)
 
@@ -121,6 +120,7 @@ function CorpusLanguageModel(corpus::EncodedCorpus, labels=nothing;
     @time knns, _ = searchbatch(lexidx, DB, k)
     semidx = BinaryInvertedFile(n, JaccardDistance())
     @time append_items!(semidx, MatrixDatabase(knns))
+
 
     CorpusLanguageModel(corpus, labels, lexidx, semidx)
     #corpus = readlines("data/StackOverflow.txt")
