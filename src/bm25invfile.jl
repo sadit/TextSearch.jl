@@ -30,24 +30,6 @@ Base.length(invfile::BM25InvertedFile) = length(invfile.doclens)
 database(invfile::BM25InvertedFile) = invfile.db
 distance(::BM25InvertedFile) = error("BM25InvertedFile is not a metric index")
 
-
-function serializeindex(file, parent::String, index::BM25InvertedFile, meta, options::Dict)
-    adj = StaticAdjacencyList(index.adj)
-    I = copy(index; adj)
-    file[joinpath(parent, "index")] = I
-end
-
-"""
-    loadindex(...; staticgraph=false, parent="/")
-    restoreindex(file, parent::String, index, meta, options::Dict; staticgraph=false)
-
-load the inverted index optionally making the postings lists static or dynamic 
-"""
-function restoreindex(file, parent::String, index::BM25InvertedFile, meta, options::Dict; staticgraph=false)
-    adj = staticgraph ? index.adj : AdjacencyList(index.adj)
-    copy(index; adj)
-end
-
 BM25InvertedFile(invfile::BM25InvertedFile;
     db=invfile.db,
     textconfig=invfile.textconfig,

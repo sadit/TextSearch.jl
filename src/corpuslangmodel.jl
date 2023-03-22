@@ -9,6 +9,9 @@ struct EncodedCorpus
     offset::Vector{UInt64}
 end
 
+EncodedCorpus(C::EncodedCorpus; tc=C.tc, voc=C.voc, seq=C.seq, offset=C.offset) =
+    Encoded(tc, voc, seq, offset)
+
 function EncodedCorpus(
         corpus; kwargs...
     )
@@ -72,6 +75,10 @@ struct CorpusLanguageModel
     lexidx::BM25InvertedFile
     semidx::BinaryInvertedFile
 end
+
+CorpusLanguageModel(C::CorpusLanguageModel; 
+                    corpus=C.corpus, labels=C.labels, lexidx=C.lexidx, semidx=C.semidx)
+
 
 function CorpusLanguageModel(corpus::EncodedCorpus, labels=nothing;
         k::Int=7,
