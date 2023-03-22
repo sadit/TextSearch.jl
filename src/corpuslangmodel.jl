@@ -40,7 +40,7 @@ function EncodedCorpus(
             
             for tok in tokdoc
                 i = get(voc.token2id, tok, zero(UInt32))
-                push!(seq, i)
+                i > 0 && push!(seq, i)
             end
         end
     end
