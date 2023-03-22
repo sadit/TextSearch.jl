@@ -77,7 +77,8 @@ struct CorpusLanguageModel
 end
 
 CorpusLanguageModel(C::CorpusLanguageModel; 
-                    corpus=C.corpus, labels=C.labels, lexidx=C.lexidx, semidx=C.semidx)
+                    corpus=C.corpus, labels=C.labels, lexidx=C.lexidx, semidx=C.semidx) =
+    CorpusLanguageModel(corpus, labels, lexidx, semidx)
 
 
 function CorpusLanguageModel(corpus::EncodedCorpus, labels=nothing;
