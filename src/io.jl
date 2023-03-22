@@ -35,7 +35,7 @@ function savemodel(file::JLDFile, ngrams::LanguageModel; meta=nothing, parent="/
     saveindex(file, ngrams.semidx; parent=joinpath(parent, "semidx"))
 end
 
-function loadmodel(t::Type{LanguageModel}, filename::AbstractString; parent="/", staticgraph=false)
+function loadmodel(t::Type, filename::AbstractString; parent="/", staticgraph=false)
     jldopen(filename) do f
         loadmodel(t, f; staticgraph, parent)
     end
