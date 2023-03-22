@@ -74,10 +74,10 @@ struct CorpusLanguageModel
 end
 
 function CorpusLanguageModel(corpus::EncodedCorpus, labels=nothing;
-        k::Int=33,
+        k::Int=15,
         #bsize::Int=10^5,
-        list_min_length_for_checking::Int=30,
-        list_max_allowed_length::Int=256,
+        list_min_length_for_checking::Int=32,
+        list_max_allowed_length::Int=128,
         doc_min_freq::Int=1,
         doc_max_ratio::AbstractFloat=0.8
     )
@@ -85,13 +85,12 @@ function CorpusLanguageModel(corpus::EncodedCorpus, labels=nothing;
     labels = labels === nothing ? Dict{UInt32,Vector{Pair{UInt32,Float32}}}() : labels
 
     n = length(corpus)
-    @info "--lens"
     doclen = Int32[length(text) for text in corpus]
     avg_doc_len = mean(doclen)
     bm25 = BM25(avg_doc_len, n)
     voc = corpus.voc
 
-    @info "--lexidx"
+    @info "lexidx"
     lexidx = BM25InvertedFile(
         nothing,
         corpus.tc,
