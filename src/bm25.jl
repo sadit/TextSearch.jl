@@ -21,8 +21,8 @@ function BM25(avg_doc_len::AbstractFloat, collection_size::Integer; k1=1.2f0, b=
     )
 end
 
-function bm25score(bm25::BM25, voc::Vocabulary, query::DVEC, doc::DVEC)
-    s = 0.0
+function bm25score(bm25::BM25, voc::Vocabulary, query::DVEC, doc::DVEC)::Float32
+    s = 0f0
 
     doclen = sum(f for f in values(doc))
     for tokenID in keys(query)

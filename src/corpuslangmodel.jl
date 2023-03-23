@@ -35,7 +35,6 @@ function EncodedCorpus(
     for subcorpus in Iterators.partition(corpus, bsize)
         off = 0
         for tokdoc in tokenize_corpus(tc, subcorpus)
-            
             for tok in tokdoc
                 i = get(voc.token2id, tok, zero(UInt32))
                 if i > 0
@@ -43,8 +42,8 @@ function EncodedCorpus(
                     off += 1
                 end
                 
-                push!(offset, off)
             end
+            push!(offset, off)
         end
     end
     
