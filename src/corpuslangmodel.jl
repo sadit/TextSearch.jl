@@ -84,7 +84,7 @@ CorpusLanguageModel(C::CorpusLanguageModel;
 
 
 function CorpusLanguageModel(corpus::EncodedCorpus, labels=nothing;
-        k::Int=7,
+        k::Int=15,
         #bsize::Int=10^5,
         list_min_length_for_checking::Int=32,
         list_max_allowed_length::Int=128,
@@ -114,15 +114,16 @@ function CorpusLanguageModel(corpus::EncodedCorpus, labels=nothing;
         append_items!(lexidx, VectorDatabase([corpus[i] for i in part]))
     end=#
     @info "append_items"
-    append_items!(lexidx, DB)
+    @time append_items!(lexidx, DB; sort=false)
 
     doc_max_freq = ceil(Int, vocsize(voc) * doc_max_ratio)
     @info "filter lists!"
-    filter_lists!(lexidx;
+    @time filter_lists!(lexidx;
                   list_min_length_for_checking,
                   list_max_allowed_length,
                   doc_min_freq,
-                  doc_max_freq
+                  doc_max_freq,
+                  always_sort=true # we need this since we call append_items! without sorting
                  )
 
 
@@ -187,7 +188,7 @@ end
 function semanticvectorize(
         model::CorpusLanguageModel,
         text;
-        klex::Int=1,
+        klex::Int=15,
         ksem=klex,
         normalize::Bool=true,
         keeplex::Bool=true
@@ -199,12 +200,12 @@ function semanticvectorize(
 
     if keeplex
         for p in res
-            D[p.id] = get(D, p.id, 0f0) + abs(p.weight)
+            D[p.id] = get(D, p.id, 0f0) + 1f0 - p.weight # works for jaccard
         end
     else
         empty!(D)
         for p in res
-            D[p.id] = abs(p.weight)
+            D[p.id] = 1f0 - p.weight # jaccard 
         end
     end
 

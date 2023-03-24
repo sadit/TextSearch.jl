@@ -76,7 +76,8 @@ function filter_lists!(
         list_min_length_for_checking::Int=96,
         list_max_allowed_length::Int=1024,
         doc_min_freq::Int=1,
-        doc_max_freq::Int=128
+        doc_max_freq::Int=128,
+        always_sort::Bool=false
     )
     adj = idx.adj
     @assert adj isa AdjacencyList
@@ -86,7 +87,11 @@ function filter_lists!(
     for i in eachindex(adj)
         L = neighbors(adj, i)
         n = length(L)
-        n < list_min_length_for_checking && continue
+        n == 0 && continue
+        if n < list_min_length_for_checking
+            always_sort && sort!(L, by=p->p.id)
+            continue
+        end
         empty!(buff)
         for item in L
             if doc_min_freq <= item.weight <= doc_max_freq

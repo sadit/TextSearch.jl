@@ -2,7 +2,7 @@
 
 import SparseArrays: sparsevec, sparse
 
-export dvec
+export dvec, sparse_coo, sparse
 
 """
     dvec(x::AbstractSparseVector)
@@ -40,10 +40,11 @@ end
 
 """
     sparse(cols::AbstractVector{S}, m=0; minweight=1e-9) where S<:DVEC{Ti,Tv} where {Ti<:Integer,Tv<:Number}
+    sparse_coo(cols::AbstractVector{S}, minweight=1e-9) where S<:DVEC{Ti,Tv} where {Ti<:Integer,Tv<:Number}
 
 Creates a sparse matrix from an array of DVEC sparse vectors.
 """
-function sparse(cols::AbstractVector{DVEC{Ti,Tv}}, m=0; minweight=1e-9) where {Ti<:Integer,Tv<:Number}
+function sparse_coo(cols::AbstractVector{DVEC{Ti,Tv}}, minweight=1e-9) where {Ti<:Integer,Tv<:Number}
     I = Ti[]
     J = Ti[]
     F = Tv[]
@@ -58,6 +59,11 @@ function sparse(cols::AbstractVector{DVEC{Ti,Tv}}, m=0; minweight=1e-9) where {T
         end
     end
 
+    I, J, F
+end
+
+function sparse(cols::AbstractVector{DVEC{Ti,Tv}}, m=0; minweight=1e-9) where {Ti<:Integer,Tv<:Number}
+    I, J, F = sparse_coo(cols, minweight)
     if m == 0
         sparse(I, J, F)
     else
