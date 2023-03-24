@@ -3,7 +3,7 @@
 export vectorize_corpus, vectorize
 
 """
-    vectorize(voc::Vocabulary, tokenlist::AbstractVector, bow)
+    vectorize(voc::Vocabulary, tokenlist::TokenizedText, bow)
     vectorize(voc::Vocabulary, textconfig::TextConfig, text, buff)
     vectorize(copy_::Function, voc::Vocabulary, textconfig::TextConfig, text, buff)
     vectorize(copy_::Function, voc::Vocabulary, textconfig::TextConfig, text)
@@ -13,7 +13,7 @@ Creates a bag of words from the given text (a string or a list of strings).
 If bow is given then updates the bag with the text.
 When `config` is given, the text is parsed according to it.
 """
-function vectorize(voc::Vocabulary, tokenlist::AbstractVector, bow::BOW)
+function vectorize(voc::Vocabulary, tokenlist::TokenizedText, bow::BOW)
     for token in tokenlist
         tokenID = get(voc, token, zero(UInt32))
         if zero(UInt32) != tokenID
@@ -25,7 +25,11 @@ function vectorize(voc::Vocabulary, tokenlist::AbstractVector, bow::BOW)
 end
 
 function vectorize(copy_::Function, voc::Vocabulary, textconfig::TextConfig, text::AbstractString, buff::TextSearchBuffer)
-    tokens = tokenize(identity, textconfig, text, buff)
+    tokens = tokenize(borrowtokenizedtext, textconfig, text, buff)
+    copy_(vectorize(voc, tokens, buff.bow))
+end
+
+function vectorize(copy_::Function, voc::Vocabulary, textconfig::TextConfig, tokens::TokenizedText, buff::TextSearchBuffer)
     copy_(vectorize(voc, tokens, buff.bow))
 end
 
@@ -49,7 +53,7 @@ function vectorize(copy_::Function, voc::Vocabulary, textconfig::TextConfig, mes
     empty!(buff.bow)
     for text in messages
         empty!(buff.normtext); empty!(buff.tokens); empty!(buff.unigrams)
-        tokens = tokenize(identity, textconfig, text, buff)
+        tokens = tokenize(borrowtokenizedtext, textconfig, text, buff)
         vectorize(voc, tokens, buff.bow)
     end
 

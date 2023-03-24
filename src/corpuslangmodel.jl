@@ -27,7 +27,7 @@ function EncodedCorpus(
         bsize::Int=10^4
     )
     
-    tc.nlist == [1] && length(tc.qlist) == 0 && length(tc.slist) == 0 || throw(ArgumentError("only unigrams are supported for EncodedCorpus"))
+    #tc.nlist == [1] && length(tc.qlist) == 0 && length(tc.slist) == 0 || throw(ArgumentError("only unigrams are supported for EncodedCorpus"))
     seq = UInt32[]
     offset = UInt64[]
 
@@ -136,15 +136,6 @@ function CorpusLanguageModel(corpus::EncodedCorpus, labels=nothing;
     CorpusLanguageModel(corpus, labels, lexidx, semidx)
     #corpus = readlines("data/StackOverflow.txt")
     #E = EncodedCorpus(corpus)
-end
-
-enrich_bow!(v::Dict, l::Nothing) = v
-function enrich_bow!(v::Dict, l)
-    for (k, w) in l
-        v[k] = w
-    end
-
-    v
 end
 
 function lexicalsearch(model::CorpusLanguageModel, text, res::KnnResult; tc=model.lexidx.textconfig)

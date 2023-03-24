@@ -1,6 +1,22 @@
 # This file is a part of TextSearch.jl
 
-export tokenize, tokenize_corpus, qgrams, unigrams
+export TokenizedText, tokenize, tokenize_corpus, qgrams, unigrams
+
+struct TokenizedText{StringVector<:AbstractVector{String}}
+    tokens::StringVector 
+end
+
+@inline Base.getindex(T::TokenizedText, i::Integer) = T.tokens[i]
+@inline Base.firstindex(T::TokenizedText) = 1
+@inline Base.lastindex(T::TokenizedText) = length(T)
+@inline Base.length(T::TokenizedText) = length(T.tokens)
+@inline Base.iterate(T::TokenizedText, s::Int=1) = iterate(T.tokens, s)
+@inline Base.eltype(T::TokenizedText) = eltype(T.tokens)
+@inline Base.push!(T::TokenizedText, a) = push!(T.tokens, a)
+@inline Base.append!(T::TokenizedText, a) = append!(T.tokens, a)
+
+tokenizedtext(s) = TokenizedText(Vector(s))
+borrowtokenizedtext(s) = TokenizedText(s)
 
 const EXTRA_PUNCT = Set(['~', '+', '^', '$', '|', '<', '>'])
 
@@ -37,7 +53,7 @@ function tokenize(copy_::Function, textconfig::TextConfig, arr::AbstractVector, 
     copy_(buff.tokens)
 end
 
-tokenize(textconfig::TextConfig, text) = tokenize(copy, textconfig, text)
+tokenize(textconfig::TextConfig, text) = tokenize(tokenizedtext, textconfig, text)
 
 function tokenize(copy_::Function, textconfig::TextConfig, text)
     buff = take!(TEXT_SEARCH_CACHES)
@@ -49,7 +65,6 @@ function tokenize(copy_::Function, textconfig::TextConfig, text)
     end
 end
 
-
 """
     tokenize_corpus(textconfig::TextConfig, arr; minbatch=0)
     tokenize_corpus(copy_::Function, textconfig::TextConfig, arr; minbatch=0)
@@ -58,7 +73,7 @@ Tokenize a list of texts. The `copy_` function is passed to [`tokenize`](@ref) a
 """
 function tokenize_corpus(copy_::Function, textconfig::TextConfig, arr; minbatch=0)
     n = length(arr)
-    L = Vector{Vector{String}}(undef, n)
+    L = Vector{TokenizedText}(undef, n)
     minbatch = getminbatch(minbatch, n)
     
     # @batch minbatch=minbatch per=thread
@@ -69,7 +84,7 @@ function tokenize_corpus(copy_::Function, textconfig::TextConfig, arr; minbatch=
     L
 end
 
-tokenize_corpus(textconfig::TextConfig, arr; minbatch=0) = tokenize_corpus(copy, textconfig, arr; minbatch)
+tokenize_corpus(textconfig::TextConfig, arr; minbatch=0) = tokenize_corpus(tokenizedtext, textconfig, arr; minbatch)
 
 function tokenize_(config::TextConfig, buff::TextSearchBuffer)
     for q in config.qlist
