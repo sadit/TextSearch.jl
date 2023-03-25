@@ -5,7 +5,6 @@ export SemanticVocabulary
 struct SemanticVocabulary{VocType<:Vocabulary}
     voc::VocType
     lexidx::BM25InvertedFile
-    semidx::BinaryInvertedFile
     knns::Matrix{Int32}
 end
 
@@ -29,9 +28,6 @@ function SemanticVocabulary(voc::Vocabulary;
         doc_min_freq <= t.ndocs <= doc_max_freq
     end
 
-    #=@time for part in Iterators.partition(1:n, bsize)
-        append_items!(lexidx, VectorDatabase([corpus[i] for i in part]))
-    end=#
     @info "append_items"
     @time append_items!(lexidx, C; sort=false)
 
@@ -46,10 +42,8 @@ function SemanticVocabulary(voc::Vocabulary;
                  )
     @info "searchbatch"
     @time knns, _ = searchbatch(lexidx, VectorDatabase(C), k)
-    semidx = BinaryInvertedFile(size(knns, 2), JaccardDistance())
-    @time append_items!(semidx, MatrixDatabase(knns))
 
-    SemanticVocabulary(voc, lexidx, semidx, knns)
+    SemanticVocabulary(voc, lexidx, knns)
 end
 
 enrich_bow!(v::Dict, l::Nothing) = v
@@ -61,29 +55,29 @@ function enrich_bow!(v::Dict, l)
     v
 end
 
-function lexicalsearch(model::SemanticVocabulary, text, res::KnnResult; tc=model.lexidx.textconfig)
-    search(model.lexidx, text, res).res
+function search(model::SemanticVocabulary, text, res::KnnResult; tc=model.lexidx.textconfig)
+    search(model.lexidx, text, res)
 end
 
-function lexicalvectorize(model::SemanticVocabulary, text, res::KnnResult; normalize=true)
+function vectorize(model::SemanticVocabulary, text; k::Int=15, normalize=true, ksem::Int=k, w::Float32=1f0)
+    res = getknnresult(k)
+    search(model, text, res)
     D = DVEC{UInt32,Float32}()
-    res = lexicalsearch(model, text, res)
-    for p in res
-        D[p.id] = abs(p.weight)
+    sizehint!(D, length(res) * (1 + ksem))
+    if ksem == 0 || w == 0
+        for p in res
+            D[p.id] = abs(p.weight)
+        end 
+    else
+        for p in res
+            D[p.id] = get(D, p.id, 0f0) + abs(p.weight)
+            for i in view(model.knns, 1:ksem, p.id)
+                D[i] = get(D, i, 0f0) + w
+            end
+        end 
     end
-
     normalize && normalize!(D)
     D
-end
-
-function lexicalvectorize(model::SemanticVocabulary, text; k::Int=15, normalize=true)
-    lexicalvectorize(model, text, getknnresult(k); normalize)
-end
-
-function semanticsearch(model::SemanticVocabulary, text, res::KnnResult)
-    D = lexicalvectorize(model, text, res)
-    res = reuse!(res)
-    search(model.semidx, D, res).res
 end
 
 function decode(model::SemanticVocabulary, idlist)
@@ -92,35 +86,7 @@ end
 
 Base.getindex(model::SemanticVocabulary, i::Integer) = model.voc[i]
 
-function semanticvectorize(
-        model::SemanticVocabulary,
-        text;
-        klex::Int=33,
-        ksem=klex,
-        normalize::Bool=true,
-        keeplex::Bool=true
-    )
-    res = getknnresult(klex)
-    D = lexicalvectorize(model, text, res)
-    res = reuse!(res, ksem)
-    search(model.semidx, D, res)
-
-    if keeplex
-        for p in res
-            D[p.id] = get(D, p.id, 0f0) + 1f0 - p.weight # works for jaccard
-        end
-    else
-        empty!(D)
-        for p in res
-            D[p.id] = 1f0 - p.weight # jaccard 
-        end
-    end
-
-    normalize && normalize!(D)
-    D
-end
-
-function subvoc(model::SemanticVocabulary, idlist, tc=model.lexidx.textconfig; k=100)
+function subvoc(model::SemanticVocabulary, idlist, tc=model.lexidx.textconfig)
     corpus = [model.voc.token[i] for i in itertokenid(idlist)]
     Vocabulary(tc, corpus)
 end

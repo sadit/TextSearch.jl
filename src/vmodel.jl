@@ -227,8 +227,8 @@ function vectorize_corpus(model::VectorModel, textconfig::TextConfig, corpus::Ab
     resize!(V, n)
     minbatch = getminbatch(minbatch, n)
 
-    # @batch minbatch=minbatch per=thread
-    Threads.@threads for i in 2:n
+    @batch minbatch=minbatch per=thread for i in 2:n
+    # Threads.@threads for i in 2:n
         V[i] = vectorize(model, textconfig, corpus[i]; normalize, minweight)
     end
 
