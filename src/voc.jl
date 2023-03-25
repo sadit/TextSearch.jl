@@ -11,9 +11,7 @@ struct Vocabulary
     corpuslen::Int
 end
 
-function token2id(voc::Vocabulary, tok::AbstractString)
-    get(voc.token2id, tok, zero(UInt32))
-end
+token2id(voc::Vocabulary, tok::AbstractString) = get(voc.token2id, tok, zero(UInt32))
 
 function single_shot_vocabulary(tokens; occs=t->1, ndocs=t->1, corpuslen=length(tokens))
     token2id = Dict{String,UInt32}
