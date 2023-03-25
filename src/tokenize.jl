@@ -1,6 +1,6 @@
 # This file is a part of TextSearch.jl
 
-export TokenizedText, tokenize, tokenize_corpus, qgrams, unigrams
+export TokenizedText, tokenize, tokenize_corpus, qgrams, unigrams, filter_tokens!
 
 struct TokenizedText{StringVector<:AbstractVector{String}}
     tokens::StringVector 
@@ -17,6 +17,11 @@ end
 
 tokenizedtext(s) = TokenizedText(Vector(s))
 borrowtokenizedtext(s) = TokenizedText(s)
+
+tokenize(copy_::Function, textconfig::TextConfig, text::TokenizedText, buff::TextSearchBuffer) = text 
+tokenize(copy_::Function, textconfig::TextConfig, text::TokenizedText) = text 
+tokenize(copy_::Function, textconfig::TextConfig, arr::AbstractVector{T}, buff::TextSearchBuffer) where {T<:TokenizedText} = arr
+tokenize_corpus(copy_::Function, textconfig::TextConfig, arr::AbstractVector{T}; minbatch=0) where {T<:TokenizedText} = arr
 
 const EXTRA_PUNCT = Set(['~', '+', '^', '$', '|', '<', '>'])
 
@@ -40,7 +45,7 @@ function tokenize(copy_::Function, textconfig::TextConfig, text::AbstractString,
     copy_(t)
 end
 
-function tokenize(copy_::Function, textconfig::TextConfig, arr::AbstractVector, buff::TextSearchBuffer)
+function tokenize(copy_::Function, textconfig::TextConfig, arr::AbstractVector{T}, buff::TextSearchBuffer) where {T<:AbstractString}
     normalize_text(textconfig, arr[1], buff.normtext)
     tokenize_(textconfig, buff)
 

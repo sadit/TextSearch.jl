@@ -71,7 +71,7 @@ function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, textconfig::Text
     
     for (i, tokens) in enumerate(corpus_tokens)
         empty!(bow)
-        vectorize(voc, tokens, bow)
+        vectorize!(bow, voc, tokens)
         
         code = levelcode(labels[i])
         for (tokenID, _) in bow

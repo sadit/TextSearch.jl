@@ -1,4 +1,4 @@
-# This file is a part of TextSearch.jl
+# This file is part of TextSearch.jl
 
 export TextModel, VectorModel, trainsize, vocsize,
     TfWeighting, IdfWeighting, TpWeighting,
@@ -171,11 +171,12 @@ function filter_tokens(pred::Function, model::VectorModel)
 end
 
 """
-    vectorize(copy_::Function, model::VectorModel, bow::BOW, vec::SVEC; normalize=true, minweight=1e-9) where Tv<:Real
+    vectorize!(buff::TextSearchBuffer, model::VectorModel{G_,L_}, bow::BOW; normalize=true, minweight=1e-9) where {G_,L_}
 
 Computes a weighted vector using the given bag of words and the specified weighting scheme.
 """
-function vectorize(copy_::Function, model::VectorModel{G_,L_}, bow::BOW, vec::SVEC; normalize=true, minweight=1e-9) where {G_,L_}
+function vectorize!(buff::TextSearchBuffer, model::VectorModel{G_,L_}, bow::BOW; normalize=true, minweight=1e-9) where {G_,L_}
+    vec = buff.vec
     numtokens::Int = 0
 
     if L_ === TpWeighting
@@ -201,43 +202,38 @@ function vectorize(copy_::Function, model::VectorModel{G_,L_}, bow::BOW, vec::SV
         normalize && normalize!(vec)
     end
 
-    copy_(vec)
+    buff
 end
 
-function vectorize(copy_::Function, model::VectorModel, textconfig::TextConfig, text, buff::TextSearchBuffer; normalize=true, minweight=1e-9)
+function vectorize!(buff::TextSearchBuffer, model::VectorModel, textconfig::TextConfig, text; normalize=true, minweight=1e-9)
     empty!(buff)
-    bow = vectorize(identity, model.voc, textconfig, text, buff)
-    vectorize(copy_, model, bow, buff.vec; normalize, minweight)
+    vectorize!(buff, model.voc, textconfig, text)
+    vectorize!(buff, model, buff.bow; normalize, minweight)
 end
 
-function vectorize(copy_::Function, model::VectorModel, textconfig::TextConfig, text; normalize=true, minweight=1e-9)
+function vectorize(model::VectorModel, textconfig::TextConfig, text; normalize=true, minweight=1e-9)
     buff = take!(TEXT_SEARCH_CACHES)
     try
-        vectorize(copy_, model, textconfig, text, buff; normalize, minweight)
+        vectorize!(buff, model, textconfig, text; normalize, minweight)
+        buff.vec |> copy
     finally
         put!(TEXT_SEARCH_CACHES, buff)
     end
 end
 
-vectorize(model::VectorModel, textconfig::TextConfig, text; normalize=true, minweight=1e-9) =
-    vectorize(copy, model, textconfig, text; normalize, minweight)
-
-function vectorize_corpus(copy_::Function, model::VectorModel, textconfig::TextConfig, corpus::AbstractVector; normalize=true, minweight=1e-9, minbatch=0)
+function vectorize_corpus(model::VectorModel, textconfig::TextConfig, corpus::AbstractVector; normalize=true, minweight=1e-9, minbatch=0)
     n = length(corpus)
-    V = [vectorize(copy_, model, textconfig, corpus[1]; normalize, minweight)] # Vector{SVEC}(undef, n)
+    V = [vectorize(model, textconfig, corpus[1]; normalize, minweight)] # Vector{SVEC}(undef, n)
     resize!(V, n)
     minbatch = getminbatch(minbatch, n)
 
     # @batch minbatch=minbatch per=thread
     Threads.@threads for i in 2:n
-        V[i] = vectorize(copy_, model, textconfig, corpus[i]; normalize, minweight)
+        V[i] = vectorize(model, textconfig, corpus[i]; normalize, minweight)
     end
 
     V
 end
-
-vectorize_corpus(model::VectorModel, textconfig::TextConfig, corpus; normalize=true, minbatch=0) =
-    vectorize_corpus(copy, model, textconfig, corpus; normalize, minbatch)
 
 function broadcastable(model::VectorModel)
     (model,)

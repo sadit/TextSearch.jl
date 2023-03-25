@@ -2,11 +2,11 @@
 
 export SemanticVocabulary
 
-
 struct SemanticVocabulary{VocType<:Vocabulary}
     voc::VocType
     lexidx::BM25InvertedFile
     semidx::BinaryInvertedFile
+    knns::Matrix{Int32}
 end
 
 SemanticVocabulary(C::SemanticVocabulary; 
@@ -23,9 +23,9 @@ function SemanticVocabulary(voc::Vocabulary;
         doc_max_ratio::AbstractFloat=0.3 # popular tokens are likely to be thrash
     )
     doc_max_freq = ceil(Int, doc_max_ratio * vocsize(voc))
-    C = tokenize_corpus(voc.token)
+    C = tokenize_corpus(tc, voc.token)
 
-    lexidx = BM25InvertedFile(tc, voc.token) do t
+    lexidx = BM25InvertedFile(tc, C) do t
         doc_min_freq <= t.ndocs <= doc_max_freq
     end
 
@@ -33,7 +33,7 @@ function SemanticVocabulary(voc::Vocabulary;
         append_items!(lexidx, VectorDatabase([corpus[i] for i in part]))
     end=#
     @info "append_items"
-    @time append_items!(lexidx, voc.token; sort=false)
+    @time append_items!(lexidx, C; sort=false)
 
     #doc_max_freq = ceil(Int, vocsize(voc) * doc_max_ratio)
     @info "filter lists!"
@@ -45,11 +45,11 @@ function SemanticVocabulary(voc::Vocabulary;
                   always_sort=true # we need this since we call append_items! without sorting
                  )
     @info "searchbatch"
-    @time knns, _ = searchbatch(lexidx, VectorDatabase(voc.token), k)
+    @time knns, _ = searchbatch(lexidx, VectorDatabase(C), k)
     semidx = BinaryInvertedFile(size(knns, 2), JaccardDistance())
     @time append_items!(semidx, MatrixDatabase(knns))
 
-    SemanticVocabulary(voc, lexidx, semidx)
+    SemanticVocabulary(voc, lexidx, semidx, knns)
 end
 
 enrich_bow!(v::Dict, l::Nothing) = v
@@ -103,7 +103,7 @@ function semanticvectorize(
     )
     res = getknnresult(klex)
     D = lexicalvectorize(model, text, res)
-    res = reuse!(res)
+    res = reuse!(res, ksem)
     search(model.semidx, D, res)
 
     if keeplex
@@ -123,6 +123,6 @@ end
 
 
 function subvoc(model::SemanticVocabulary, idlist, tc=model.lexidx.textconfig; k=100)
-    corpus = [model.vocngrams.token[i] for i in itertokenid(idlist)]
+    corpus = [model.voc.token[i] for i in itertokenid(idlist)]
     Vocabulary(tc, corpus)
 end

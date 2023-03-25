@@ -116,13 +116,12 @@ function append_items!(idx::BM25InvertedFile, corpus::AbstractVector{T}; kwargs.
     append_items!(idx, VectorDatabase(vectorize_corpus(idx.voc, idx.textconfig, corpus)); kwargs...)
 end
 
-function push_item!(idx::BM25InvertedFile, doc::AbstractString)
-    push_item!(idx, vectorize(idx.voc, idx.textconfig, corpus))
+function append_items!(idx::BM25InvertedFile, corpus::AbstractVector{T}; kwargs...) where {T<:TokenizedText}
+    append_items!(idx, VectorDatabase(vectorize_corpus(idx.voc, idx.textconfig, corpus)); kwargs...)
 end
 
-function push_item!(idx::BM25InvertedFile, doc::AbstractVector{<:AbstractString})
-    push_item!(idx, vectorize(idx.voc, idx.textconfig, corpus))
-end
+push_item!(idx::BM25InvertedFile, doc::AbstractString) = push_item!(idx, vectorize(idx.voc, idx.textconfig, doc))
+push_item!(idx::BM25InvertedFile, doc::TokenizedText) = push_item!(idx, vectorize(idx.voc, doc))
 
 function InvertedFiles.internal_push!(idx::BM25InvertedFile, tokenID, objID, freq, sort)
     if sort

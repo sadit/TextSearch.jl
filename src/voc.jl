@@ -41,7 +41,7 @@ function locked_tokenize_and_push(voc, textconfig, doc, buff, l; ignore_new_toke
     empty!(buff)
     id = 0
 
-    for token in tokenize(identity, textconfig, doc, buff)
+    for token in tokenize(borrowtokenizedtext, textconfig, doc, buff)
         lock(l)
         try
             id = push_token!(voc, token, 1, 0; ignore_new_tokens)
@@ -59,6 +59,28 @@ function locked_tokenize_and_push(voc, textconfig, doc, buff, l; ignore_new_toke
     finally
         unlock(l)
     end
+end
+
+function filter_tokens!(voc::Vocabulary, text::TokenizedText)
+    j = 0
+    for i in eachindex(text.tokens)
+        t = text.tokens[i]
+        if haskey(voc.token2id, t)
+            j += 1
+            text.tokens[j] = t
+        end
+    end
+
+    resize!(text.tokens, j)
+    text
+end
+
+function filter_tokens!(voc::Vocabulary, arr::AbstractVector)
+    for t in arr
+        filter_tokens!(voc, t)
+    end
+
+    arr
 end
 
 """
@@ -112,6 +134,7 @@ function merge_voc(pred::Function, voc1::Vocabulary, voc2::Vocabulary, voclist..
     voc
 end
 
+
 """
     Vocabulary(textconfig, corpus; minbatch=0, thesaurus=nothing)
 
@@ -142,9 +165,9 @@ function tokenize_and_append!(voc::Vocabulary, textconfig::TextConfig, corpus; m
     minbatch = getminbatch(minbatch, n)
 
     Threads.@threads for i in 1:n
-        doc = corpus[i]
-        
+        doc = corpus[i]      
         buff = take!(TEXT_SEARCH_CACHES)
+
         try
             if doc isa AbstractString
                 locked_tokenize_and_push(voc, textconfig, doc, buff, l; ignore_new_tokens)
