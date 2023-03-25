@@ -2,7 +2,6 @@
 
 export BM25InvertedFile, search, filter_lists!, append_items!, push_item!
 
-using SimilaritySearch.AdjacencyLists
 import SimilaritySearch: search, append_items!, push_item!, database, distance
 import SimilaritySearch: serializeindex, restoreindex
 

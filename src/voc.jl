@@ -253,6 +253,17 @@ function append_tokens!(voc::Vocabulary, tokens; occs::Integer=0, ndocs::Integer
     end
 end
 
+itertokenid(idlist::AbstractVector) = idlist 
+itertokenid(idlist::AbstractVector{IdWeight}) = (p.id for p in idlist) 
+itertokenid(idlist::AbstractVector{IdIntWeight}) = (p.id for p in idlist) 
+itertokenid(idlist::AbstractVector{<:NamedTuple}) = (p.id for p in idlist) 
+itertokenid(idlist::Dict) = keys(idlist) 
+itertokenid(idlist::KnnResult) = IdView(idlist)
+
+function Base.getindex(voc::Vocabulary, idlist)
+    [voc[i] for i in itertokenid(idlist)]
+end
+
 function Base.getindex(voc::Vocabulary, tokenID::Integer)
     id = convert(UInt32, tokenID)
 

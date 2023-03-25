@@ -65,7 +65,6 @@ function lexicalsearch(model::SemanticVocabulary, text, res::KnnResult; tc=model
     search(model.lexidx, text, res).res
 end
 
-
 function lexicalvectorize(model::SemanticVocabulary, text, res::KnnResult; normalize=true)
     D = DVEC{UInt32,Float32}()
     res = lexicalsearch(model, text, res)
@@ -120,7 +119,6 @@ function semanticvectorize(
     normalize && normalize!(D)
     D
 end
-
 
 function subvoc(model::SemanticVocabulary, idlist, tc=model.lexidx.textconfig; k=100)
     corpus = [model.voc.token[i] for i in itertokenid(idlist)]

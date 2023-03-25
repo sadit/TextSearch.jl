@@ -80,12 +80,6 @@ function semanticsearch(ngrams::LanguageModel, text::AbstractString, res::KnnRes
     #ngrams.vocngrams.token[IdView(search(ngrams.semidx, d, getknnresult(33)).res) |> collect]
 end
 
-itertokenid(idlist::AbstractVector) = idlist 
-itertokenid(idlist::Vector{IdWeight}) = (p.id for p in idlist) 
-itertokenid(idlist::Vector{IdIntWeight}) = (p.id for p in idlist) 
-itertokenid(idlist::Dict) = keys(idlist) 
-itertokenid(idlist::KnnResult) = IdView(idlist) 
-
 function decode(ngrams::LanguageModel, idlist)
     [ngrams.vocngrams[i] for i in itertokenid(idlist)]
 end
