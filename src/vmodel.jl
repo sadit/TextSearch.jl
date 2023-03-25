@@ -205,13 +205,13 @@ function vectorize!(buff::TextSearchBuffer, model::VectorModel{G_,L_}, bow::BOW;
     buff
 end
 
-function vectorize!(buff::TextSearchBuffer, model::VectorModel, textconfig::TextConfig, text; normalize=true, minweight=1e-9)
+function vectorize!(buff::TextSearchBuffer, model::VectorModel, textconfig::TextConfig, text; normalize=true, minweight=1e-6)
     empty!(buff)
     bagofwords!(buff, model.voc, textconfig, text)
     vectorize!(buff, model, buff.bow; normalize, minweight)
 end
 
-function vectorize(model::VectorModel, textconfig::TextConfig, text; normalize=true, minweight=1e-9)
+function vectorize(model::VectorModel, textconfig::TextConfig, text; normalize=true, minweight=1e-6)
     buff = take!(TEXT_SEARCH_CACHES)
     try
         vectorize!(buff, model, textconfig, text; normalize, minweight)
@@ -221,7 +221,7 @@ function vectorize(model::VectorModel, textconfig::TextConfig, text; normalize=t
     end
 end
 
-function vectorize_corpus(model::VectorModel, textconfig::TextConfig, corpus::AbstractVector; normalize=true, minweight=1e-9, minbatch=0)
+function vectorize_corpus(model::VectorModel, textconfig::TextConfig, corpus::AbstractVector; normalize=true, minweight=1e-6, minbatch=0)
     n = length(corpus)
     V = [vectorize(model, textconfig, corpus[1]; normalize, minweight)] # Vector{SVEC}(undef, n)
     resize!(V, n)
@@ -233,10 +233,6 @@ function vectorize_corpus(model::VectorModel, textconfig::TextConfig, corpus::Ab
     end
 
     V
-end
-
-function broadcastable(model::VectorModel)
-    (model,)
 end
 
 # local weightings: TfWeighting, TpWeighting, FreqWeighting, BinaryLocalWeighting
