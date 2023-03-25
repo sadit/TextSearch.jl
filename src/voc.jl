@@ -1,40 +1,45 @@
 # This file is a part of TextSearch.jl
 
-export Vocabulary, occs, ndocs, token, vocsize, trainsize, filter_tokens, tokenize_and_append!, merge_voc, update_voc!
+export Vocabulary, occs, ndocs, token, vocsize, trainsize, filter_tokens, tokenize_and_append!, merge_voc, update_voc!, single_shot_vocabulary, token2id
 
-empty_token(::Type{String}) = "" 
-const EMPTY_TOKEN_NGRAM = UInt32[]
-empty_token(::Type{Vector{UInt32}}) = EMPTY_TOKEN_NGRAM
 
-struct Vocabulary{TokenType}
-    token::Vector{TokenType}
+struct Vocabulary
+    token::Vector{String}
     occs::Vector{Int32}
     ndocs::Vector{Int32}
-    token2id::Dict{TokenType,UInt32}
+    token2id::Dict{String,UInt32}
     corpuslen::Int
+end
+
+function token2id(voc::Vocabulary, tok::AbstractString)
+    get(voc.token2id, tok, zero(UInt32))
+end
+
+function single_shot_vocabulary(tokens; occs=t->1, ndocs=t->1, corpuslen=length(tokens))
+    token2id = Dict{String,UInt32}
+    voc = Vocabulary(corpuslen)
+    for t in tokens
+        push_token!(voc, t, occs(t), ndocs(t))
+    end
+
+    voc
 end
 
 """
     Vocabulary(n::Integer)
-    Vocabulary(::Type{T}, n::Integer)
 
 Creates a `Vocabulary` struct
 """
-
-function Vocabulary(::Type{T}, n::Integer) where T
+function Vocabulary(n::Integer)
     # n == 0 means unknown
 
-    voc = Vocabulary(T[], Int32[], Int32[], Dict{T,UInt32}(), n)
+    voc = Vocabulary(String[], Int32[], Int32[], Dict{String,UInt32}(), n)
     vocsize = ceil(Int, n^0.6)  # approx based on Heaps law
     sizehint!(voc.token, vocsize)
     sizehint!(voc.occs, vocsize)
     sizehint!(voc.ndocs, vocsize)
     sizehint!(voc.token2id, vocsize)
     voc 
-end
-
-function Vocabulary(n::Integer) 
-    Vocabulary(String, n)
 end
 
 function locked_tokenize_and_push(voc, textconfig, doc, buff, l; ignore_new_tokens=false)
@@ -220,7 +225,7 @@ token(voc::Vocabulary, tokenID::Integer) = tokenID == 0 ? "" : voc.token[tokenID
 @inline token(voc::Vocabulary) = voc.token
 
 function push_token!(voc::Vocabulary, token, occs::Integer, ndocs::Integer; ignore_new_tokens::Bool=false)
-    id = get(voc.token2id, token, zero(UInt32))
+    id = token2id(voc, token)
 
     if id == 0
         if !ignore_new_tokens
@@ -248,17 +253,11 @@ function append_tokens!(voc::Vocabulary, tokens; occs::Integer=0, ndocs::Integer
     end
 end
 
-Base.get(voc::Vocabulary, token::String, default::Integer)::UInt32 = get(voc.token2id, token, default)
-
-function Base.getindex(voc::Vocabulary, token::String)
-    getindex(voc, get(voc, token, 0))
-end
-
-function Base.getindex(voc::Vocabulary{T}, tokenID::Integer) where T
+function Base.getindex(voc::Vocabulary, tokenID::Integer)
     id = convert(UInt32, tokenID)
 
     if id == 0
-        (; id=id, occs=zero(eltype(voc.occs)), ndocs=zero(eltype(voc.ndocs)), token=empty_token(T))
+        (; id=id, occs=zero(eltype(voc.occs)), ndocs=zero(eltype(voc.ndocs)), token="")
     else
         (; id=id, occs=voc.occs[id], ndocs=voc.ndocs[id], token=voc.token[id])
     end

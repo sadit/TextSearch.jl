@@ -3,7 +3,7 @@
 export TextModel, VectorModel, trainsize, vocsize,
     TfWeighting, IdfWeighting, TpWeighting,
     FreqWeighting, BinaryLocalWeighting, BinaryGlobalWeighting,
-    LocalWeighting, GlobalWeighting, weight, fit
+    LocalWeighting, GlobalWeighting, weight, fit, vectorize, vectorize_corpus
 
 #####
 ##
@@ -207,7 +207,7 @@ end
 
 function vectorize!(buff::TextSearchBuffer, model::VectorModel, textconfig::TextConfig, text; normalize=true, minweight=1e-9)
     empty!(buff)
-    vectorize!(buff, model.voc, textconfig, text)
+    bagofwords!(buff, model.voc, textconfig, text)
     vectorize!(buff, model, buff.bow; normalize, minweight)
 end
 

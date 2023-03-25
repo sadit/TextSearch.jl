@@ -157,7 +157,7 @@ end
     textconfig = TextConfig(nlist=[1])
     C = tokenize_corpus(textconfig, corpus)
     voc = Vocabulary(C)
-    @test vectorize_corpus(voc, textconfig, C) == Dict{UInt32, Int32}[Dict(0x00000002 => 1, 0x00000003 => 1, 0x00000001 => 1), Dict(0x00000005 => 1, 0x00000004 => 1, 0x00000006 => 1, 0x00000007 => 1), Dict(0x00000002 => 1, 0x00000009 => 1, 0x00000008 => 1)]
+    @test bagofwords_corpus(voc, textconfig, C) == Dict{UInt32, Int32}[Dict(0x00000002 => 1, 0x00000003 => 1, 0x00000001 => 1), Dict(0x00000005 => 1, 0x00000004 => 1, 0x00000006 => 1, 0x00000007 => 1), Dict(0x00000002 => 1, 0x00000009 => 1, 0x00000008 => 1)]
 end
 
 @testset "Tokenizer, DVEC, and vectorize" begin
@@ -192,7 +192,7 @@ const sentiment_msg = "lol, esto me encanta"
 @testset "Tokenizer, DVEC, and vectorize" begin
     textconfig = TextConfig(group_usr=true, nlist=[1])
     voc = Vocabulary(textconfig, sentiment_corpus)
-    corpus_bows = vectorize_corpus(voc, textconfig, corpus)
+    corpus_bows = bagofwords_corpus(voc, textconfig, corpus)
     model = VectorModel(EntropyWeighting(), BinaryLocalWeighting(), voc, corpus_bows, sentiment_labels)
     @test (7.059714 - sum(model.weight)) < 1e-5
     model = VectorModel(EntropyWeighting(), BinaryLocalWeighting(), textconfig, corpus, sentiment_labels)

@@ -31,7 +31,7 @@ end
 Find candidates for solving query `Q` using `idx`. It calls `callback` on each candidate `(docID, dist)`
 """
 function SimilaritySearch.search(accept_posting_list::Function, idx::BM25InvertedFile, qtext::T, res::KnnResult; pools=getpools(idx)) where {T<:Union{AbstractString,TokenizedText}}
-    q = vectorize(idx.voc, idx.textconfig, qtext)
+    q = bagofwords(idx.voc, idx.textconfig, qtext)
     search(accept_posting_list, idx, q, res; pools)
 end
 
