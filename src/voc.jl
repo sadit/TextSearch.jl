@@ -28,7 +28,7 @@ function vocabulary_from_thesaurus(textconfig::TextConfig, tokens::AbstractVecto
     token2id = Dict{String,UInt32}
     voc = Vocabulary(textconfig, n)
     for t in tokens
-        push_token!(voc, t, occs(t), ndocs(t))
+        push_token!(voc, t, 1, 1)
     end
 
     voc

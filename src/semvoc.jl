@@ -36,6 +36,7 @@ function token2id(model::SemanticVocabulary, tok::AbstractString; ksem::Int=mode
                 for p in res
                     D[p.id] = get(D, p.id, 0f0) + 1f0
                     for i in view(model.knns, 1:ksem, p.id)
+                        i == 0 && break
                         D[i] = get(D, i, 0f0) + 1f0
                     end
                 end
@@ -94,7 +95,7 @@ function enrich_bow!(v::Dict, l)
     v
 end
 
-function search(model::SemanticVocabulary, text, res::KnnResult; tc=model.lexidx.textconfig)
+function search(model::SemanticVocabulary, text, res::KnnResult; tc=model.voc.textconfig)
     search(model.lexidx, text, res)
 end
 
@@ -103,7 +104,7 @@ function vectorize(model::SemanticVocabulary, text; klex::Int=model.klex, normal
     search(model, text, res)
     D = DVEC{UInt32,Float32}()
     sizehint!(D, length(res) * (1 + ksem))
-    if ksem == 0 || w == 0
+    if ksem == 0 || wsem == 0f0
         for p in res
             D[p.id] = abs(p.weight)
         end 
@@ -111,6 +112,7 @@ function vectorize(model::SemanticVocabulary, text; klex::Int=model.klex, normal
         for p in res
             D[p.id] = get(D, p.id, 0f0) + abs(p.weight)
             for i in view(model.knns, 1:ksem, p.id)
+                i == 0 && break
                 D[i] = get(D, i, 0f0) + wsem
             end
         end 
@@ -121,7 +123,7 @@ function vectorize(model::SemanticVocabulary, text; klex::Int=model.klex, normal
 end
 
 function decode(model::SemanticVocabulary, idlist)
-    [model[i] for i in itertokenid(idlist)]
+    [model.voc.token[i] for i in itertokenid(idlist) if i > 0]
 end
 
 Base.getindex(model::SemanticVocabulary, i::Integer) = model.voc[i]

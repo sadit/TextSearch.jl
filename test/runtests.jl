@@ -383,5 +383,16 @@ end
 
 end
 
+@testset "semvoc" begin
+    textconfig = TextConfig(nlist=[2])
+    voc = vocabulary_from_thesaurus(textconfig, sentiment_corpus)
+    semvoc = SemanticVocabulary(voc, tc=TextConfig(qlist=[4]))
+    q = "me encan"
+    d = vectorize(semvoc, q) 
+    for (k, v) in d
+        @info voc[k] => v
+    end
+    @show voc[token2id(semvoc, q)] q
+end
 
 @info "FINISH"
