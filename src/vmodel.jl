@@ -94,7 +94,7 @@ mutable struct VectorModel{_G<:GlobalWeighting, _L<:LocalWeighting} <: TextModel
 end
 
 function VectorModel(gw::GlobalWeighting, lw::LocalWeighting, voc::Vocabulary; weight=nothing)
-    length(voc.occs) > 0 || error("empty vocabulary")
+    vocsize(voc) > 0 || error("empty vocabulary")
     maxoccs = convert(Int32, maximum(voc.occs))
     W = weight === nothing ? Vector{Float32}(undef, vocsize(voc)) : weight
     model = VectorModel(gw, lw, voc, maxoccs, W)
@@ -147,16 +147,11 @@ function Base.getindex(model::VectorModel, tokenID::Integer)
     end
 end
 
-function VectorModel(global_weighting::GlobalWeighting, local_weighting::LocalWeighting, textconfig::TextConfig, corpus::AbstractVector; minbatch=0)
-    voc = Vocabulary(textconfig, corpus; minbatch)
-    VectorModel(global_weighting, local_weighting, voc)
-end
-
 Base.show(io::IO, model::VectorModel) = print(io, "{VectorModel global_weighting=$(model.global_weighting), local_weighting=$(model.local_weighting), train-voc=$(vocsize(model)), train-n=$(trainsize(model)), maxoccs=$(model.maxoccs)}")
 
 function filter_tokens(pred::Function, model::VectorModel)
     voc = model.voc
-    V = Vocabulary(voc.corpuslen)
+    V = Vocabulary(voc.textconfig, voc.corpuslen)
     W = Vector{Float32}(undef, 0)
     
     for i in eachindex(voc)
@@ -167,15 +162,10 @@ function filter_tokens(pred::Function, model::VectorModel)
         end
     end
 
-    VectorModel(model.global_weighting, model.local_weighting, V; weight=W)
+    VectorModel(model; voc=V, weight=W)
 end
 
-"""
-    vectorize!(buff::TextSearchBuffer, model::VectorModel{G_,L_}, bow::BOW; normalize=true, minweight=1e-9) where {G_,L_}
-
-Computes a weighted vector using the given bag of words and the specified weighting scheme.
-"""
-function vectorize!(buff::TextSearchBuffer, model::VectorModel{G_,L_}, bow::BOW; normalize=true, minweight=1e-9) where {G_,L_}
+function vectorize_!(buff::TextSearchBuffer, model::VectorModel{G_,L_}, bow::BOW; normalize=true, minweight=1e-9) where {G_,L_}
     vec = buff.vec
     numtokens::Int = 0
 
@@ -205,31 +195,36 @@ function vectorize!(buff::TextSearchBuffer, model::VectorModel{G_,L_}, bow::BOW;
     buff
 end
 
-function vectorize!(buff::TextSearchBuffer, model::VectorModel, textconfig::TextConfig, text; normalize=true, minweight=1e-6)
+"""
+    vectorize!(buff::TextSearchBuffer, model::VectorModel{G_,L_}, bow::BOW; normalize=true, minweight=1e-9) where {G_,L_}
+
+Computes a weighted vector using the given bag of words and the specified weighting scheme.
+"""
+function vectorize!(buff::TextSearchBuffer, model::VectorModel, text; normalize=true, minweight=1e-6)
     empty!(buff)
-    bagofwords!(buff, model.voc, textconfig, text)
-    vectorize!(buff, model, buff.bow; normalize, minweight)
+    bagofwords!(buff, model.voc, text)
+    vectorize_!(buff, model, buff.bow; normalize, minweight)
 end
 
-function vectorize(model::VectorModel, textconfig::TextConfig, text; normalize=true, minweight=1e-6)
+function vectorize(model::VectorModel, text; normalize=true, minweight=1e-6)
     buff = take!(TEXT_SEARCH_CACHES)
     try
-        vectorize!(buff, model, textconfig, text; normalize, minweight)
+        vectorize!(buff, model, text; normalize, minweight)
         buff.vec |> copy
     finally
         put!(TEXT_SEARCH_CACHES, buff)
     end
 end
 
-function vectorize_corpus(model::VectorModel, textconfig::TextConfig, corpus::AbstractVector; normalize=true, minweight=1e-6, minbatch=0)
+function vectorize_corpus(model::VectorModel, corpus::AbstractVector; normalize=true, minweight=1e-6, minbatch=0)
     n = length(corpus)
-    V = [vectorize(model, textconfig, corpus[1]; normalize, minweight)] # Vector{SVEC}(undef, n)
+    V = [vectorize(model, corpus[1]; normalize, minweight)] # Vector{SVEC}(undef, n)
     resize!(V, n)
     minbatch = getminbatch(minbatch, n)
 
     @batch minbatch=minbatch per=thread for i in 2:n
     # Threads.@threads for i in 2:n
-        V[i] = vectorize(model, textconfig, corpus[i]; normalize, minweight)
+        V[i] = vectorize(model, corpus[i]; normalize, minweight)
     end
 
     V

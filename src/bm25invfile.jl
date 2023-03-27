@@ -18,7 +18,6 @@ struct BM25InvertedFile{
                         DbType<:Union{<:AbstractDatabase,Nothing},
                         AdjType<:AbstractAdjacencyList} <: AbstractInvertedFile
     db::DbType
-    textconfig::TextConfig
     voc::Vocabulary
     bm25::BM25
     adj::AdjType
@@ -31,12 +30,11 @@ distance(::BM25InvertedFile) = error("BM25InvertedFile is not a metric index")
 
 BM25InvertedFile(invfile::BM25InvertedFile;
     db=invfile.db,
-    textconfig=invfile.textconfig,
     voc=invfile.voc,
     bm25=invfile.bm25,
     adj=invfile.adj,
     doclens=invfile.doclens
-) = BM25InvertedFile(db, textconfig, voc, bm25, adj, doclens)
+) = BM25InvertedFile(db, voc, bm25, adj, doclens)
 
 Base.copy(I::BM25InvertedFile; kwargs...) = BM25InvertedFile(I; kwargs...)
 
@@ -48,7 +46,7 @@ NOTE: The corpus is not indexed since here we expect a relatively small sample o
 """
 function BM25InvertedFile(filter_tokens_::Union{Nothing,Function}, textconfig::TextConfig, corpus, db=nothing)
     tok_corpus = tokenize_corpus(textconfig, corpus)
-    voc = Vocabulary(tok_corpus)
+    voc = Vocabulary(textconfig, tok_corpus)
     if filter_tokens_ !== nothing
         voc = filter_tokens(filter_tokens_, voc)
     end
@@ -58,7 +56,6 @@ function BM25InvertedFile(filter_tokens_::Union{Nothing,Function}, textconfig::T
 
     BM25InvertedFile(
         db,
-        textconfig,
         voc,
         bm25,
         AdjacencyList(IdIntWeight; n=vocsize(voc)),
@@ -112,15 +109,15 @@ function filter_lists!(
 end
 
 function append_items!(idx::BM25InvertedFile, corpus::AbstractVector{T}; kwargs...) where {T<:AbstractString}
-    append_items!(idx, VectorDatabase(bagofwords_corpus(idx.voc, idx.textconfig, corpus)); kwargs...)
+    append_items!(idx, VectorDatabase(bagofwords_corpus(idx.voc, corpus)); kwargs...)
 end
 
 function append_items!(idx::BM25InvertedFile, corpus::AbstractVector{T}; kwargs...) where {T<:TokenizedText}
-    append_items!(idx, VectorDatabase(bagofwords_corpus(idx.voc, idx.textconfig, corpus)); kwargs...)
+    append_items!(idx, VectorDatabase(bagofwords_corpus(idx.voc, corpus)); kwargs...)
 end
 
-push_item!(idx::BM25InvertedFile, doc::AbstractString) = push_item!(idx, bagofwords(idx.voc, idx.textconfig, doc))
-push_item!(idx::BM25InvertedFile, doc::TokenizedText) = push_item!(idx, bagofwords(idx.voc, doc))
+push_item!(idx::BM25InvertedFile, doc::T) where {T<:Union{AbstractString,AbstractVector,TokenizedText}} =
+    push_item!(idx, bagofwords(idx.voc, doc))
 
 function InvertedFiles.internal_push!(idx::BM25InvertedFile, tokenID, objID, freq, sort)
     if sort

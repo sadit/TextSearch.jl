@@ -36,46 +36,26 @@ end
 
 Creates a vector model using the input corpus. 
 """
-function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, voc::Vocabulary, corpus::AbstractVector{BOW}, labels;
-            mindocs=1,
-            smooth::Float64=0.0,
-            weights=:balance
-        )
-    nclasses = length(levels(labels))
-    D = fill(smooth, nclasses, vocsize(voc))
-
-    for (i, bow) in enumerate(corpus)
-        code = levelcode(labels[i])
-        for (tokenID, _) in bow
-            D[code, tokenID] += 1 # occs/M # log2(1 + occs)
-        end
-    end
-
-    weights = _compute_weights(weights, D, nclasses)
-    model = VectorModel(ent, lw, voc)
-    _compute_entropy(model, D, weights, nclasses, mindocs)
-    model
-end
-
-function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, textconfig::TextConfig, corpus::AbstractVector, labels;
+function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, voc::Vocabulary, corpus::AbstractVector, labels::AbstractVector;
             mindocs=1,
             smooth::Float64=0.0,
             weights=:balance,
             minbatch=0
         )
+    @assert length(labels) == length(corpus)
+    labels = categorical(labels)
+    n = length(labels)
     nclasses = length(levels(labels))
-    corpus_tokens = tokenize_corpus(textconfig, corpus; minbatch)
-    voc = Vocabulary(textconfig, corpus_tokens)
-    D = fill(smooth, nclasses, length(voc))
-    bow = BOW()
-    
-    for (i, tokens) in enumerate(corpus_tokens)
-        empty!(bow)
-        bagofwords!(bow, voc, tokens)
-        
-        code = levelcode(labels[i])
-        for (tokenID, _) in bow
-            D[code, tokenID] += 1 # occs/M # log2(1 + occs)
+    D = fill(smooth, nclasses, vocsize(voc))
+   
+    for block in Iterators.partition(1:n, 10^5)
+        C = bagofwords_corpus(voc, corpus[block])
+
+        for i in block
+            code = levelcode(labels[i])
+            for (tokenID, _) in C[i]
+                D[code, tokenID] += 1 # occs/M # log2(1 + occs)
+            end
         end
     end
 

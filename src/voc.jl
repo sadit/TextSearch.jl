@@ -1,9 +1,11 @@
 # This file is a part of TextSearch.jl
 
-export Vocabulary, occs, ndocs, token, vocsize, trainsize, filter_tokens, tokenize_and_append!, merge_voc, update_voc!, single_shot_vocabulary, token2id
+export Vocabulary, occs, ndocs, token, vocsize, trainsize, filter_tokens, tokenize_and_append!, merge_voc, update_voc!, vocabulary_from_thesaurus, token2id, 
+       encode, decode
 
 
 struct Vocabulary
+    textconfig::TextConfig
     token::Vector{String}
     occs::Vector{Int32}
     ndocs::Vector{Int32}
@@ -13,9 +15,18 @@ end
 
 token2id(voc::Vocabulary, tok::AbstractString) = get(voc.token2id, tok, zero(UInt32))
 
-function single_shot_vocabulary(tokens; occs=t->1, ndocs=t->1, corpuslen=length(tokens))
+function decode(voc::Vocabulary, bow::Dict)
+    Dict(voc.token[k] => v for (k, v) in bow)
+end
+
+function encode(voc::Vocabulary, bow::Dict)
+    Dict(token2id(voc, k) => v for (k, v) in bow)
+end
+
+function vocabulary_from_thesaurus(textconfig::TextConfig, tokens::AbstractVector)
+    n = length(tokens)
     token2id = Dict{String,UInt32}
-    voc = Vocabulary(corpuslen)
+    voc = Vocabulary(textconfig, n)
     for t in tokens
         push_token!(voc, t, occs(t), ndocs(t))
     end
@@ -24,14 +35,13 @@ function single_shot_vocabulary(tokens; occs=t->1, ndocs=t->1, corpuslen=length(
 end
 
 """
-    Vocabulary(n::Integer)
+    Vocabulary(textconfig::TextConfig, n::Integer)
 
 Creates a `Vocabulary` struct
 """
-function Vocabulary(n::Integer)
+function Vocabulary(textconfig::TextConfig, n::Integer)
     # n == 0 means unknown
-
-    voc = Vocabulary(String[], Int32[], Int32[], Dict{String,UInt32}(), n)
+    voc = Vocabulary(textconfig, String[], Int32[], Int32[], Dict{String,UInt32}(), n)
     vocsize = ceil(Int, n^0.6)  # approx based on Heaps law
     sizehint!(voc.token, vocsize)
     sizehint!(voc.occs, vocsize)
@@ -40,14 +50,25 @@ function Vocabulary(n::Integer)
     voc 
 end
 
-function locked_tokenize_and_push(voc, textconfig, doc, buff, l; ignore_new_tokens=false)
+"""
+    Vocabulary(textconfig, corpus; minbatch=0)
+
+Computes a vocabulary from a corpus using the TextConfig `textconfig`.
+"""
+function Vocabulary(textconfig::TextConfig, corpus::AbstractVector; minbatch=0)
+    voc = Vocabulary(textconfig, length(corpus))
+    tokenize_and_append!(voc, textconfig, corpus; minbatch)
+    voc
+end
+
+function locked_tokenize_and_push(voc, textconfig, doc, buff, l)
     empty!(buff)
-    id = 0
 
     for token in tokenize(borrowtokenizedtext, textconfig, doc, buff)
+        id = 0
         lock(l)
         try
-            id = push_token!(voc, token, 1, 0; ignore_new_tokens)
+            id = push_token!(voc, token, 1, 0)
         finally
             unlock(l)
             buff.bow[id] = 1
@@ -64,6 +85,37 @@ function locked_tokenize_and_push(voc, textconfig, doc, buff, l; ignore_new_toke
     end
 end
 
+"""
+    tokenize_and_append!(voc::Vocabulary, textconfig::TextConfig, corpus; minbatch=0)
+
+Parse each document in the given corpus and appends each token to the vocabulary.
+"""
+function tokenize_and_append!(voc::Vocabulary, textconfig::TextConfig, corpus; minbatch=0)
+    l = Threads.SpinLock()
+    n = length(corpus)
+    minbatch = getminbatch(minbatch, n)
+
+    @batch per=thread minbatch=minbatch for i in 1:n
+        doc = corpus[i]
+
+        buff = take!(TEXT_SEARCH_CACHES)
+
+        try
+            if doc isa AbstractVector
+                for text in doc
+                    locked_tokenize_and_push(voc, textconfig, text, buff, l)
+                end
+            else # if doc isa AbstractString
+                locked_tokenize_and_push(voc, textconfig, doc, buff, l)
+            end
+        finally
+            put!(TEXT_SEARCH_CACHES, buff)
+        end
+    end
+
+    voc
+end
+
 function filter_tokens!(voc::Vocabulary, text::TokenizedText)
     j = 0
     for i in eachindex(text.tokens)
@@ -78,7 +130,7 @@ function filter_tokens!(voc::Vocabulary, text::TokenizedText)
     text
 end
 
-function filter_tokens!(voc::Vocabulary, arr::AbstractVector)
+function filter_tokens!(voc::Vocabulary, arr::AbstractVector{TokenizedText})
     for t in arr
         filter_tokens!(voc, t)
     end
@@ -128,83 +180,10 @@ function merge_voc(pred::Function, voc1::Vocabulary, voc2::Vocabulary, voclist..
     end
 
     sort!(L, by=vocsize, rev=true)
-    voc = Vocabulary(sum(v.corpuslen for v in L))
+    voc = Vocabulary(voc1.textconfig, sum(v.corpuslen for v in L))
 
     for v in L
         update_voc!(pred, voc, v)
-    end
-
-    voc
-end
-
-
-"""
-    Vocabulary(textconfig, corpus; minbatch=0, thesaurus=nothing)
-
-Computes a vocabulary from a corpus using the TextConfig `textconfig`.
-If thesaurus is a collection of strings, then it is used as a fixed list of tokens.
-"""
-function Vocabulary(textconfig::TextConfig, corpus::AbstractVector; minbatch=0, thesaurus=nothing)
-    voc = Vocabulary(length(corpus))
-    if thesaurus === nothing
-        tokenize_and_append!(voc, textconfig, corpus; minbatch)
-    else
-        for v in thesaurus
-            push_token!(voc, v)
-        end
-
-        tokenize_and_append!(voc, textconfig, corpus; minbatch, ignore_new_tokens=true)
-    end
-end
-
-"""
-    tokenize_and_append!(voc::Vocabulary, textconfig::TextConfig, corpus; minbatch=0, ignore_new_tokens=false)
-
-Parse each document in the given corpus and appends each token to the vocabulary.
-"""
-function tokenize_and_append!(voc::Vocabulary, textconfig::TextConfig, corpus; minbatch=0, ignore_new_tokens=false)
-    l = Threads.SpinLock()
-    n = length(corpus)
-    minbatch = getminbatch(minbatch, n)
-
-    Threads.@threads for i in 1:n
-        doc = corpus[i]      
-        buff = take!(TEXT_SEARCH_CACHES)
-
-        try
-            if doc isa AbstractString
-                locked_tokenize_and_push(voc, textconfig, doc, buff, l; ignore_new_tokens)
-            else
-                for text in doc
-                    locked_tokenize_and_push(voc, textconfig, text, buff, l; ignore_new_tokens)
-                end
-            end
-        finally
-            put!(TEXT_SEARCH_CACHES, buff)
-        end
-    end
-
-    voc
-end
-
-"""
-    Vocabulary(corpus)
-
-Computes a vocabulary from an already tokenized corpus
-"""
-function Vocabulary(corpus)
-    voc = Vocabulary(length(corpus))
-    bow = Set{Int32}()
-    for tokens in corpus
-        empty!(bow)
-        for token in tokens
-            id = push_token!(voc, token, 1, 0)
-            push!(bow, id)
-        end
-
-        for id in bow
-            voc.ndocs[id] += 1
-        end
     end
 
     voc
@@ -222,17 +201,15 @@ token(voc::Vocabulary, tokenID::Integer) = tokenID == 0 ? "" : voc.token[tokenID
 @inline ndocs(voc::Vocabulary) = voc.ndocs
 @inline token(voc::Vocabulary) = voc.token
 
-function push_token!(voc::Vocabulary, token, occs::Integer, ndocs::Integer; ignore_new_tokens::Bool=false)
+function push_token!(voc::Vocabulary, token, occs::Integer, ndocs::Integer)
     id = token2id(voc, token)
 
     if id == 0
-        if !ignore_new_tokens
-            id = length(voc) + 1
-            push!(voc.token, token)
-            push!(voc.occs, occs)
-            push!(voc.ndocs, ndocs)
-            voc.token2id[token] = id
-        end
+        id = length(voc) + 1
+        push!(voc.token, token)
+        push!(voc.occs, occs)
+        push!(voc.ndocs, ndocs)
+        voc.token2id[token] = id
     else
         voc.occs[id] += occs
         voc.ndocs[id] += ndocs
@@ -241,13 +218,13 @@ function push_token!(voc::Vocabulary, token, occs::Integer, ndocs::Integer; igno
     id
 end
 
-function push_token!(voc::Vocabulary, token; occs::Integer=0, ndocs::Integer=0, ignore_new_tokens=false)
-    push_token!(voc, token, occs, ndocs; ignore_new_tokens)
+function push_token!(voc::Vocabulary, token; occs::Integer=0, ndocs::Integer=0)
+    push_token!(voc, token, occs, ndocs)
 end
 
-function append_tokens!(voc::Vocabulary, tokens; occs::Integer=0, ndocs::Integer=0, ignore_new_tokens=false)
+function append_tokens!(voc::Vocabulary, tokens; occs::Integer=0, ndocs::Integer=0)
     for token in tokens
-        push_token!(voc, token, occs, ndocs; ignore_new_tokens)
+        push_token!(voc, token, occs, ndocs)
     end
 end
 
@@ -279,7 +256,7 @@ end
 Returns a copy of reduced vocabulary based on evaluating `pred` function for each entry in `voc`
 """
 function filter_tokens(pred::Function, voc::Vocabulary)
-    V = Vocabulary(voc.corpuslen)
+    V = Vocabulary(voc.textconfig, voc.corpuslen)
 
     for i in eachindex(voc)
         v = voc[i]
