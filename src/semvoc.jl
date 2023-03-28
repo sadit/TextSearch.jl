@@ -1,6 +1,6 @@
 # This file is a part of TextSearch.jl
 
-export SemanticVocabulary, AbstractTokenSelection, SelectCentralToken, SelectAllTokens
+export SemanticVocabulary, AbstractTokenSelection, SelectCentralToken, SelectAllTokens, subvoc, decode, encode
 
 struct SemanticVocabulary{SelType}
     voc::Vocabulary
@@ -76,7 +76,7 @@ end
 
 Base.getindex(model::SemanticVocabulary, i::Integer) = model.voc[i]
 
-function subvoc(model::SemanticVocabulary, idlist, tc=model.lexidx.textconfig)
+function subvoc(model::SemanticVocabulary, idlist, tc=model.lexidx.voc.textconfig)
     corpus = [model.voc.token[i] for i in itertokenid(idlist)]
     Vocabulary(tc, corpus)
 end
