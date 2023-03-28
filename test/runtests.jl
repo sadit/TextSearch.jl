@@ -36,11 +36,11 @@ function are_posting_lists_sorted(invindex)
 end
 
 
-#=include("tok.jl")
+include("tok.jl")
 include("voc.jl")
 include("vec.jl")
 include("search.jl")
-=#
+
 include("semvoc.jl")
 
 @info "FINISH"

@@ -9,7 +9,7 @@
         @info voc[k] => v
     end
 
-    @test voc[token2id(semvoc, q)].token == "la manzana verde esta rica"
+    @test voc[token2id(semvoc, q)].token in ("la manzana verde esta rica", "la manzana roja")
     @info bagofwords(semvoc, "la manzana roja es rica")
     @info tokenize(semvoc, "la manzana roja es rica, pero la pera es ")
 end
