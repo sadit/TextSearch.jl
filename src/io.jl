@@ -21,18 +21,18 @@ function restoreindex(file::JLDFile, parent::String, index::BM25InvertedFile, me
 end
 
 # lang model
-function savemodel(filename::AbstractString, ngrams; meta=nothing, parent="/")
+function savemodel(filename::AbstractString, model; meta=nothing, parent="/")
     jldopen(filename, "w") do f
-        savemodel(f, ngrams; meta, parent)
+        savemodel(f, model; meta, parent)
     end
 end
 
-function savemodel(file::JLDFile, ngrams::LanguageModel; meta=nothing, parent="/")
+function savemodel(file::JLDFile, model::SemanticVocabulary; meta=nothing, parent="/")
     file[joinpath(parent, "meta")] = meta
-    file[joinpath(parent, "tc")] = ngrams.vocngrams 
-    file[joinpath(parent, "vocngrams")] = ngrams.semidx
-    saveindex(file, ngrams.lexidx; parent=joinpath(parent, "lexidx"))
-    saveindex(file, ngrams.semidx; parent=joinpath(parent, "semidx"))
+    file[joinpath(parent, "voc")] = model.voc
+    file[joinpath(parent, "knns")] = model.knns
+    file[joinpath(parent, "sel")] = model.sel
+    saveindex(file, model.lexidx; parent=joinpath(parent, "lexidx"))
 end
 
 function loadmodel(t::Type, filename::AbstractString; parent="/", staticgraph=false)
@@ -41,36 +41,13 @@ function loadmodel(t::Type, filename::AbstractString; parent="/", staticgraph=fa
     end
 end
 
-function loadmodel(::Type{LanguageModel}, file::JLDFile; parent="/", staticgraph=false)
+function loadmodel(::Type{SemanticVocabulary}, file::JLDFile; parent="/", staticgraph=false)
     meta = file[joinpath(parent, "meta")]
-    tc = file[joinpath(parent, "tc")]
-    vocngrams = file[joinpath(parent, "vocngrams")]
+    voc = file[joinpath(parent, "voc")]
+    knns = file[joinpath(parent, "knns")]
 
     lexidx, _ = loadindex(file; parent=joinpath(parent, "lexidx"), staticgraph)
-    semidx, _ = loadindex(file; parent=joinpath(parent, "semidx"), staticgraph)
 
-    LanguageModel(tc, vocngrams, lexidx, semidx), meta
+   SemanticVocabulary(tvoc, lexidx, knns, sel), meta
 end
 
-
-# corpus lang model
-
-function savemodel(file::JLDFile, model::CorpusLanguageModel; meta=nothing, parent="/")
-    file[joinpath(parent, "meta")] = meta
-    file[joinpath(parent, "corpus")] = model.corpus 
-    file[joinpath(parent, "labels")] = model.labels 
-
-    saveindex(file, model.lexidx; parent=joinpath(parent, "lexidx"))
-    saveindex(file, model.semidx; parent=joinpath(parent, "semidx"))
-end
-
-function loadmodel(::Type{CorpusLanguageModel}, file::JLDFile; parent="/", staticgraph=false)
-    meta = file[joinpath(parent, "meta")]
-    corpus = file[joinpath(parent, "corpus")]
-    labels = file[joinpath(parent, "labels")]
-
-    lexidx, _ = loadindex(file; parent=joinpath(parent, "lexidx"), staticgraph)
-    semidx, _ = loadindex(file; parent=joinpath(parent, "semidx"), staticgraph)
-
-    CorpusLanguageModel(corpus, labels, lexidx, semidx), meta
-end

@@ -7,8 +7,10 @@ struct TokenizedText{StringVector<:AbstractVector{String}}
 end
 
 @inline Base.getindex(T::TokenizedText, i::Integer) = T.tokens[i]
+@inline Base.setindex!(T::TokenizedText, v, i::Integer) = (T.tokens[i] = v)
 @inline Base.firstindex(T::TokenizedText) = 1
 @inline Base.lastindex(T::TokenizedText) = length(T)
+@inline Base.eachindex(T::TokenizedText) = firstindex(T):lastindex(T)
 @inline Base.length(T::TokenizedText) = length(T.tokens)
 @inline Base.iterate(T::TokenizedText, s::Int=1) = iterate(T.tokens, s)
 @inline Base.eltype(T::TokenizedText) = eltype(T.tokens)

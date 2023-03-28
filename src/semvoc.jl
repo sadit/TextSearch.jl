@@ -1,70 +1,42 @@
 # This file is a part of TextSearch.jl
 
-export SemanticVocabulary
+export SemanticVocabulary, AbstractTokenSelection, SelectCentralToken, SelectAllTokens
 
-struct SemanticVocabulary
+struct SemanticVocabulary{SelType}
     voc::Vocabulary
     lexidx::BM25InvertedFile
     knns::Matrix{Int32}
-    klex::Int64
-    ksem::Int64
-    wsem::Float32
+    sel::SelType
 end
 
-SemanticVocabulary(C::SemanticVocabulary; 
-                   voc=C.voc, lexidx=C.lexidx, semidx=C.semidx, klex=C.klex, ksem=C.ksem, wsem=C.wsem) =
-    SemanticVocabulary(voc, lexidx, semidx, klex, ksem, wsem)
+abstract type AbstractTokenSelection end
+
+struct SelectCentralToken <: AbstractTokenSelection
+    klex::Int32
+    ksem::Int32
+end
+
+struct SelectAllTokens <: AbstractTokenSelection
+    klex::Int32
+    ksem::Int32
+end
+
+SemanticVocabulary(C::SemanticVocabulary;
+                   voc=C.voc, lexidx=C.lexidx, semidx=C.semidx, sel=C.sel) =
+    SemanticVocabulary(voc, lexidx, semidx, C.sel)
 
 vocsize(model::SemanticVocabulary) = vocsize(voc)
 
-function token2id(model::SemanticVocabulary, tok::AbstractString; ksem::Int=model.ksem)
-    id = token2id(model.voc, tok)
-
-    if id == 0
-        klex=model.klex
-        res = getknnresult(klex)
-        search(model, tok, res)
-
-        if ksem == 0
-            id = argmin(res)
-        else
-            buff = take!(TEXT_SEARCH_CACHES)
-            empty!(buff.vec)
-            D = buff.vec
-            sizehint!(D, length(res) * (1 + ksem))
-            try
-                for p in res
-                    D[p.id] = get(D, p.id, 0f0) + 1f0
-                    for i in view(model.knns, 1:ksem, p.id)
-                        i == 0 && break
-                        D[i] = get(D, i, 0f0) + 1f0
-                    end
-                end
-
-                id = argmax(D)
-            finally
-                put!(TEXT_SEARCH_CACHES, buff)
-            end
-        end
-    end
-
-    id
-end
-
-function SemanticVocabulary(voc::Vocabulary;
-        tc::TextConfig=TextConfig(nlist=[1], qlist=[4]),
-        ksem::Int=32,
-        klex::Int=ksem,
-        wsem::Float32=1f0,
+function SemanticVocabulary(voc::Vocabulary, sel::AbstractTokenSelection=SelectCentralToken(16, 8);
+        textconfig::TextConfig=TextConfig(nlist=[1], qlist=[4]),
         list_min_length_for_checking::Int=32,
         list_max_allowed_length::Int=128,
         doc_min_freq::Int=1,  # any hard vocabulary pruning are expected to be made in `voc`
         doc_max_ratio::AbstractFloat=0.3 # popular tokens are likely to be thrash
     )
     doc_max_freq = ceil(Int, doc_max_ratio * vocsize(voc))
-    C = tokenize_corpus(tc, voc.token)
-
-    lexidx = BM25InvertedFile(tc, C) do t
+    C = tokenize_corpus(textconfig, voc.token)
+    lexidx = BM25InvertedFile(textconfig, C) do t
         doc_min_freq <= t.ndocs <= doc_max_freq
     end
 
@@ -81,9 +53,8 @@ function SemanticVocabulary(voc::Vocabulary;
                   always_sort=true # we need this since we call append_items! without sorting
                  )
     @info "searchbatch"
-    @time knns, _ = searchbatch(lexidx, VectorDatabase(C), ksem)
-
-    SemanticVocabulary(voc, lexidx, knns, klex, ksem, wsem)
+    @time knns, _ = searchbatch(lexidx, VectorDatabase(C), sel.ksem)
+    SemanticVocabulary(voc, lexidx, knns, sel)
 end
 
 enrich_bow!(v::Dict, l::Nothing) = v
@@ -95,31 +66,8 @@ function enrich_bow!(v::Dict, l)
     v
 end
 
-function search(model::SemanticVocabulary, text, res::KnnResult; tc=model.voc.textconfig)
+function search(model::SemanticVocabulary, text, res::KnnResult)
     search(model.lexidx, text, res)
-end
-
-function vectorize(model::SemanticVocabulary, text; klex::Int=model.klex, normalize=true, ksem::Int=model.ksem, wsem::Float32=model.wsem)
-    res = getknnresult(klex)
-    search(model, text, res)
-    D = DVEC{UInt32,Float32}()
-    sizehint!(D, length(res) * (1 + ksem))
-    if ksem == 0 || wsem == 0f0
-        for p in res
-            D[p.id] = abs(p.weight)
-        end 
-    else
-        for p in res
-            D[p.id] = get(D, p.id, 0f0) + abs(p.weight)
-            for i in view(model.knns, 1:ksem, p.id)
-                i == 0 && break
-                D[i] = get(D, i, 0f0) + wsem
-            end
-        end 
-    end
-
-    normalize && normalize!(D)
-    D
 end
 
 function decode(model::SemanticVocabulary, idlist)

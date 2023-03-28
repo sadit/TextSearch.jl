@@ -77,8 +77,7 @@ include("bm25.jl")
 include("bm25invfile.jl")
 include("bm25invfilesearch.jl")
 include("semvoc.jl")
-include("langmodel.jl")
-include("corpuslangmodel.jl")
+include("semvocbow.jl")
 include("io.jl")
 
 end
