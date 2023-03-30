@@ -147,7 +147,13 @@ function Base.getindex(model::VectorModel, tokenID::Integer)
     end
 end
 
-Base.show(io::IO, model::VectorModel) = print(io, "{VectorModel global_weighting=$(model.global_weighting), local_weighting=$(model.local_weighting), train-voc=$(vocsize(model)), train-n=$(trainsize(model)), maxoccs=$(model.maxoccs)}")
+Base.show(io::IO, model::VectorModel) = print(io, """{VectorModel
+    global_weighting: $(model.global_weighting)
+    local_weighting: $(model.local_weighting)
+    vocsize: $(vocsize(model))
+    trainsize=$(trainsize(model))
+    maxoccs=$(model.maxoccs)                                    
+}""")
 
 function filter_tokens(pred::Function, model::VectorModel)
     voc = model.voc
@@ -222,8 +228,8 @@ function vectorize_corpus(model::VectorModel, corpus::AbstractVector; normalize=
     resize!(V, n)
     minbatch = getminbatch(minbatch, n)
 
-    @batch minbatch=minbatch per=thread for i in 2:n
-    # Threads.@threads for i in 2:n
+    #@batch minbatch=minbatch per=thread for i in 2:n
+    Threads.@threads for i in 2:n
         V[i] = vectorize(model, corpus[i]; normalize, minweight)
     end
 

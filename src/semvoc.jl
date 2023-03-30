@@ -22,10 +22,10 @@ struct SelectAllTokens <: AbstractTokenSelection
 end
 
 SemanticVocabulary(C::SemanticVocabulary;
-                   voc=C.voc, lexidx=C.lexidx, semidx=C.semidx, sel=C.sel) =
-    SemanticVocabulary(voc, lexidx, semidx, C.sel)
+                   voc=C.voc, lexidx=C.lexidx, knns=C.knns, sel=C.sel) =
+    SemanticVocabulary(voc, lexidx, knns, sel)
 
-vocsize(model::SemanticVocabulary) = vocsize(voc)
+vocsize(model::SemanticVocabulary) = vocsize(model.voc)
 
 function SemanticVocabulary(voc::Vocabulary, sel::AbstractTokenSelection=SelectCentralToken(16, 8);
         textconfig::TextConfig=TextConfig(nlist=[1], qlist=[4]),

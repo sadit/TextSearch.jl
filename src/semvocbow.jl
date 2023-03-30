@@ -2,7 +2,7 @@
 
 function vectorize_knns!(D::Dict, model::SemanticVocabulary, tok)
     klex = model.sel.klex
-    ksem = model.sel.ksem
+    ksem = min(model.sel.ksem, size(model.knns, 1))
 
     res = getknnresult(klex)
     search(model, tok, res)
@@ -24,7 +24,7 @@ function token2id(model::SemanticVocabulary, tok::AbstractString)::UInt32
 
     if id == 0
         klex = model.sel.klex
-        ksem = model.sel.ksem
+        ksem = min(model.sel.ksem, size(model.knns, 1))
 
         if ksem == 0
             res = getknnresult(klex)
@@ -58,12 +58,23 @@ end
 
 function tokenize(model::SemanticVocabulary, text)
     tokenize!(model, tokenize(model.voc.textconfig, text))
+
+end
+
+function tokenize_corpus(model::SemanticVocabulary, corpus)
+    n = length(corpus)
+    arr = Vector{TokenizedText}(undef, n)
+    Threads.@threads for i in 1:n
+        arr[i] = tokenize!(model, tokenize(model.voc.textconfig, corpus[i]))
+    end
+
+    arr
 end
 
 function bagofwords!(bow::BOW, model::SemanticVocabulary{SelectCentralToken}, tokens::TokenizedText)
     for t in tokens 
         id = token2id(model, t)
-        bow[id] = get(bow, id, 1)
+        bow[id] = get(bow, id, 0) + 1
     end
 
     bow
@@ -79,7 +90,7 @@ end
 
 function vectorize(model::SemanticVocabulary, text; normalize=true)
     klex = model.sel.klex
-    ksem = model.sel.ksem
+    ksem = min(model.sel.ksem, size(model.knns, 1))
 
     res = getknnresult(klex)
     search(model, text, res)
@@ -100,6 +111,7 @@ function vectorize(model::SemanticVocabulary, text; normalize=true)
     end
 
     normalize && normalize!(D)
+
     D
 end
 

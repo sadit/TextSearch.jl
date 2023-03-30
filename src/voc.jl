@@ -1,7 +1,7 @@
 # This file is a part of TextSearch.jl
 
 export Vocabulary, occs, ndocs, token, vocsize, trainsize, filter_tokens, tokenize_and_append!, merge_voc, update_voc!, vocabulary_from_thesaurus, token2id, 
-       encode, decode
+       encode, decode, totable
 
 
 struct Vocabulary
@@ -21,6 +21,10 @@ end
 
 function encode(voc::Vocabulary, bow::Dict)
     Dict(token2id(voc, k) => v for (k, v) in bow)
+end
+
+function totable(voc::Vocabulary, TableConstructor)
+    TableConstructor(; voc.token, voc.ndocs, voc.occs)
 end
 
 function vocabulary_from_thesaurus(textconfig::TextConfig, tokens::AbstractVector)
@@ -95,7 +99,8 @@ function tokenize_and_append!(voc::Vocabulary, textconfig::TextConfig, corpus; m
     n = length(corpus)
     minbatch = getminbatch(minbatch, n)
 
-    @batch per=thread minbatch=minbatch for i in 1:n
+    
+    Threads.@threads for i in 1:n # @batch per=thread minbatch=minbatch for i in 1:n
         doc = corpus[i]
 
         buff = take!(TEXT_SEARCH_CACHES)

@@ -45,9 +45,9 @@ function loadmodel(::Type{SemanticVocabulary}, file::JLDFile; parent="/", static
     meta = file[joinpath(parent, "meta")]
     voc = file[joinpath(parent, "voc")]
     knns = file[joinpath(parent, "knns")]
-
+    sel = file[joinpath(parent, "sel")]
     lexidx, _ = loadindex(file; parent=joinpath(parent, "lexidx"), staticgraph)
 
-    SemanticVocabulary(tvoc, lexidx, knns, sel), meta
+    SemanticVocabulary(voc, lexidx, knns, sel), meta
 end
 

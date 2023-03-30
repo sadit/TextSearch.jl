@@ -26,6 +26,10 @@ function entropy_(dist)
     e
 end
 
+categorical_labels(labels::AbstractVector{<:CategoricalValue}) = labels
+categorical_labels(labels::AbstractVector{T}) where {T<:Union{AbstractString,Integer,Symbol}} = categorical(labels) 
+categorical_labels(labels::AbstractCategoricalVector) = labels
+
 """
     VectorModel(ent::EntropyWeighting, lw::LocalWeighting, corpus::BOW, labels;
         mindocs::Integer=1,
@@ -43,7 +47,7 @@ function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, voc::Vocabulary,
             minbatch=0
         )
     @assert length(labels) == length(corpus)
-    labels = categorical(labels)
+    labels = categorical_labels(labels)
     n = length(labels)
     nclasses = length(levels(labels))
     D = fill(smooth, nclasses, vocsize(voc))
