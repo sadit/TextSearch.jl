@@ -61,14 +61,14 @@ Computes a vocabulary from a corpus using the TextConfig `textconfig`.
 """
 function Vocabulary(textconfig::TextConfig, corpus::AbstractVector; minbatch=0)
     voc = Vocabulary(textconfig, length(corpus))
-    tokenize_and_append!(voc, textconfig, corpus; minbatch)
+    tokenize_and_append!(voc, corpus; minbatch)
     voc
 end
 
-function locked_tokenize_and_push(voc, textconfig, doc, buff, l)
+function locked_tokenize_and_push(voc, doc, buff, l)
     empty!(buff)
 
-    for token in tokenize(borrowtokenizedtext, textconfig, doc, buff)
+    for token in tokenize(borrowtokenizedtext, voc.textconfig, doc, buff)
         id = 0
         lock(l)
         try
@@ -90,11 +90,11 @@ function locked_tokenize_and_push(voc, textconfig, doc, buff, l)
 end
 
 """
-    tokenize_and_append!(voc::Vocabulary, textconfig::TextConfig, corpus; minbatch=0)
+    tokenize_and_append!(voc::Vocabulary, corpus; minbatch=0)
 
 Parse each document in the given corpus and appends each token to the vocabulary.
 """
-function tokenize_and_append!(voc::Vocabulary, textconfig::TextConfig, corpus; minbatch=0)
+function tokenize_and_append!(voc::Vocabulary, corpus; minbatch=0)
     l = Threads.SpinLock()
     n = length(corpus)
     minbatch = getminbatch(minbatch, n)
@@ -108,10 +108,10 @@ function tokenize_and_append!(voc::Vocabulary, textconfig::TextConfig, corpus; m
         try
             if doc isa AbstractVector
                 for text in doc
-                    locked_tokenize_and_push(voc, textconfig, text, buff, l)
+                    locked_tokenize_and_push(voc, text, buff, l)
                 end
             else # if doc isa AbstractString
-                locked_tokenize_and_push(voc, textconfig, doc, buff, l)
+                locked_tokenize_and_push(voc, doc, buff, l)
             end
         finally
             put!(TEXT_SEARCH_CACHES, buff)
