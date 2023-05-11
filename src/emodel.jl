@@ -52,11 +52,11 @@ function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, voc::Vocabulary,
     nclasses = length(levels(labels))
     D = fill(smooth, nclasses, vocsize(voc))
    
-    for block in Iterators.partition(1:n, min(n, 1024))
+    for block in Iterators.partition(1:n, 1024)
         C = bagofwords_corpus(voc, corpus[block])
 
-        for i in block
-            code = levelcode(labels[i])
+        for (i, j) in enumerate(block)
+            code = levelcode(labels[j])
             for (tokenID, _) in C[i]
                 D[code, tokenID] += 1 # occs/M # log2(1 + occs)
             end
