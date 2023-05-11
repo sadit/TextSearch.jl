@@ -52,7 +52,7 @@ function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, voc::Vocabulary,
     nclasses = length(levels(labels))
     D = fill(smooth, nclasses, vocsize(voc))
    
-    for block in Iterators.partition(1:n, 10^5)
+    for block in Iterators.partition(1:n, min(n, 1024))
         C = bagofwords_corpus(voc, corpus[block])
 
         for i in block
