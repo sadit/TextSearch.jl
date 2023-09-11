@@ -98,7 +98,7 @@ function tokenize_(config::TextConfig, buff::TextSearchBuffer)
         qgrams(q, buff, config.tt, config.mark_token_type)
     end
     
-    if length(config.nlist) > 0 || length(config.slist) > 0
+    if length(config.nlist) > 0 || length(config.slist) > 0 || config.collocations
         n1 = length(buff.tokens)
         unigrams(buff, config.tt)  # unigrams are always activated if any |nlist| > 0 or |slist| > 0
 
@@ -112,6 +112,10 @@ function tokenize_(config::TextConfig, buff::TextSearchBuffer)
 
         for q in config.slist
             skipgrams(q, buff, config.tt, config.mark_token_type)
+        end
+
+        if config.collocations > 1
+            collocations(config.collocations, buff, config.tt, config.mark_token_type)
         end
     end
 
@@ -174,6 +178,21 @@ function flush_skipgram!(buff::TextSearchBuffer, tt::AbstractTokenTransformation
 end
 
 """
+    flush_collocations!(buff::TextSearchBuffer, tt::AbstractTokenTransformation, mark_token_type)
+
+Pushes a collocation inside the buffer to the token list; it discards empty strings.
+"""
+function flush_collocation!(buff::TextSearchBuffer, tt::AbstractTokenTransformation, mark_token_type)
+    buff.io.size == 0 && return nothing
+    mark_token_type && write(buff.io, '\t', 'c')
+    s = transform_collocation(tt, String(take!(buff.io)))
+    s === nothing && return nothing
+    push!(buff.tokens, s)
+    s
+end
+
+
+"""
     qgrams(q::Integer, buff::TextSearchBuffer, tt::AbstractTokenTransformation, mark_token_type)
 
 Computes character q-grams for the given input
@@ -233,11 +252,9 @@ function unigrams(buff::TextSearchBuffer, tt::AbstractTokenTransformation)
         elseif c == BLANK
             if p !== BLANK
                 s = flush_unigram!(buff, tt)
-                #write(buff.io, c)
                 s !== nothing && push!(buff.unigrams, s)
             end
         else
-            ## @show :d
             write(buff.io, c)
         end
     end
@@ -266,6 +283,29 @@ function nwords(q::Integer, buff::TextSearchBuffer, tt::AbstractTokenTransformat
 
     buff.tokens
 end
+
+
+"""
+    collocations(q, buff::TextSearchBuffer, tt::AbstractTokenTransformation, mark_token_type)
+
+Computes a kind of collocations of the given text
+"""
+function collocations(q::Integer, buff::TextSearchBuffer, tt::AbstractTokenTransformation, mark_token_type)
+    tokens = buff.unigrams
+    n = length(tokens)
+
+    for i in 1:n-1 # the upper limit is an implementation detail to discard some entries 
+        for j in i+1:min(i+1+q, n)
+            write(buff.io, buff.unigrams[i])
+            write(buff.io, BLANK)
+            write(buff.io, buff.unigrams[j])
+            flush_collocation!(buff, tt, mark_token_type)
+        end
+    end
+    
+    buff.tokens
+end
+
 
 """
     skipgrams(q::Skipgram, buff::TextSearchBuffer, tt::AbstractTokenTransformation, mark_token_type)
