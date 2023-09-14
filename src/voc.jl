@@ -1,7 +1,7 @@
 # This file is a part of TextSearch.jl
 
 export Vocabulary, occs, ndocs, token, vocsize, trainsize, filter_tokens, tokenize_and_append!, merge_voc, update_voc!, vocabulary_from_thesaurus, token2id, 
-       encode, decode, totable
+       encode, decode, table
 
 
 struct Vocabulary
@@ -15,15 +15,9 @@ end
 
 token2id(voc::Vocabulary, tok::AbstractString) = get(voc.token2id, tok, zero(UInt32))
 
-function Vocabulary(voc::Vocabulary)
-    Vocabulary(
-       voc.deepcopy(voc.textconfig),
-       voc.copy(voc.token),
-       voc.copy(voc.occs),
-       voc.copy(voc.ndocs),
-       voc.copy(voc.token2id),
-       voc.corpuslen
-    )
+function Vocabulary(voc::Vocabulary; textconfig=voc.textconfig, token=voc.token, occs=voc.occs, ndocs=voc.ndocs, token2id=voc.token2id, corpuslen=voc.corpuslen)
+    Vocabulary(textconfig, token, occs, ndocs, token2id, corpuslen)
+    # Vocabulary(voc.deepcopy(voc.textconfig), voc.copy(voc.token), voc.copy(voc.occs), voc.copy(voc.ndocs), voc.copy(voc.token2id), corpuslen)
 end
 
 function decode(voc::Vocabulary, bow::Dict)
@@ -34,7 +28,7 @@ function encode(voc::Vocabulary, bow::Dict)
     Dict(token2id(voc, k) => v for (k, v) in bow)
 end
 
-function totable(voc::Vocabulary, TableConstructor)
+function table(voc::Vocabulary, TableConstructor)
     TableConstructor(; voc.token, voc.ndocs, voc.occs)
 end
 
@@ -70,10 +64,38 @@ end
 
 Computes a vocabulary from a corpus using the TextConfig `textconfig`.
 """
-function Vocabulary(textconfig::TextConfig, corpus::AbstractVector; minbatch=0)
+function vocab_from_small_collection(textconfig::TextConfig, corpus::AbstractVector; minbatch=0)
     voc = Vocabulary(textconfig, length(corpus))
     tokenize_and_append!(voc, corpus; minbatch)
     voc
+end
+
+function Vocabulary(textconfig::TextConfig, corpusgenerator::Union{Base.EachLine,Base.Generator,AbstractVector}; minbatch=0, buffsize=2^16, verbose=true)
+    if corpusgenerator isa AbstractVector && length(corpusgenerator) <= buffsize
+        return vocab_from_small_collection(textconfig, corpusgenerator; minbatch)
+    end
+
+    voc = Vocabulary(textconfig, 0)
+    len = 0
+    corpus = String[]
+    sizehint!(corpus, buffsize)
+    for doc in corpusgenerator
+        push!(corpus, doc)
+
+        if length(corpus) == buffsize
+            verbose && (@info "computing vocabulary -- advance: $len - buffsize: $buffsize")
+            len += buffsize
+            tokenize_and_append!(voc, corpus; minbatch)
+            empty!(corpus) 
+        end 
+    end
+
+    if length(corpus) > 0
+        len += length(corpus)
+        tokenize_and_append!(voc, corpus; minbatch)
+    end
+
+    Vocabulary(voc; corpuslen=len)
 end
 
 function locked_tokenize_and_push(voc, doc, buff, l)
@@ -112,7 +134,6 @@ function tokenize_and_append!(voc::Vocabulary, corpus; minbatch=0)
  
     Threads.@threads for i in 1:n # @batch per=thread minbatch=minbatch for i in 1:n
         doc = corpus[i]
-
         buff = take!(TEXT_SEARCH_CACHES)
 
         try
@@ -180,6 +201,8 @@ itertokenid(idlist::KnnResult) = IdView(idlist)
 function Base.getindex(voc::Vocabulary, idlist)
     [voc[i] for i in itertokenid(idlist)]
 end
+
+Base.getindex(voc::Vocabulary, token::AbstractString) = voc[get(voc.token2id, token, 0)]
 
 function Base.getindex(voc::Vocabulary, tokenID::Integer)
     id = convert(UInt32, tokenID)

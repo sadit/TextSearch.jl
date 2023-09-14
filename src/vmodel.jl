@@ -137,9 +137,11 @@ Base.copy(e::VectorModel; kwargs...) = VectorModel(e::VectorModel; kwargs...)
 @inline ndocs(model::VectorModel) = ndocs(model.voc)
 @inline token(model::VectorModel) = token(model.voc)
 
-function totable(model::VectorModel, TableConstructor)
+function table(model::VectorModel, TableConstructor)
     TableConstructor(; token=token(model), ndocs=ndocs(model), occs=occs(model), weight=weight(model))
 end
+
+Base.getindex(model::VectorModel, token::AbstractString) = model[get(model.voc.token2id, token, 0)]
 
 function Base.getindex(model::VectorModel, tokenID::Integer)
     id = convert(UInt32, tokenID)
