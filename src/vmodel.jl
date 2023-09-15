@@ -141,7 +141,7 @@ function table(model::VectorModel, TableConstructor)
     TableConstructor(; token=token(model), ndocs=ndocs(model), occs=occs(model), weight=weight(model))
 end
 
-Base.getindex(model::VectorModel, token::AbstractString) = model[get(model.voc.token2id, token, 0)]
+Base.getindex(model::VectorModel, token::AbstractString) = model[token2id(model.voc, token)]
 
 function Base.getindex(model::VectorModel, tokenID::Integer)
     id = convert(UInt32, tokenID)

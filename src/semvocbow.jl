@@ -4,9 +4,13 @@ function vectorize_knns!(D::Dict, model::SemanticVocabulary, tok)
     klex = model.sel.klex
     ksem = min(model.sel.ksem, size(model.knns, 1))
 
+    @info "AAAAAA"
     res = getknnresult(klex)
+    @info "AAAAAA 1"
     search(model, tok, res)
+    @info "AAAAAA 2"
     sizehint!(D, length(res) * (1 + ksem))
+    @info "BBBBBB"
 
     for p in res
         D[p.id] = get(D, p.id, 0f0) + 1f0
@@ -15,7 +19,8 @@ function vectorize_knns!(D::Dict, model::SemanticVocabulary, tok)
             D[i] = get(D, i, 0f0) + 1f0
         end
     end
-
+    
+    @info "CCC"
     D
 end
 
@@ -31,15 +36,20 @@ function token2id(model::SemanticVocabulary, tok::AbstractString)::UInt32
             search(model, tok, res)
             id = argmin(res)::UInt32
         else
+            @info :first length(TEXT_SEARCH_CACHES.data)
             buff = take!(TEXT_SEARCH_CACHES)
+            @info :second length(TEXT_SEARCH_CACHES.data)
             try
                 empty!(buff.vec)
                 D = buff.vec
+                @info :third length(TEXT_SEARCH_CACHES.data)
                 vectorize_knns!(D, model, tok)
+                @info :fourth length(TEXT_SEARCH_CACHES.data)
                 id = length(D) == 0 ? zero(UInt32) : argmax(D)
             finally
                 put!(TEXT_SEARCH_CACHES, buff)
             end
+            @info :finish length(TEXT_SEARCH_CACHES.data)
         end
     end
 

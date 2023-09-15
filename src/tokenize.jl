@@ -228,27 +228,27 @@ function unigrams(buff::TextSearchBuffer, tt::AbstractTokenTransformation)
         c = buff.normtext[i]
         p = buff.normtext[i-1]
 
-        if ispunct2(c) && !ispunct2(p) && p !== BLANK
+        if c == BLANK
             flush_unigram!(buff, tt)
-            write(buff.io, c)
-        elseif ispunct2(p)
-            if ispunct2(c) && buff.io.size > 2
-                flush_unigram!(buff, tt)
-                write(buff.io, c)
-            elseif !ispunct2(c) && !(p in ('#', '@', '_'))
-                flush_unigram!(buff, tt)
-                c !== BLANK && write(buff.io, c)
-            else
-                write(buff.io, c)
-            end
         elseif isemoji(c)
+            # emoji
             flush_unigram!(buff, tt)
             write(buff.io, c)
             flush_unigram!(buff, tt)
-        elseif c == BLANK
-            if p !== BLANK
-                flush_unigram!(buff, tt)
+        elseif ispunct2(p)
+            # previous char is punct
+            if ispunct2(c)
+                # a punctuaction string
+                buff.io.size >= 3 && flush_unigram!(buff, tt)  # a bit large, so we flush and restart the punc string (3 is for most emojis and ...)
+                write(buff.io, c)
+            else
+                !(p in ('#', '@', '_')) && flush_unigram!(buff, tt)  # current is not punctuaction so we flush if not a meta word
+                write(buff.io, c)
             end
+        elseif ispunct2(c) && p !== BLANK
+            ## single punctuaction alone
+            flush_unigram!(buff, tt)
+            write(buff.io, c)
         else
             write(buff.io, c)
         end

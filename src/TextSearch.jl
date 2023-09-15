@@ -50,10 +50,11 @@ function Base.empty!(buff::TextSearchBuffer)
 end
 
 function __init__()
-    for _ in 1:Threads.nthreads()
+    for _ in 1:2*Threads.nthreads()+4
         put!(TEXT_SEARCH_CACHES, TextSearchBuffer())
     end
 end
+
 
 @inline function textbuffer(f)
     buff = take!(TEXT_SEARCH_CACHES)
