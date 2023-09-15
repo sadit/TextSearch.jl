@@ -228,9 +228,7 @@ function unigrams(buff::TextSearchBuffer, tt::AbstractTokenTransformation)
         c = buff.normtext[i]
         p = buff.normtext[i-1]
 
-        ## @show i, p, c
         if ispunct2(c) && !ispunct2(p) && p !== BLANK
-            ## @show :a
             flush_unigram!(buff, tt)
             write(buff.io, c)
         elseif ispunct2(p)
@@ -238,7 +236,6 @@ function unigrams(buff::TextSearchBuffer, tt::AbstractTokenTransformation)
                 flush_unigram!(buff, tt)
                 write(buff.io, c)
             elseif !ispunct2(c) && !(p in ('#', '@', '_'))
-                ## @show :b
                 flush_unigram!(buff, tt)
                 c !== BLANK && write(buff.io, c)
             else
