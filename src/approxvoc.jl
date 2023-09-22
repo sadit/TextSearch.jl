@@ -41,14 +41,15 @@ function approxvoc(::Type{QgramsLookup},
     Vocabulary(voc; lookup)
 end
 
-
 function token2id(voc::Vocabulary{QgramsLookup}, tok)::UInt32
     lookup = voc.lookup
     i = get(voc.token2id, tok, zero(UInt32))
     i > 0 && return i
     tok == "" && return 0
     res = KnnResult(1)
-    search(lookup.idx, bagofwords(lookup.voc, tok), res)
+    bow = bagofwords(lookup.voc, tok)
+    length(bow) == 0 && return 0
+    search(lookup.idx, bow, res)
     p = res[1]
     p.weight > lookup.maxdist ? 0 : p.id
 end

@@ -5,8 +5,8 @@ export Vocabulary, AbstractTokenLookup, TokenLookup, occs, ndocs, token, vocsize
 
 abstract type AbstractTokenLookup end
 
-struct Vocabulary{TokenLookup<:AbstractTokenLookup}
-    lookup::TokenLookup
+struct Vocabulary{Lookup<:AbstractTokenLookup}
+    lookup::Lookup
     textconfig::TextConfig
     token::Vector{String}
     occs::Vector{Int32}
@@ -100,7 +100,7 @@ function Vocabulary(textconfig::TextConfig, corpusgenerator::Union{Base.EachLine
         tokenize_and_append!(voc, corpus; minbatch)
     end
 
-    Vocabulary(TokenLookup(), voc; corpuslen=len)
+    Vocabulary(voc; corpuslen=len)
 end
 
 function locked_tokenize_and_push(voc, doc, buff, l)
