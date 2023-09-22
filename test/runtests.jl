@@ -38,6 +38,6 @@ end
 
 include("tok.jl")
 include("voc.jl")
-#include("vec.jl")
-#include("search.jl")
+include("vec.jl")
+include("search.jl")
 @info "FINISH"

@@ -1,6 +1,6 @@
 # This file is a part of TextSearch.jl
 
-export QgramsLookup
+export QgramsLookup, approxvoc
 
 struct QgramsLookup <: AbstractTokenLookup
     voc::Vocabulary{TokenLookup}
@@ -9,7 +9,7 @@ struct QgramsLookup <: AbstractTokenLookup
 end
 
 """
-    QgramsLookup(
+    approxvoc(
         voc::Vocabulary,
         dist::SemiMetric=JaccardDistance();
         maxdist::Real = 0.7,
@@ -17,8 +17,11 @@ end
         doc_min_freq::Integer=1,  # any hard vocabulary pruning are expected to be made in `voc`
         doc_max_ratio::AbstractFloat=0.4 # popular tokens are likely to be thrash
     )
+
+Vocabulary Lookup that retrieves the nearest token under some set distance (see `SimilaritySearch` and `InvertedFiles`) using a character q-gram representation.
+
 """
-function QgramsLookup(
+function approxvoc(::Type{QgramsLookup},
         voc::Vocabulary,
         dist::SemiMetric=JaccardDistance();
         maxdist::Real = 0.7,
@@ -34,8 +37,10 @@ function QgramsLookup(
 
     invfile = BinaryInvertedFile(vocsize(voc_), dist)
     append_items!(invfile, VectorDatabase(bagofwords_corpus(voc_, token(voc))))
-    QgramsLookup(voc_, invfile, maxdist)
+    lookup = QgramsLookup(voc_, invfile, maxdist)
+    Vocabulary(voc; lookup)
 end
+
 
 function token2id(voc::Vocabulary{QgramsLookup}, tok)::UInt32
     lookup = voc.lookup

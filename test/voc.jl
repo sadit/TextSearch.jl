@@ -20,11 +20,14 @@ end
 
 @testset "Approximate vocabulary" begin
     textconfig = TextConfig(nlist=[1])
-    voc = Vocabulary(textconfig, corpus)
-    @info corpus
-    V = Vocabulary(voc; lookup=QgramsLookup(voc))
+    voc = Vocabulary(textconfig, _corpus)
+    @info _corpus
+    approx = approxvoc(QgramsLookup, voc)
     @info "==================="
-    @info V.lookup
+    @assert token2id(approx, "casa") == token2id(approx, "acasa")
+    @assert token2id(approx, "manzana") == token2id(approx, "manxzanas")
+    @assert token2id(approx, "abracadabra") == 0
+    @assert token2id(approx, "") == 0
     #@test decode.(Ref(voc), B) == decode.(Ref(voc), C)
 end
 
