@@ -18,3 +18,13 @@ end
     @test decode.(Ref(voc), B) == decode.(Ref(voc), C)
 end
 
+@testset "Approximate vocabulary" begin
+    textconfig = TextConfig(nlist=[1])
+    voc = Vocabulary(textconfig, corpus)
+    @info corpus
+    V = Vocabulary(voc; lookup=QgramsLookup(voc))
+    @info "==================="
+    @info V.lookup
+    #@test decode.(Ref(voc), B) == decode.(Ref(voc), C)
+end
+

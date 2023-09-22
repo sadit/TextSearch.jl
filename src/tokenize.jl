@@ -98,7 +98,7 @@ function tokenize_(config::TextConfig, buff::TextSearchBuffer)
         qgrams(q, buff, config.tt, config.mark_token_type)
     end
     
-    if length(config.nlist) > 0 || length(config.slist) > 0
+    if length(config.nlist) > 0 || length(config.slist) > 0 || config.collocations > 1
         n1 = length(buff.tokens)
         unigrams(buff, config.tt)  # unigrams are always activated if any |nlist| > 0 or |slist| > 0
 
@@ -113,9 +113,26 @@ function tokenize_(config::TextConfig, buff::TextSearchBuffer)
         for q in config.slist
             skipgrams(q, buff, config.tt, config.mark_token_type)
         end
+
+        if config.collocations > 1
+            collocations(config.collocations, buff, config.tt, config.mark_token_type)
+        end
     end
 
     buff.tokens
+end
+
+function push_token_from_transform!(tokens, s::Nothing)
+end
+
+function push_token_from_transform!(tokens, s::AbstractString)
+    push!(tokens, s)
+end
+
+function push_token_from_transform!(tokens, slist::AbstractVector)
+    for s in slist
+        push!(tokens, s)
+    end
 end
 
 """
@@ -126,9 +143,7 @@ Pushes the word inside the buffer to the token list; it discards empty strings.
 function flush_unigram!(buff::TextSearchBuffer, tt::AbstractTokenTransformation)
     buff.io.size == 0 && return nothing
     s = transform_unigram(tt, String(take!(buff.io)))
-    s === nothing && return nothing
-    push!(buff.tokens, s)
-    s
+    push_token_from_transform!(buff.tokens, s)
 end
 
 """
@@ -140,9 +155,7 @@ function flush_nword!(buff::TextSearchBuffer, tt::AbstractTokenTransformation, m
     buff.io.size == 0 && return nothing
     mark_token_type && write(buff.io, '\t', 'n')
     s = transform_nword(tt, String(take!(buff.io)))
-    s === nothing && return nothing
-    push!(buff.tokens, s)
-    s
+    push_token_from_transform!(buff.tokens, s)
 end
 
 """
@@ -154,9 +167,7 @@ function flush_qgram!(buff::TextSearchBuffer, tt::AbstractTokenTransformation, m
     buff.io.size == 0 && return nothing
     mark_token_type && write(buff.io, '\t', 'q')
     s = transform_qgram(tt, String(take!(buff.io)))
-    s === nothing && return nothing
-    push!(buff.tokens, s)
-    s
+    push_token_from_transform!(buff.tokens, s)
 end
 
 """
@@ -168,10 +179,21 @@ function flush_skipgram!(buff::TextSearchBuffer, tt::AbstractTokenTransformation
     buff.io.size == 0 && return nothing
     mark_token_type && write(buff.io, '\t', 's')
     s = transform_skipgram(tt, String(take!(buff.io)))
-    s === nothing && return nothing
-    push!(buff.tokens, s)
-    s
+    push_token_from_transform!(buff.tokens, s)
 end
+
+"""
+    flush_collocations!(buff::TextSearchBuffer, tt::AbstractTokenTransformation, mark_token_type)
+
+Pushes a collocation inside the buffer to the token list; it discards empty strings.
+"""
+function flush_collocation!(buff::TextSearchBuffer, tt::AbstractTokenTransformation, mark_token_type)
+    buff.io.size == 0 && return nothing
+    mark_token_type && write(buff.io, '\t', 'c')
+    s = transform_collocation(tt, String(take!(buff.io)))
+    push_token_from_transform!(buff.tokens, s)
+end
+
 
 """
     qgrams(q::Integer, buff::TextSearchBuffer, tt::AbstractTokenTransformation, mark_token_type)
@@ -200,50 +222,45 @@ Performs the word tokenization
 """
 function unigrams(buff::TextSearchBuffer, tt::AbstractTokenTransformation)
     n = length(buff.normtext)
+    mfirst = length(buff.tokens) + 1
     # @info buff.normtext
     @inbounds for i in 2:n  # normtext[1] is BLANK
         c = buff.normtext[i]
         p = buff.normtext[i-1]
 
-        ## @show i, p, c
-        if ispunct2(c) && !ispunct2(p) && p !== BLANK
-            ## @show :a
-            s = flush_unigram!(buff, tt)
-            s !== nothing && push!(buff.unigrams, s)
-            write(buff.io, c)
-        elseif ispunct2(p)
-            if ispunct2(c) && buff.io.size > 2
-                s = flush_unigram!(buff, tt)
-                s !== nothing && push!(buff.unigrams, s)
-                write(buff.io, c)
-            elseif !ispunct2(c) && !(p in ('#', '@', '_'))
-                ## @show :b
-                s = flush_unigram!(buff, tt)
-                s !== nothing && push!(buff.unigrams, s)
-                c !== BLANK && write(buff.io, c)
-            else
-                write(buff.io, c)
-            end
+        if c == BLANK
+            flush_unigram!(buff, tt)
         elseif isemoji(c)
-            s = flush_unigram!(buff, tt)
-            s !== nothing && push!(buff.unigrams, s)
+            # emoji
+            flush_unigram!(buff, tt)
             write(buff.io, c)
-            s = flush_unigram!(buff, tt)
-            s !== nothing && push!(buff.unigrams, s)
-        elseif c == BLANK
-            if p !== BLANK
-                s = flush_unigram!(buff, tt)
-                #write(buff.io, c)
-                s !== nothing && push!(buff.unigrams, s)
+            flush_unigram!(buff, tt)
+        elseif ispunct2(p)
+            # previous char is punct
+            if ispunct2(c)
+                # a punctuaction string
+                buff.io.size >= 3 && flush_unigram!(buff, tt)  # a bit large, so we flush and restart the punc string (3 is for most emojis and ...)
+                write(buff.io, c)
+            else
+                !(p in ('#', '@', '_')) && flush_unigram!(buff, tt)  # current is not punctuaction so we flush if not a meta word
+                write(buff.io, c)
             end
+        elseif ispunct2(c) && p !== BLANK
+            ## single punctuaction alone
+            flush_unigram!(buff, tt)
+            write(buff.io, c)
         else
-            ## @show :d
             write(buff.io, c)
         end
     end
 
-    s = flush_unigram!(buff, tt)
-    s !== nothing && push!(buff.unigrams, s)
+    flush_unigram!(buff, tt)
+    mlast = length(buff.tokens)
+
+    for i in mfirst:mlast
+        push!(buff.unigrams, buff.tokens[i])
+    end
+
     buff.tokens
 end
 
@@ -266,6 +283,29 @@ function nwords(q::Integer, buff::TextSearchBuffer, tt::AbstractTokenTransformat
 
     buff.tokens
 end
+
+
+"""
+    collocations(q, buff::TextSearchBuffer, tt::AbstractTokenTransformation, mark_token_type)
+
+Computes a kind of collocations of the given text
+"""
+function collocations(q::Integer, buff::TextSearchBuffer, tt::AbstractTokenTransformation, mark_token_type)
+    tokens = buff.unigrams
+    n = length(tokens)
+
+    for i in 1:n-1 # the upper limit is an implementation detail to discard some entries 
+        for j in i+1:min(i+1+q, n)
+            write(buff.io, buff.unigrams[i])
+            write(buff.io, BLANK)
+            write(buff.io, buff.unigrams[j])
+            flush_collocation!(buff, tt, mark_token_type)
+        end
+    end
+    
+    buff.tokens
+end
+
 
 """
     skipgrams(q::Skipgram, buff::TextSearchBuffer, tt::AbstractTokenTransformation, mark_token_type)

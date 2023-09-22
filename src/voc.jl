@@ -1,10 +1,12 @@
 # This file is a part of TextSearch.jl
 
-export Vocabulary, occs, ndocs, token, vocsize, trainsize, filter_tokens, tokenize_and_append!, merge_voc, update_voc!, vocabulary_from_thesaurus, token2id, 
-       encode, decode, totable
+export Vocabulary, AbstractTokenLookup, TokenLookup, occs, ndocs, token, vocsize, trainsize, filter_tokens, tokenize_and_append!, merge_voc, update_voc!, vocabulary_from_thesaurus, token2id, 
+       encode, decode, table
 
+abstract type AbstractTokenLookup end
 
-struct Vocabulary
+struct Vocabulary{TokenLookup<:AbstractTokenLookup}
+    lookup::TokenLookup
     textconfig::TextConfig
     token::Vector{String}
     occs::Vector{Int32}
@@ -13,7 +15,14 @@ struct Vocabulary
     corpuslen::Int
 end
 
-token2id(voc::Vocabulary, tok::AbstractString) = get(voc.token2id, tok, zero(UInt32))
+struct TokenLookup <: AbstractTokenLookup
+end
+
+token2id(voc::Vocabulary{TokenLookup}, tok::AbstractString) = get(voc.token2id, tok, zero(UInt32))
+
+function Vocabulary(voc::Vocabulary; lookup=voc.lookup, textconfig=voc.textconfig, token=voc.token, occs=voc.occs, ndocs=voc.ndocs, token2id=voc.token2id, corpuslen=voc.corpuslen)
+    Vocabulary(lookup, textconfig, token, occs, ndocs, token2id, corpuslen)
+end
 
 function decode(voc::Vocabulary, bow::Dict)
     Dict(voc.token[k] => v for (k, v) in bow)
@@ -23,13 +32,12 @@ function encode(voc::Vocabulary, bow::Dict)
     Dict(token2id(voc, k) => v for (k, v) in bow)
 end
 
-function totable(voc::Vocabulary, TableConstructor)
+function table(voc::Vocabulary, TableConstructor)
     TableConstructor(; voc.token, voc.ndocs, voc.occs)
 end
 
 function vocabulary_from_thesaurus(textconfig::TextConfig, tokens::AbstractVector)
     n = length(tokens)
-    token2id = Dict{String,UInt32}
     voc = Vocabulary(textconfig, n)
     for t in tokens
         push_token!(voc, t, 1, 1)
@@ -43,9 +51,9 @@ end
 
 Creates a `Vocabulary` struct
 """
-function Vocabulary(textconfig::TextConfig, n::Integer)
+function Vocabulary(lookup::AbstractTokenLookup, textconfig::TextConfig, n::Integer)
     # n == 0 means unknown
-    voc = Vocabulary(textconfig, String[], Int32[], Int32[], Dict{String,UInt32}(), n)
+    voc = Vocabulary(lookup, textconfig, String[], Int32[], Int32[], Dict{String,UInt32}(), n)
     vocsize = ceil(Int, n^0.6)  # approx based on Heaps law
     sizehint!(voc.token, vocsize)
     sizehint!(voc.occs, vocsize)
@@ -54,15 +62,45 @@ function Vocabulary(textconfig::TextConfig, n::Integer)
     voc 
 end
 
+Vocabulary(textconfig::TextConfig, n::Integer) = Vocabulary(TokenLookup(), textconfig, n)
+
 """
     Vocabulary(textconfig, corpus; minbatch=0)
 
 Computes a vocabulary from a corpus using the TextConfig `textconfig`.
 """
-function Vocabulary(textconfig::TextConfig, corpus::AbstractVector; minbatch=0)
-    voc = Vocabulary(textconfig, length(corpus))
+function vocab_from_small_collection(textconfig::TextConfig, corpus::AbstractVector; minbatch=0)
+    voc = Vocabulary(TokenLookup(), textconfig, length(corpus))
     tokenize_and_append!(voc, corpus; minbatch)
     voc
+end
+
+function Vocabulary(textconfig::TextConfig, corpusgenerator::Union{Base.EachLine,Base.Generator,AbstractVector}; minbatch=0, buffsize=2^16, verbose=true)
+    if corpusgenerator isa AbstractVector && length(corpusgenerator) <= buffsize
+        return vocab_from_small_collection(textconfig, corpusgenerator; minbatch)
+    end
+
+    voc = Vocabulary(TokenLookup(), textconfig, 0)
+    len = 0
+    corpus = String[]
+    sizehint!(corpus, buffsize)
+    for doc in corpusgenerator
+        push!(corpus, doc)
+
+        if length(corpus) == buffsize
+            verbose && (@info "computing vocabulary -- advance: $len - buffsize: $buffsize")
+            len += buffsize
+            tokenize_and_append!(voc, corpus; minbatch)
+            empty!(corpus) 
+        end 
+    end
+
+    if length(corpus) > 0
+        len += length(corpus)
+        tokenize_and_append!(voc, corpus; minbatch)
+    end
+
+    Vocabulary(TokenLookup(), voc; corpuslen=len)
 end
 
 function locked_tokenize_and_push(voc, doc, buff, l)
@@ -98,11 +136,9 @@ function tokenize_and_append!(voc::Vocabulary, corpus; minbatch=0)
     l = Threads.SpinLock()
     n = length(corpus)
     minbatch = getminbatch(minbatch, n)
-
-    
+ 
     Threads.@threads for i in 1:n # @batch per=thread minbatch=minbatch for i in 1:n
         doc = corpus[i]
-
         buff = take!(TEXT_SEARCH_CACHES)
 
         try
@@ -116,79 +152,6 @@ function tokenize_and_append!(voc::Vocabulary, corpus; minbatch=0)
         finally
             put!(TEXT_SEARCH_CACHES, buff)
         end
-    end
-
-    voc
-end
-
-function filter_tokens!(voc::Vocabulary, text::TokenizedText)
-    j = 0
-    for i in eachindex(text.tokens)
-        t = text.tokens[i]
-        if haskey(voc.token2id, t)
-            j += 1
-            text.tokens[j] = t
-        end
-    end
-
-    resize!(text.tokens, j)
-    text
-end
-
-function filter_tokens!(voc::Vocabulary, arr::AbstractVector{TokenizedText})
-    for t in arr
-        filter_tokens!(voc, t)
-    end
-
-    arr
-end
-
-"""
-    update_voc!(voc::Vocabulary, another::Vocabulary)
-    update_voc!(pred::Function, voc::Vocabulary, another::Vocabulary)
-
-Update `voc` vocabulary using another one.
-Optionally a predicate can be given to filter vocabularies.
-
-Note 1: `corpuslen` remains unchanged (the structure is immutable and a new `Vocabulary` should be created to update this field).
-Note 2: Both `voc` and `another` vocabularies should had been created with a _compatible_ [`Textconfig`](@ref) to be able to work on them.
-"""
-update_voc!(voc::Vocabulary, another::Vocabulary) = update_voc!(t->true, voc, another)
-
-function update_voc!(pred::Function, voc::Vocabulary, another::Vocabulary)
-    for i in eachindex(another)
-        v = another[i]
-        if pred(v)
-            push_token!(voc, v.token, v.occs, v.ndocs)
-        end
-    end
-
-    voc
-end
-
-"""
-    merge_voc(voc1::Vocabulary, voc2::Vocabulary[, ...])
-    merge_voc(pred::Function, voc1::Vocabulary, voc2::Vocabulary[, ...])
-
-Merges two or more vocabularies into a new one. A predicate function can be used to filter token entries.
-
-Note: All vocabularies should had been created with a _compatible_ [`Textconfig`](@ref) to be able to work on them.
-"""
-merge_voc(voc1::Vocabulary, voc2::Vocabulary, voclist...) = merge_voc(x->true, voc1, voc2, voclist...)
-
-function merge_voc(pred::Function, voc1::Vocabulary, voc2::Vocabulary, voclist...)
-    #all(v -> v isa Vocabulary, voclist) || throw(ArgumentError("arguments should be of type `Vocabulary`"))
-    
-    L = [voc1, voc2]
-    for v in voclist
-        push!(L, v)
-    end
-
-    sort!(L, by=vocsize, rev=true)
-    voc = Vocabulary(voc1.textconfig, sum(v.corpuslen for v in L))
-
-    for v in L
-        update_voc!(pred, voc, v)
     end
 
     voc
@@ -244,6 +207,8 @@ function Base.getindex(voc::Vocabulary, idlist)
     [voc[i] for i in itertokenid(idlist)]
 end
 
+Base.getindex(voc::Vocabulary, token::AbstractString) = voc[get(voc.token2id, token, 0)]
+
 function Base.getindex(voc::Vocabulary, tokenID::Integer)
     id = convert(UInt32, tokenID)
 
@@ -254,21 +219,3 @@ function Base.getindex(voc::Vocabulary, tokenID::Integer)
     end
 end
 
-
-"""
-    filter_tokens(pred::Function, voc::Vocabulary)
-
-Returns a copy of reduced vocabulary based on evaluating `pred` function for each entry in `voc`
-"""
-function filter_tokens(pred::Function, voc::Vocabulary)
-    V = Vocabulary(voc.textconfig, voc.corpuslen)
-
-    for i in eachindex(voc)
-        v = voc[i]
-        if pred(v)
-            push_token!(V, v.token, v.occs, v.ndocs)
-        end
-    end
-
-    V
-end

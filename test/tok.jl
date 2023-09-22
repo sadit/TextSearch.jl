@@ -48,7 +48,7 @@ function test_equals(a, b)
         @info :intersection => intersect(a, b)
         @info :evaluated => a
         @info :correct => b
-        error("diff")
+        error("a difference was found")
     end
 
     @test a == b

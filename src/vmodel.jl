@@ -137,6 +137,12 @@ Base.copy(e::VectorModel; kwargs...) = VectorModel(e::VectorModel; kwargs...)
 @inline ndocs(model::VectorModel) = ndocs(model.voc)
 @inline token(model::VectorModel) = token(model.voc)
 
+function table(model::VectorModel, TableConstructor)
+    TableConstructor(; token=token(model), ndocs=ndocs(model), occs=occs(model), weight=weight(model))
+end
+
+Base.getindex(model::VectorModel, token::AbstractString) = model[token2id(model.voc, token)]
+
 function Base.getindex(model::VectorModel, tokenID::Integer)
     id = convert(UInt32, tokenID)
     voc = model.voc
@@ -170,6 +176,7 @@ function filter_tokens(pred::Function, model::VectorModel)
 
     VectorModel(model; voc=V, weight=W)
 end
+
 
 function vectorize_!(buff::TextSearchBuffer, model::VectorModel{G_,L_}, bow::BOW; normalize=true, minweight=1e-9) where {G_,L_}
     vec = buff.vec

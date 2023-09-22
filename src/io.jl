@@ -27,27 +27,10 @@ function savemodel(filename::AbstractString, model; meta=nothing, parent="/")
     end
 end
 
-function savemodel(file::JLDFile, model::SemanticVocabulary; meta=nothing, parent="/")
-    file[joinpath(parent, "meta")] = meta
-    file[joinpath(parent, "voc")] = model.voc
-    file[joinpath(parent, "knns")] = model.knns
-    file[joinpath(parent, "sel")] = model.sel
-    saveindex(file, model.lexidx; parent=joinpath(parent, "lexidx"))
-end
 
 function loadmodel(t::Type, filename::AbstractString; parent="/", staticgraph=false)
     jldopen(filename) do f
         loadmodel(t, f; staticgraph, parent)
     end
-end
-
-function loadmodel(::Type{SemanticVocabulary}, file::JLDFile; parent="/", staticgraph=false)
-    meta = file[joinpath(parent, "meta")]
-    voc = file[joinpath(parent, "voc")]
-    knns = file[joinpath(parent, "knns")]
-    sel = file[joinpath(parent, "sel")]
-    lexidx, _ = loadindex(file; parent=joinpath(parent, "lexidx"), staticgraph)
-
-    SemanticVocabulary(voc, lexidx, knns, sel), meta
 end
 
