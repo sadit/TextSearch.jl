@@ -5,7 +5,7 @@
 Update `voc` vocabulary using another vocabulary. Optionally a predicate can be given to filter vocabularies.
 
 Note 1: `corpuslen` remains unchanged (the structure is immutable and a new `Vocabulary` should be created to update this field).
-Note 2: Both `voc` and `another` vocabularies should had been created with a _compatible_ [`Textconfig`](@ref) to be able to work on them.
+Note 2: Both `voc` and `another` vocabularies should had been created with a _compatible_ [`TextConfig`](@ref) to be able to work on them.
 """
 update_voc!(voc::Vocabulary, another::Vocabulary) = update_voc!(t->true, voc, another)
 
@@ -60,7 +60,7 @@ end
 
 Merges two or more vocabularies into a new one. A predicate function can be used to filter token entries.
 
-Note: All vocabularies should had been created with a _compatible_ [`Textconfig`](@ref) to be able to work on them.
+Note: All vocabularies should had been created with a _compatible_ [`TextConfig`](@ref) to be able to work on them.
 """
 merge_voc(voc1::Vocabulary, voc2::Vocabulary, voclist...) = merge_voc(x->true, voc1, voc2, voclist...)
 
