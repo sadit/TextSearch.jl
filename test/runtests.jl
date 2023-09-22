@@ -38,10 +38,6 @@ end
 
 include("tok.jl")
 include("voc.jl")
-include("vec.jl")
-
-include("search.jl")
-# experimental:
-include("semvoc.jl")
-
+#include("vec.jl")
+#include("search.jl")
 @info "FINISH"

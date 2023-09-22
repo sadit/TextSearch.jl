@@ -73,7 +73,7 @@ function merge_voc(pred::Function, voc1::Vocabulary, voc2::Vocabulary, voclist..
     end
 
     sort!(L, by=vocsize, rev=true)
-    voc = Vocabulary(voc1.textconfig, sum(v.corpuslen for v in L))
+    voc = Vocabulary(voc1.lookup, voc1.textconfig, sum(v.corpuslen for v in L))
 
     for v in L
         update_voc!(pred, voc, v)
@@ -88,7 +88,7 @@ end
 Returns a copy of reduced vocabulary based on evaluating `pred` function for each entry in `voc`
 """
 function filter_tokens(pred::Function, voc::Vocabulary)
-    V = Vocabulary(voc.textconfig, voc.corpuslen)
+    V = Vocabulary(voc.lookup, voc.textconfig, voc.corpuslen)
 
     for i in eachindex(voc)
         v = voc[i]

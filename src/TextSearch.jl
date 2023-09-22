@@ -65,6 +65,7 @@ end
     end
 end
 
+include("tokentrans.jl")
 include("textconfig.jl")
 include("normalize.jl")
 include("tokenize.jl")
@@ -78,8 +79,7 @@ include("emodel.jl")
 include("bm25.jl")
 include("bm25invfile.jl")
 include("bm25invfilesearch.jl")
-include("semvoc.jl")
-include("semvocbow.jl")
+include("approxvoc.jl")
 include("io.jl")
 
 end

@@ -1,10 +1,12 @@
 # This file is a part of TextSearch.jl
 
-export Vocabulary, occs, ndocs, token, vocsize, trainsize, filter_tokens, tokenize_and_append!, merge_voc, update_voc!, vocabulary_from_thesaurus, token2id, 
+export Vocabulary, AbstractTokenLookup, TokenLookup, occs, ndocs, token, vocsize, trainsize, filter_tokens, tokenize_and_append!, merge_voc, update_voc!, vocabulary_from_thesaurus, token2id, 
        encode, decode, table
 
+abstract type AbstractTokenLookup end
 
-struct Vocabulary
+struct Vocabulary{TokenLookup<:AbstractTokenLookup}
+    lookup::TokenLookup
     textconfig::TextConfig
     token::Vector{String}
     occs::Vector{Int32}
@@ -13,11 +15,13 @@ struct Vocabulary
     corpuslen::Int
 end
 
-token2id(voc::Vocabulary, tok::AbstractString) = get(voc.token2id, tok, zero(UInt32))
+struct TokenLookup <: AbstractTokenLookup
+end
 
-function Vocabulary(voc::Vocabulary; textconfig=voc.textconfig, token=voc.token, occs=voc.occs, ndocs=voc.ndocs, token2id=voc.token2id, corpuslen=voc.corpuslen)
-    Vocabulary(textconfig, token, occs, ndocs, token2id, corpuslen)
-    # Vocabulary(voc.deepcopy(voc.textconfig), voc.copy(voc.token), voc.copy(voc.occs), voc.copy(voc.ndocs), voc.copy(voc.token2id), corpuslen)
+token2id(voc::Vocabulary{TokenLookup}, tok::AbstractString) = get(voc.token2id, tok, zero(UInt32))
+
+function Vocabulary(voc::Vocabulary; lookup=voc.lookup, textconfig=voc.textconfig, token=voc.token, occs=voc.occs, ndocs=voc.ndocs, token2id=voc.token2id, corpuslen=voc.corpuslen)
+    Vocabulary(lookup, textconfig, token, occs, ndocs, token2id, corpuslen)
 end
 
 function decode(voc::Vocabulary, bow::Dict)
@@ -34,7 +38,6 @@ end
 
 function vocabulary_from_thesaurus(textconfig::TextConfig, tokens::AbstractVector)
     n = length(tokens)
-    token2id = Dict{String,UInt32}
     voc = Vocabulary(textconfig, n)
     for t in tokens
         push_token!(voc, t, 1, 1)
@@ -48,9 +51,9 @@ end
 
 Creates a `Vocabulary` struct
 """
-function Vocabulary(textconfig::TextConfig, n::Integer)
+function Vocabulary(lookup::AbstractTokenLookup, textconfig::TextConfig, n::Integer)
     # n == 0 means unknown
-    voc = Vocabulary(textconfig, String[], Int32[], Int32[], Dict{String,UInt32}(), n)
+    voc = Vocabulary(lookup, textconfig, String[], Int32[], Int32[], Dict{String,UInt32}(), n)
     vocsize = ceil(Int, n^0.6)  # approx based on Heaps law
     sizehint!(voc.token, vocsize)
     sizehint!(voc.occs, vocsize)
@@ -59,13 +62,15 @@ function Vocabulary(textconfig::TextConfig, n::Integer)
     voc 
 end
 
+Vocabulary(textconfig::TextConfig, n::Integer) = Vocabulary(TokenLookup(), textconfig, n)
+
 """
     Vocabulary(textconfig, corpus; minbatch=0)
 
 Computes a vocabulary from a corpus using the TextConfig `textconfig`.
 """
 function vocab_from_small_collection(textconfig::TextConfig, corpus::AbstractVector; minbatch=0)
-    voc = Vocabulary(textconfig, length(corpus))
+    voc = Vocabulary(TokenLookup(), textconfig, length(corpus))
     tokenize_and_append!(voc, corpus; minbatch)
     voc
 end
@@ -75,7 +80,7 @@ function Vocabulary(textconfig::TextConfig, corpusgenerator::Union{Base.EachLine
         return vocab_from_small_collection(textconfig, corpusgenerator; minbatch)
     end
 
-    voc = Vocabulary(textconfig, 0)
+    voc = Vocabulary(TokenLookup(), textconfig, 0)
     len = 0
     corpus = String[]
     sizehint!(corpus, buffsize)
@@ -95,7 +100,7 @@ function Vocabulary(textconfig::TextConfig, corpusgenerator::Union{Base.EachLine
         tokenize_and_append!(voc, corpus; minbatch)
     end
 
-    Vocabulary(voc; corpuslen=len)
+    Vocabulary(TokenLookup(), voc; corpuslen=len)
 end
 
 function locked_tokenize_and_push(voc, doc, buff, l)
