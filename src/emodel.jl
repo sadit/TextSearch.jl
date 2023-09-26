@@ -4,6 +4,16 @@
 using CategoricalArrays
 export EntropyWeighting, categorical
 
+abstract type CombineWeighting end
+struct NormalizedEntropy <: CombineWeighting end
+combineweight(::NormalizedEntropy, model, tokenID, entropy, maxent)::Float32 = 1.0 - entropy / maxent 
+# the entropy scores the discrimination power of the term while log(m) weights
+# the term w.r.t the available evidency. The current form tries to equalize the
+# scales
+struct PenalizeFewSamples <: CombineWeighting end
+combineweight(::PenalizeFewSamples, model, tokenID, entropy, maxent)::Float32 = (maxent - entropy) * log2(ndocs(model, tokenID)) 
+
+
 """
     EntropyWeighting(; smooth=0.0, lowerweight=0.0, weights=:balance)
 
@@ -34,8 +44,7 @@ categorical_labels(labels::AbstractCategoricalVector) = labels
     VectorModel(ent::EntropyWeighting, lw::LocalWeighting, corpus::BOW, labels;
         mindocs::Integer=1,
         smooth::Float64=0.0,
-        weights=:balance,
-        lowerweight=0.0
+        weights=:balance
     )
 
 Creates a vector model using the input corpus. 
@@ -44,6 +53,7 @@ function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, voc::Vocabulary,
             mindocs=1,
             smooth::Float64=0.0,
             weights=:balance,
+            comb::CombineWeighting=NormalizedEntropy(),
             minbatch=0
         )
     @assert length(labels) == length(corpus)
@@ -65,7 +75,7 @@ function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, voc::Vocabulary,
 
     weights = _compute_weights(weights, D, nclasses)
     model = VectorModel(ent, lw, voc)
-    _compute_entropy(model, D, weights, nclasses, mindocs)
+    _compute_entropy(comb, model, D, weights,  mindocs)
     model
 end
 
@@ -82,17 +92,17 @@ function _compute_weights(weights, D, nclasses)
     weights
 end
 
-function _compute_entropy(model, D, weights, nclasses, mindocs)
-    maxent = log2(nclasses)
+function _compute_entropy(comb, model, D, weights, mindocs)
+    maxent = log2(length(weights))
 
     @inbounds for tokenID in eachindex(model)
-        if ndocs(model, tokenID) < mindocs
+        m = ndocs(model, tokenID)
+        if m < mindocs
             model.weight[tokenID] = 0.0
         else
             dist = @view D[:, tokenID]
             dist .= dist .* weights
-            e = 1.0 - entropy_(dist) / maxent
-            model.weight[tokenID] = e
+            model.weight[tokenID] = combineweight(comb, model, tokenID, entropy_(dist), maxent)
         end
     end
 end

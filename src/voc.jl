@@ -82,7 +82,7 @@ function Vocabulary(textconfig::TextConfig, corpusgenerator::Union{Base.EachLine
 
     voc = Vocabulary(TokenLookup(), textconfig, 0)
     len = 0
-    corpus = String[]
+    corpus = []
     sizehint!(corpus, buffsize)
     for doc in corpusgenerator
         push!(corpus, doc)
