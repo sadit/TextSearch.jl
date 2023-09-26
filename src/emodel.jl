@@ -2,16 +2,16 @@
 
 #####
 using CategoricalArrays
-export EntropyWeighting, categorical
+export EntropyWeighting, categorical, NormalizedEntropy, PenalizeFewSamples
 
 abstract type CombineWeighting end
 struct NormalizedEntropy <: CombineWeighting end
-combineweight(::NormalizedEntropy, model, tokenID, entropy, maxent)::Float32 = 1.0 - entropy / maxent 
+combine_weight(::NormalizedEntropy, model, tokenID, entropy, maxent)::Float32 = 1.0 - entropy / maxent 
 # the entropy scores the discrimination power of the term while log(m) weights
 # the term w.r.t the available evidency. The current form tries to equalize the
 # scales
 struct PenalizeFewSamples <: CombineWeighting end
-combineweight(::PenalizeFewSamples, model, tokenID, entropy, maxent)::Float32 = (maxent - entropy) * log2(ndocs(model, tokenID)) 
+combine_weight(::PenalizeFewSamples, model, tokenID, entropy, maxent)::Float32 = (maxent - entropy) * log2(ndocs(model, tokenID)) 
 
 
 """
@@ -45,6 +45,7 @@ categorical_labels(labels::AbstractCategoricalVector) = labels
         mindocs::Integer=1,
         smooth::Float64=0.0,
         weights=:balance
+        comb::CombineWeighting=NormalizedEntropy(),
     )
 
 Creates a vector model using the input corpus. 
@@ -102,7 +103,7 @@ function _compute_entropy(comb, model, D, weights, mindocs)
         else
             dist = @view D[:, tokenID]
             dist .= dist .* weights
-            model.weight[tokenID] = combineweight(comb, model, tokenID, entropy_(dist), maxent)
+            model.weight[tokenID] = combine_weight(comb, model, tokenID, entropy_(dist), maxent)
         end
     end
 end
