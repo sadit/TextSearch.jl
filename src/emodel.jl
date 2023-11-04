@@ -2,7 +2,7 @@
 
 #####
 using CategoricalArrays
-export EntropyWeighting, categorical, NormalizedEntropy, PenalizeFewSamples
+export EntropyWeighting, categorical, NormalizedEntropy, LogPenalizeFewSamples, SigmoidPenalizeFewSamples, CombineWeighting
 
 abstract type CombineWeighting end
 struct NormalizedEntropy <: CombineWeighting end
@@ -13,6 +13,8 @@ combine_weight(::NormalizedEntropy, model, tokenID, entropy, maxent)::Float32 = 
 struct PenalizeFewSamples <: CombineWeighting end
 combine_weight(::PenalizeFewSamples, model, tokenID, entropy, maxent)::Float32 = (maxent - entropy) * log2(ndocs(model, tokenID)) 
 
+struct SigmoidPenalizeFewSamples <: CombineWeighting end
+combine_weight(::SigmoidPenalizeFewSamples, model, tokenID, entropy, maxent)::Float32 = (1 - entropy/maxent) * (1-1/(1+log2(ndocs(model, tokenID))))
 
 """
     EntropyWeighting(; smooth=0.0, lowerweight=0.0, weights=:balance)
