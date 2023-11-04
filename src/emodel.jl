@@ -2,7 +2,7 @@
 
 #####
 using CategoricalArrays
-export EntropyWeighting, categorical, NormalizedEntropy, LogPenalizeFewSamples, SigmoidPenalizeFewSamples, CombineWeighting
+export EntropyWeighting, categorical, NormalizedEntropy, SigmoidPenalizeFewSamples, CombineWeighting
 
 abstract type CombineWeighting end
 struct NormalizedEntropy <: CombineWeighting end
