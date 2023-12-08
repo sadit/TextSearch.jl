@@ -25,9 +25,9 @@ end
     voc = Vocabulary(textconfig, sentiment_corpus)
     corpus_bows = bagofwords_corpus(voc, sentiment_corpus)
     @show length(corpus), length(corpus_bows)
-    model = VectorModel(EntropyWeighting(), BinaryLocalWeighting(), voc, sentiment_corpus, sentiment_labels)
+    model = VectorModel(EntropyWeighting(), BinaryLocalWeighting(), voc, sentiment_corpus, sentiment_labels; smooth=0, mindocs=1)
     @test (7.059714 - sum(model.weight)) < 1e-5
-    model = VectorModel(EntropyWeighting(), BinaryLocalWeighting(), voc, corpus_bows, sentiment_labels)
+    model = VectorModel(EntropyWeighting(), BinaryLocalWeighting(), voc, corpus_bows, sentiment_labels; smooth=0, mindocs=1)
     @test (7.059714 - sum(model.weight)) < 1e-5
 end
 
@@ -49,7 +49,7 @@ end
         voc = Vocabulary(textconfig, sentiment_corpus)
 
         if gw isa EntropyWeighting
-            model = VectorModel(gw, lw, voc, sentiment_corpus, sentiment_labels)
+            model = VectorModel(gw, lw, voc, sentiment_corpus, sentiment_labels; smooth=0, mindocs=1)
         else
             model = VectorModel(gw, lw, voc)
         end
@@ -67,7 +67,7 @@ end
 
         voc = Vocabulary(textconfig, sentiment_corpus)
         if gw isa EntropyWeighting
-            model = VectorModel(gw, lw, voc, sentiment_corpus, sentiment_labels)
+            model = VectorModel(gw, lw, voc, sentiment_corpus, sentiment_labels; smooth=0, mindocs=1)
         else
             model = VectorModel(gw, lw, voc)
         end

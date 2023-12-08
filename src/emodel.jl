@@ -23,9 +23,9 @@ Entropy weighting uses the empirical entropy of the vocabulary along classes to 
 """
 struct EntropyWeighting <: GlobalWeighting end
 
-function entropy_(dist)
-    e = 0.0
-    ipop = 1/sum(dist)
+function entropy_(dist)::Float32
+    e = 0f0
+    ipop = 1f0/sum(dist)
 
     for x in dist
         p = x * ipop
@@ -53,8 +53,8 @@ categorical_labels(labels::AbstractCategoricalVector) = labels
 Creates a vector model using the input corpus. 
 """
 function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, voc::Vocabulary, corpus::AbstractVector, labels::AbstractVector;
-            mindocs=1,
-            smooth::Float64=0.0,
+            mindocs=3,
+            smooth=3,
             weights=:balance,
             comb::CombineWeighting=NormalizedEntropy(),
             minbatch=0
@@ -63,7 +63,8 @@ function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, voc::Vocabulary,
     labels = categorical_labels(labels)
     n = length(labels)
     nclasses = length(levels(labels))
-    D = fill(smooth, nclasses, vocsize(voc))
+    D = Matrix{Float32}(undef, nclasses, vocsize(voc))
+    D .= smooth
    
     for block in Iterators.partition(1:n, 1024)
         C = bagofwords_corpus(voc, corpus[block])
@@ -84,12 +85,11 @@ end
 
 function _compute_weights(weights, D, nclasses)
     weights isa String ? Symbol(weights) : weights
-
     if weights === :balance
         weights = vec(sum(D, dims=2))
         weights .= sum(weights) ./ weights
-    elseif weights === :none
-        weights = ones(Float64, nclasses)
+    elseif weights === nothing
+        weights = ones(Float32, nclasses)
     end
 
     weights
