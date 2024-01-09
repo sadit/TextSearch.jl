@@ -1,7 +1,7 @@
 name = "TextSearch"
 uuid = "7f6f6c8a-3b03-11e9-223d-e7d88259bd6c"
 authors = ["Eric S. Tellez <donsadit@gmail.com>"]
-version = "0.17.3"
+version = "0.18.0"
 
 [deps]
 CategoricalArrays = "324d7699-5711-5eae-9e2f-1d82baa6b597"
