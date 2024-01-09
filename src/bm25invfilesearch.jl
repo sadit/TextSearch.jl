@@ -1,7 +1,6 @@
 # This file is part of TextSearch.jl
 
-using SimilaritySearch: getpools
-using InvertedFiles: getcachepositions
+using InvertedFiles: getcontext, getpositions, InvertedFileContext
 
 struct BM25InvFileOutput{InvFileType<:BM25InvertedFile}
     idx::InvFileType
@@ -25,28 +24,28 @@ function Intersections.onmatch!(output::BM25InvFileOutput, L::T, P, m::Int) wher
 end
 
 """
-  search(accept_posting_list::Function, idx::BM25InvertedFile, qtext::AbstractString, res::KnnResult; pools=getpools(idx))
-  search(idx::BM25InvertedFile, qtext::AbstractString, res::KnnResult; pools=getpools(idx))
+  search(accept_posting_list::Function, idx::BM25InvertedFile, ctx::InvertedFileContext, qtext::AbstractString, res::KnnResult
+  search(idx::BM25InvertedFile, ctx::InvertedFileContext, qtext::AbstractString, res::KnnResult
 
 Find candidates for solving query `Q` using `idx`. It calls `callback` on each candidate `(docID, dist)`
 """
-function SimilaritySearch.search(accept_posting_list::Function, idx::BM25InvertedFile, qtext::T, res::KnnResult; pools=getpools(idx)) where {T<:Union{AbstractString,TokenizedText}}
+function SimilaritySearch.search(accept_posting_list::Function, idx::BM25InvertedFile, ctx::InvertedFileContext, qtext::T, res::KnnResult) where {T<:Union{AbstractString,TokenizedText}}
     q = bagofwords(idx.voc, qtext)
-    search(accept_posting_list, idx, q, res; pools)
+    search(accept_posting_list, idx, ctx, q, res)
 end
 
-function SimilaritySearch.search(accept_posting_list::Function, idx::BM25InvertedFile, q, res::KnnResult; pools=getpools(idx), t::Int=1)
-  Q = select_posting_lists(accept_posting_list, idx, q; pools)
+function SimilaritySearch.search(accept_posting_list::Function, idx::BM25InvertedFile, ctx::InvertedFileContext, q, res::KnnResult; t::Int=1)
+  Q = select_posting_lists(accept_posting_list, idx, ctx, q)
   if length(Q) == 0
       return SearchResult(res, 0)
   end
-  P = getcachepositions(length(Q))
+  P = getpositions(length(Q), ctx)
   cost = xmerge!(BM25InvFileOutput(idx, res), Q, P; t)
   SearchResult(res, cost)
 end
 
-function SimilaritySearch.search(idx::BM25InvertedFile, q, res::KnnResult; pools=getpools(idx))
-  search(idx, q, res; pools) do lst
+function SimilaritySearch.search(idx::BM25InvertedFile, ctx::InvertedFileContext, q, res::KnnResult)
+  search(idx, ctx, q, res) do lst
     true
   end
 end

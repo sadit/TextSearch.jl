@@ -108,18 +108,18 @@ function filter_lists!(
     idx
 end
 
-function append_items!(idx::BM25InvertedFile, corpus::AbstractVector{T}; kwargs...) where {T<:AbstractString}
-    append_items!(idx, VectorDatabase(bagofwords_corpus(idx.voc, corpus)); kwargs...)
+function append_items!(idx::BM25InvertedFile, ctx::InvertedFileContext, corpus::AbstractVector{T}; kwargs...) where {T<:AbstractString}
+    append_items!(idx, ctx, VectorDatabase(bagofwords_corpus(idx.voc, corpus)); kwargs...)
 end
 
-function append_items!(idx::BM25InvertedFile, corpus::AbstractVector{T}; kwargs...) where {T<:TokenizedText}
-    append_items!(idx, VectorDatabase(bagofwords_corpus(idx.voc, corpus)); kwargs...)
+function append_items!(idx::BM25InvertedFile, ctx::InvertedFileContext, corpus::AbstractVector{T}; kwargs...) where {T<:TokenizedText}
+    append_items!(idx, ctx, VectorDatabase(bagofwords_corpus(idx.voc, corpus)); kwargs...)
 end
 
-push_item!(idx::BM25InvertedFile, doc::T) where {T<:Union{AbstractString,AbstractVector,TokenizedText}} =
-    push_item!(idx, bagofwords(idx.voc, doc))
+push_item!(idx::BM25InvertedFile, ctx::InvertedFileContext, doc::T) where {T<:Union{AbstractString,AbstractVector,TokenizedText}} =
+    push_item!(idx, ctx, bagofwords(idx.voc, doc))
 
-function InvertedFiles.internal_push!(idx::BM25InvertedFile, tokenID, objID, freq, sort)
+function InvertedFiles.internal_push!(idx::BM25InvertedFile, ctx::InvertedFileContext, tokenID, objID, freq, sort)
     if sort
         add_edge!(idx.adj, tokenID, IdIntWeight(objID, freq), IdOrder)
     else
@@ -127,12 +127,12 @@ function InvertedFiles.internal_push!(idx::BM25InvertedFile, tokenID, objID, fre
     end
 end
 
-function InvertedFiles.internal_push_object!(idx::BM25InvertedFile, docID::Integer, obj, tol::Float64, sort, is_push)
+function InvertedFiles.internal_push_object!(idx::BM25InvertedFile, ctx::InvertedFileContext, docID::Integer, obj, tol::Float64, sort, is_push)
     len = 0
     @inbounds for (tokenID, freq) in InvertedFiles.sparseiterator(obj)  # obj is a BOW-like struct
         freq < tol && continue
         len += freq
-        InvertedFiles.internal_push!(idx, tokenID, docID, freq, sort)
+        InvertedFiles.internal_push!(idx, ctx, tokenID, docID, freq, sort)
     end
 
     if is_push

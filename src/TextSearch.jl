@@ -55,7 +55,6 @@ function __init__()
     end
 end
 
-
 @inline function textbuffer(f)
     buff = take!(TEXT_SEARCH_CACHES)
     try
@@ -81,5 +80,6 @@ include("bm25invfile.jl")
 include("bm25invfilesearch.jl")
 include("approxvoc.jl")
 include("io.jl")
+include("deprecated.jl")
 
 end
