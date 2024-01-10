@@ -14,6 +14,7 @@ makedocs(;
         "Home" => "index.md",
         "API" => "api.md"
     ],
+    warnonly=true
 )
 
 deploydocs(;

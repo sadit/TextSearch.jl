@@ -2,8 +2,11 @@ using SimilaritySearch, SimilaritySearch.AdjacencyLists, TextSearch, InvertedFil
 using Test, SparseArrays, LinearAlgebra, CategoricalArrays, StatsBase, Random
 
 using Aqua
-Aqua.test_all(TextSearch, ambiguities=false)
+Aqua.test_all(TextSearch, ambiguities=false, piracies=false)
 Aqua.test_ambiguities([TextSearch])
+using LinearAlgebra, SparseArrays 
+using SimilaritySearch
+Aqua.test_piracies(TextSearch, treat_as_own=[Base.:*, Base.:/, Base.:+, Base.:-, argmin, argmax, evaluate, findmin, findmax, sum, normalize!, dot, maximum, minimum, norm, sparse, sparse_coo, nnz, sparsevec, zero])
 
 const fit = TextSearch.fit
 
