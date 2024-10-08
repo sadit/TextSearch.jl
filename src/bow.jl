@@ -68,15 +68,15 @@ bagofwords(voc::Vocabulary, messages::BOW) = messages
 
 Computes a list of bag of words from a corpus
 """
-bagofwords_corpus(voc::Vocabulary, corpus::AbstractVector{BOW}; minbatch=0) = corpus
-function bagofwords_corpus(voc::Vocabulary, corpus::AbstractVector; minbatch=0)
+bagofwords_corpus(voc::Vocabulary, corpus::AbstractVector{BOW}; minbatch=0, verbose=true) = corpus
+function bagofwords_corpus(voc::Vocabulary, corpus::AbstractVector; minbatch=0, verbose=true)
     n = length(corpus)
     X = [bagofwords(voc, corpus[1])]
     resize!(X, n)
     minbatch = getminbatch(minbatch, n)
 
     #@batch minbatch=minbatch per=thread 
-    Threads.@threads for i in 2:n
+    @showprogress dt=1 enabled=verbose desc="Bag of words" Threads.@threads for i in 2:n
         X[i] = bagofwords(voc, corpus[i])
     end
 

@@ -57,7 +57,7 @@ function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, voc::Vocabulary,
             smooth=3,
             weights=:balance,
             comb::CombineWeighting=NormalizedEntropy(),
-            minbatch=0
+            minbatch=0, verbose=true
         )
     @assert length(labels) == length(corpus)
     labels = categorical_labels(labels)
@@ -66,8 +66,8 @@ function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, voc::Vocabulary,
     D = Matrix{Float32}(undef, nclasses, vocsize(voc))
     D .= smooth
    
-    for block in Iterators.partition(1:n, 1024)
-        C = bagofwords_corpus(voc, corpus[block])
+    @showprogress dt=1 enabled=verbose desc="label-distribution block" for block in Iterators.partition(1:n, 1024)
+        C = bagofwords_corpus(voc, corpus[block]; verbose=false)
 
         for (i, j) in enumerate(block)
             code = levelcode(labels[j])

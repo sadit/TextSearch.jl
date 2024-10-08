@@ -73,25 +73,25 @@ function tokenize(copy_::Function, textconfig::TextConfig, text)
 end
 
 """
-    tokenize_corpus(textconfig::TextConfig, arr; minbatch=0)
-    tokenize_corpus(copy_::Function, textconfig::TextConfig, arr; minbatch=0)
+    tokenize_corpus(textconfig::TextConfig, arr; minbatch=0, verbose=true)
+    tokenize_corpus(copy_::Function, textconfig::TextConfig, arr; minbatch=0, verbose=true)
 
 Tokenize a list of texts. The `copy_` function is passed to [`tokenize`](@ref) as first argument.
 """
-function tokenize_corpus(copy_::Function, textconfig::TextConfig, arr; minbatch=0)
+function tokenize_corpus(copy_::Function, textconfig::TextConfig, arr; minbatch::Int=0, verbose::Bool=true)
     n = length(arr)
     L = Vector{TokenizedText}(undef, n)
     minbatch = getminbatch(minbatch, n)
     
     # @batch minbatch=minbatch per=thread
-    Threads.@threads for i in 1:n
+    @showprogress dt=1 enabled=verbose desc="tokenizing" Threads.@threads for i in 1:n
         L[i] = tokenize(copy_, textconfig, arr[i])
     end
 
     L
 end
 
-tokenize_corpus(textconfig::TextConfig, arr; minbatch=0) = tokenize_corpus(tokenizedtext, textconfig, arr; minbatch)
+tokenize_corpus(textconfig::TextConfig, arr; minbatch::Int=0, verbose::Bool=true) = tokenize_corpus(tokenizedtext, textconfig, arr; minbatch, verbose)
 
 function tokenize_(config::TextConfig, buff::TextSearchBuffer)
     for q in config.qlist

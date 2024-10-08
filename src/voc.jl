@@ -84,11 +84,11 @@ function Vocabulary(textconfig::TextConfig, corpusgenerator::Union{Base.EachLine
     len = 0
     corpus = []
     sizehint!(corpus, buffsize)
-    for doc in corpusgenerator
+    @showprogress dt=1 enabled=verbose desc="vocabulary:" for doc in corpusgenerator
         push!(corpus, doc)
 
         if length(corpus) == buffsize
-            verbose && (@info "computing vocabulary -- advance: $len - buffsize: $buffsize")
+            # verbose && (@info "computing vocabulary -- advance: $len - buffsize: $buffsize")
             len += buffsize
             tokenize_and_append!(voc, corpus; minbatch)
             empty!(corpus) 

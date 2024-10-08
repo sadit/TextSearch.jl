@@ -229,14 +229,14 @@ function vectorize(model::VectorModel, text; normalize=true, minweight=1e-6)
     end
 end
 
-function vectorize_corpus(model::VectorModel, corpus::AbstractVector; normalize=true, minweight=1e-6, minbatch=0)
+function vectorize_corpus(model::VectorModel, corpus::AbstractVector; normalize=true, minweight=1e-6, minbatch=0, verbose=true)
     n = length(corpus)
     V = [vectorize(model, corpus[1]; normalize, minweight)] # Vector{SVEC}(undef, n)
     resize!(V, n)
     minbatch = getminbatch(minbatch, n)
 
-    #@batch minbatch=minbatch per=thread for i in 2:n
-    Threads.@threads for i in 2:n
+    # @batch minbatch=minbatch per=thread for i in 2:n
+    @showprogress dt=1 enabled=verbose desc="vectorizing corpus" Threads.@threads for i in 2:n
         V[i] = vectorize(model, corpus[i]; normalize, minweight)
     end
 
