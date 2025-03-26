@@ -5,6 +5,7 @@ export QgramsLookup, approxvoc
 struct QgramsLookup <: AbstractTokenLookup
     voc::Vocabulary{TokenLookup}
     idx::BinaryInvertedFile
+    ctx::InvertedFileContext
     maxdist::Float32
 end
 
@@ -36,8 +37,9 @@ function approxvoc(::Type{QgramsLookup},
     end
 
     invfile = BinaryInvertedFile(vocsize(voc_), dist)
-    append_items!(invfile, VectorDatabase(bagofwords_corpus(voc_, token(voc))))
-    lookup = QgramsLookup(voc_, invfile, maxdist)
+    ctx = InvertedFileContext()
+    append_items!(invfile, ctx, VectorDatabase(bagofwords_corpus(voc_, token(voc))))
+    lookup = QgramsLookup(voc_, invfile, ctx, maxdist)
     Vocabulary(voc; lookup)
 end
 
@@ -49,7 +51,7 @@ function token2id(voc::Vocabulary{QgramsLookup}, tok)::UInt32
     res = KnnResult(1)
     bow = bagofwords(lookup.voc, tok)
     length(bow) == 0 && return 0
-    search(lookup.idx, bow, res)
+    search(lookup.idx, lookup.ctx, bow, res)
     p = res[1]
     p.weight > lookup.maxdist ? 0 : p.id
 end

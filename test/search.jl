@@ -4,10 +4,11 @@
     model = VectorModel(IdfWeighting(), TfWeighting(), Vocabulary(textconfig, _corpus))
     db = vectorize_corpus(model, _corpus)
     invindex = WeightedInvertedFile(length(model.voc))
-    append_items!(invindex, VectorDatabase(db))
+    ctx = InvertedFileContext()
+    append_items!(invindex, ctx, VectorDatabase(db))
     begin # searching
         q = vectorize(model, "la casa roja")
-        R = search(invindex, q, KnnResult(4))
+        R = search(invindex, ctx, q, KnnResult(4))
         @test sort!([p.id for p in R.res]) == [1, 2, 3, 4]
     end
 end
@@ -30,8 +31,9 @@ end
     invfile = BM25InvertedFile(TextConfig(nlist=[1]), _corpus) do t
         1 < t.ndocs < 5
     end
-    append_items!(invfile, _corpus)
-    R = search(invfile, "la casa de la manzana verde", KnnResult(3))
+    ctx = InvertedFileContext()
+    append_items!(invfile, ctx, _corpus)
+    R = search(invfile, ctx, "la casa de la manzana verde", KnnResult(3))
     @test collect(IdView(R.res)) == UInt32[0x00000006, 0x00000002, 0x00000004]
     @test evaluate(SqL2Distance(), collect(DistView(R.res)), Float32[-3.3956785, -3.1118512, -2.5816276]) <= 1e-4
     @show invfile.voc
@@ -40,13 +42,14 @@ end
 
 @testset "bm25 invindex" begin
     invfile = BM25InvertedFile(TextConfig(nlist=[1]), _corpus)
-    append_items!(invfile, _corpus)
+    ctx = InvertedFileContext()
+    append_items!(invfile, ctx, _corpus)
     filter_lists!(invfile;
                   list_min_length_for_checking=2,
                   list_max_allowed_length=3,
                   doc_min_freq=1,
                   doc_max_freq=3)
-    R = search(invfile, "la casa de la manzana verde", KnnResult(3))
+    R = search(invfile, ctx, "la casa de la manzana verde", KnnResult(3))
     @test collect(IdView(R.res)) == UInt32[0x00000006, 0x00000002, 0x00000004]
     @show collect(DistView(R.res))
     @show invfile.voc
@@ -60,7 +63,7 @@ end
             G, meta = loadindex(tmpfile, database(invfile); staticgraph=true)
             @test meta == [1, 2, 4, 8]
             @test G.adj isa StaticAdjacencyList
-            R = search(G, "la casa de la manzana verde", KnnResult(3))
+            R = search(G, ctx, "la casa de la manzana verde", KnnResult(3))
             @test collect(IdView(R.res)) == UInt32[0x00000006, 0x00000002, 0x00000004]
     end
 
