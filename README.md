@@ -42,3 +42,5 @@ using Pluto
 Pluto.run()
 ```
 
+## What is new in 0.19
+Basically, this is a breaking release since it supports SimilaritySearch v0.12 which has some API changes; indexing and search functions now require an InvertedFileContext object
