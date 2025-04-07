@@ -79,20 +79,24 @@ function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, voc::Vocabulary,
 
     weights = _compute_weights(weights, D, nclasses)
     model = VectorModel(ent, lw, voc)
-    _compute_entropy(comb, model, D, weights,  mindocs)
+    weights
+    _compute_entropy(comb, model, D, weights, mindocs)
     model
 end
 
 function _compute_weights(weights, D, nclasses)
-    weights isa String ? Symbol(weights) : weights
+    weights isa String && (weights = Symbol(weights))
+    if weights === nothing || weights === :none
+        return ones(Float32, nclasses)
+    end
+    weights isa AbstractVector && return weights
     if weights === :balance
-        weights = vec(sum(D, dims=2))
-        weights .= sum(weights) ./ weights
-    elseif weights === nothing
-        weights = ones(Float32, nclasses)
+        W = vec(sum(D, dims=2))
+        W .= sum(W) ./ W
+        return W
     end
 
-    weights
+    error("Unknown weights=$weights nclasses=$nclasses")
 end
 
 function _compute_entropy(comb, model, D, weights, mindocs)
