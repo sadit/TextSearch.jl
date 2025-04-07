@@ -59,6 +59,7 @@ function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, voc::Vocabulary,
             comb::CombineWeighting=NormalizedEntropy(),
             minbatch=0, verbose=true
         )
+    labels = categorical(labels)
     @assert length(labels) == length(corpus)
     labels = categorical_labels(labels)
     n = length(labels)
