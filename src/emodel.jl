@@ -1,8 +1,7 @@
 # This file is a part of TextSearch.jl
 
 #####
-using CategoricalArrays
-export EntropyWeighting, categorical, NormalizedEntropy, SigmoidPenalizeFewSamples, CombineWeighting
+export EntropyWeighting, NormalizedEntropy, SigmoidPenalizeFewSamples, CombineWeighting
 
 abstract type CombineWeighting end
 struct NormalizedEntropy <: CombineWeighting end
@@ -38,9 +37,6 @@ function entropy_(dist)::Float32
     e
 end
 
-categorical_labels(labels::AbstractVector{<:CategoricalValue}) = labels
-categorical_labels(labels::AbstractVector{T}) where {T<:Union{AbstractString,Integer,Symbol}} = categorical(labels) 
-categorical_labels(labels::AbstractCategoricalVector) = labels
 
 """
     VectorModel(ent::EntropyWeighting, lw::LocalWeighting, corpus::BOW, labels;
@@ -59,11 +55,10 @@ function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, voc::Vocabulary,
             comb::CombineWeighting=NormalizedEntropy(),
             minbatch=0, verbose=true
         )
-    labels = categorical(labels)
     @assert length(labels) == length(corpus)
-    labels = categorical_labels(labels)
     n = length(labels)
-    nclasses = length(levels(labels))
+    L = Dict(l => i for (i, l) in enumerate(sort!(unique(labels))))
+    nclasses = length(L)
     D = Matrix{Float32}(undef, nclasses, vocsize(voc))
     D .= smooth
    
@@ -71,7 +66,7 @@ function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, voc::Vocabulary,
         C = bagofwords_corpus(voc, corpus[block]; verbose=false)
 
         for (i, j) in enumerate(block)
-            code = levelcode(labels[j])
+            code = L[labels[j]]
             for (tokenID, _) in C[i]
                 D[code, tokenID] += 1 # occs/M # log2(1 + occs)
             end
