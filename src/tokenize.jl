@@ -47,7 +47,7 @@ function tokenize(copy_::Function, textconfig::TextConfig, text::AbstractString,
     copy_(t)
 end
 
-function tokenize(copy_::Function, textconfig::TextConfig, arr::AbstractVector{T}, buff::TextSearchBuffer) where {T<:AbstractString}
+function tokenize(copy_::Function, textconfig::TextConfig, arr::AbstractVector, buff::TextSearchBuffer)
     normalize_text(textconfig, arr[1], buff.normtext)
     tokenize_(textconfig, buff)
 

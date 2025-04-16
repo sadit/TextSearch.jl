@@ -1,6 +1,6 @@
 # This file is part of TextSearch.jl
 
-export BM25InvertedFile, search, filter_lists!, append_items!, push_item!
+export BM25InvertedFile, search, filter_lists!, append_items!, push_item!, InvertedFileContext
 
 import SimilaritySearch: search, append_items!, push_item!, database, distance
 import SimilaritySearch: serializeindex, restoreindex
@@ -8,6 +8,7 @@ import SimilaritySearch: serializeindex, restoreindex
 using Intersections
 using InvertedFiles
 using StatsBase
+
 
 """
     struct BM25InvertedFile <: AbstractInvertedFile
@@ -113,6 +114,10 @@ function append_items!(idx::BM25InvertedFile, ctx::InvertedFileContext, corpus::
 end
 
 function append_items!(idx::BM25InvertedFile, ctx::InvertedFileContext, corpus::AbstractVector{T}; kwargs...) where {T<:TokenizedText}
+    append_items!(idx, ctx, VectorDatabase(bagofwords_corpus(idx.voc, corpus)); kwargs...)
+end
+
+function append_items!(idx::BM25InvertedFile, ctx::InvertedFileContext, corpus::AbstractVector{T}; kwargs...) where {T<:AbstractVector{<:AbstractString}}
     append_items!(idx, ctx, VectorDatabase(bagofwords_corpus(idx.voc, corpus)); kwargs...)
 end
 
