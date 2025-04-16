@@ -1,7 +1,7 @@
 name = "TextSearch"
 uuid = "7f6f6c8a-3b03-11e9-223d-e7d88259bd6c"
 authors = ["Eric S. Tellez <donsadit@gmail.com>"]
-version = "0.19.3"
+version = "0.19.4"
 
 [deps]
 Intersections = "6d0fbc77-481e-44fe-9ace-1653ddcdea34"
