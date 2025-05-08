@@ -8,7 +8,7 @@ struct BM25
     k1_mult_1_min_b::Float32
     k1_mult_b_div_avg_doc_len::Float32
     δ::Float32
-    collection_size::UInt32
+    collection_size::Int32
 end
 
 function BM25(avg_doc_len::AbstractFloat, collection_size::Integer; k1=1.2f0, b=0.75f0, δ=1f0)
@@ -17,7 +17,7 @@ function BM25(avg_doc_len::AbstractFloat, collection_size::Integer; k1=1.2f0, b=
         convert(Float32, k1 * (1f0 - b)),
         convert(Float32, k1 * b / avg_doc_len),
         δ,
-        convert(UInt32, collection_size)
+        convert(Int32, collection_size)
     )
 end
 

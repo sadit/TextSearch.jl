@@ -53,7 +53,6 @@ transform_skipgram(::AbstractTokenTransformation, tok) = tok
 
 ### some transformations
 
-
 struct IgnoreStopwords <: AbstractTokenTransformation
     stopwords::Set{String}
 end

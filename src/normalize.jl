@@ -43,13 +43,13 @@ function _preprocessing(config::TextConfig, text)
 end
 
 """
-    normalize_text(config::TextConfig, text::AbstractString, output::Vector{Char})
+    normalize_text(config::TextConfig, text::AbstractString, output::Vector{Char}; limits::Bool=true)
 
 Normalizes a given text using the specified transformations of `config`
 """
-function normalize_text(config::TextConfig, text::AbstractString, output::Vector{Char})
+function normalize_text(config::TextConfig, text::AbstractString, output::Vector{Char}; limits::Bool=true)
     text = _preprocessing(config, text)
-    push!(output, BLANK)
+    limits && push!(output, BLANK)
     rep = 0
 
     @inbounds for u in Unicode.normalize(text, casefold=config.lc, stripmark=config.del_diac, stripcc=true, compat=true)
@@ -61,6 +61,6 @@ function normalize_text(config::TextConfig, text::AbstractString, output::Vector
         push!(output, u)
     end
 
-    push!(output, BLANK)
+    limits && push!(output, BLANK)
     output
 end

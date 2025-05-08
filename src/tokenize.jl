@@ -72,6 +72,17 @@ function tokenize(copy_::Function, textconfig::TextConfig, text)
     end
 end
 
+function normalize_text(textconfig::TextConfig, text; limits::Bool=false)
+    buff = take!(TEXT_SEARCH_CACHES)
+    empty!(buff)
+    try
+        String(normalize_text(textconfig, text, buff.normtext; limits))
+    finally
+        put!(TEXT_SEARCH_CACHES, buff)
+    end
+end
+
+
 """
     tokenize_corpus(textconfig::TextConfig, arr; minbatch=0, verbose=true)
     tokenize_corpus(copy_::Function, textconfig::TextConfig, arr; minbatch=0, verbose=true)

@@ -40,12 +40,13 @@ BM25InvertedFile(invfile::BM25InvertedFile;
 Base.copy(I::BM25InvertedFile; kwargs...) = BM25InvertedFile(I; kwargs...)
 
 """
-    BM25InvertedFile(textconfig, corpus, db=nothing)
+    BM25InvertedFile(filter_tokens, textconfig, corpus; db=nothing)
+    BM25InvertedFile(voc::Vocabulary; avg_doc_len::Float32=32f0, ndocs::Int=10^5, db=nothing)
 
 Fits the vocabulary and BM25 score, it also creates the associated inverted file structure.
 NOTE: The corpus is not indexed since here we expect a relatively small sample of documents here and then an indexing stage on a larger corpus.
 """
-function BM25InvertedFile(filter_tokens_::Union{Nothing,Function}, textconfig::TextConfig, corpus, db=nothing)
+function BM25InvertedFile(filter_tokens_::Union{Nothing,Function}, textconfig::TextConfig, corpus; db=nothing)
     tok_corpus = tokenize_corpus(textconfig, corpus)
     voc = Vocabulary(textconfig, tok_corpus)
     if filter_tokens_ !== nothing
@@ -53,7 +54,12 @@ function BM25InvertedFile(filter_tokens_::Union{Nothing,Function}, textconfig::T
     end
     doclen = Int32[length(text) for text in tok_corpus]
     avg_doc_len = mean(doclen)
-    bm25 = BM25(avg_doc_len, length(doclen))
+
+    BM25InvertedFile(voc; avg_doc_len, ndocs=length(doclen), db)
+end
+
+function BM25InvertedFile(voc::Vocabulary; avg_doc_len::AbstractFloat=32.0, ndocs::Integer=10^5, db=nothing)
+    bm25 = BM25(avg_doc_len, ndocs)
 
     BM25InvertedFile(
         db,
@@ -64,8 +70,8 @@ function BM25InvertedFile(filter_tokens_::Union{Nothing,Function}, textconfig::T
     )
 end
 
-function BM25InvertedFile(textconfig::TextConfig, corpus, db=nothing)
-    BM25InvertedFile(nothing, textconfig, corpus, db)
+function BM25InvertedFile(textconfig::TextConfig, corpus; db=nothing)
+    BM25InvertedFile(nothing, textconfig, corpus; db)
 end
 
 function filter_lists!(
