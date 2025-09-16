@@ -103,7 +103,7 @@ begin
 	q = vectorize(model, tok, querytext)
 	
 	with_terminal() do
-		res = KnnResult(ksearch)
+		res = knnqueue(KnnSorted, ksearch)
 		search(invindex, q, res)
 		freqs = countmap([db[id_]["klass"] for id_ in res.id]) |> collect
 		sort!(freqs, by=x -> x[2], rev=true)

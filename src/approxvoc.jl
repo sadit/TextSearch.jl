@@ -48,11 +48,11 @@ function token2id(voc::Vocabulary{QgramsLookup}, tok)::UInt32
     i = get(voc.token2id, tok, zero(UInt32))
     i > 0 && return i
     tok == "" && return 0
-    res = KnnResult(1)
+    res = knnqueue(KnnSorted, 1)
     bow = bagofwords(lookup.voc, tok)
     length(bow) == 0 && return 0
     search(lookup.idx, lookup.ctx, bow, res)
-    p = res[1]
+    p = nearest(res)
     p.weight > lookup.maxdist ? 0 : p.id
 end
 

@@ -201,7 +201,7 @@ itertokenid(idlist::AbstractVector{IdWeight}) = (p.id for p in idlist)
 itertokenid(idlist::AbstractVector{IdIntWeight}) = (p.id for p in idlist) 
 itertokenid(idlist::AbstractVector{<:NamedTuple}) = (p.id for p in idlist) 
 itertokenid(idlist::Dict) = keys(idlist) 
-itertokenid(idlist::KnnResult) = IdView(idlist)
+itertokenid(idlist::AbstractKnn) = IdView(idlist)
 
 function Base.getindex(voc::Vocabulary, idlist)
     [voc[i] for i in itertokenid(idlist)]
