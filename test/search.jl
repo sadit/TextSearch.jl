@@ -9,7 +9,7 @@
     begin # searching
         q = vectorize(model, "la casa roja")
         R = search(invindex, ctx, q, knnqueue(KnnSorted, 4))
-	@test sort!(collect(IdView(R))) == [1, 2, 3, 4]
+        @test sort!(collect(IdView(R))) == [1, 2, 3, 4]
     end
 end
 
@@ -45,17 +45,17 @@ end
     ctx = InvertedFileContext()
     append_items!(invfile, ctx, _corpus)
     filter_lists!(invfile;
-                  list_min_length_for_checking=2,
-                  list_max_allowed_length=3,
-                  doc_min_freq=1,
-                  doc_max_freq=3)
+        list_min_length_for_checking=2,
+        list_max_allowed_length=3,
+        doc_min_freq=1,
+        doc_max_freq=3)
     R = search(invfile, ctx, "la casa de la manzana verde", knnqueue(KnnSorted, 3))
     @test collect(IdView(R)) == UInt32[0x00000006, 0x00000002, 0x00000004]
     @show collect(DistView(R))
     @show invfile.voc
     @show invfile.bm25
 
-    @testset "saveindex and loadindex BM25InvertedFile" begin
+    #=@testset "saveindex and loadindex BM25InvertedFile" begin
         tmpfile = tempname()
         @info "--- load and save!!!"
         saveindex(tmpfile, invfile; meta=[1, 2, 4, 8], store_db=false)
@@ -65,7 +65,7 @@ end
             @test G.adj isa StaticAdjacencyList
             R = search(G, ctx, "la casa de la manzana verde", knnqueue(KnnSorted, 3))
             @test collect(IdView(R)) == UInt32[0x00000006, 0x00000002, 0x00000004]
-    end
+    end=#
 
 end
 

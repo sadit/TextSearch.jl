@@ -79,7 +79,6 @@ include("bm25.jl")
 include("bm25invfile.jl")
 include("bm25invfilesearch.jl")
 include("approxvoc.jl")
-include("io.jl")
 include("deprecated.jl")
 
 end
