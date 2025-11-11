@@ -28,9 +28,11 @@ end
     for (i, m) in enumerate(_corpus)
         @info i => m
     end
-    invfile = BM25InvertedFile(TextConfig(nlist=[1]), _corpus) do t
+    voc = Vocabulary(TextConfig(nlist=[1]), _corpus)
+    voc = filter_tokens(voc) do t
         1 < t.ndocs < 5
     end
+    invfile = BM25InvertedFile(voc)
     ctx = InvertedFileContext()
     append_items!(invfile, ctx, _corpus)
     R = search(invfile, ctx, "la casa de la manzana verde", knnqueue(KnnSorted, 3))
@@ -41,7 +43,7 @@ end
 end
 
 @testset "bm25 invindex" begin
-    invfile = BM25InvertedFile(TextConfig(nlist=[1]), _corpus)
+    invfile = BM25InvertedFile(Vocabulary(TextConfig(nlist=[1]), _corpus))
     ctx = InvertedFileContext()
     append_items!(invfile, ctx, _corpus)
     filter_lists!(invfile;

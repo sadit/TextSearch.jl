@@ -1,28 +1,18 @@
 # This file is a part of TextSearch.jl
 
-export Vocabulary, AbstractTokenLookup, TokenLookup, occs, ndocs, token, vocsize, trainsize, filter_tokens, tokenize_and_append!, merge_voc, update_voc!, vocabulary_from_thesaurus, token2id, 
-       encode, decode, table
+export Vocabulary, occs, ndocs, token, vocsize, trainsize, numtokens, filter_tokens, tokenize_and_append!, merge_voc, update_voc!, vocabulary_from_thesaurus, token2id, encode, decode, table
 
-abstract type AbstractTokenLookup end
-
-struct Vocabulary{Lookup<:AbstractTokenLookup}
-    lookup::Lookup
+struct Vocabulary
     textconfig::TextConfig
     token::Vector{String}
     occs::Vector{Int32}
     ndocs::Vector{Int32}
     token2id::Dict{String,UInt32}
-    corpuslen::Int
+    trainsize::Ref{Int64}
+    numtokens::Ref{Int64}
 end
 
-struct TokenLookup <: AbstractTokenLookup
-end
-
-token2id(voc::Vocabulary{TokenLookup}, tok::AbstractString) = get(voc.token2id, tok, zero(UInt32))
-
-function Vocabulary(voc::Vocabulary; lookup=voc.lookup, textconfig=voc.textconfig, token=voc.token, occs=voc.occs, ndocs=voc.ndocs, token2id=voc.token2id, corpuslen=voc.corpuslen)
-    Vocabulary(lookup, textconfig, token, occs, ndocs, token2id, corpuslen)
-end
+token2id(voc::Vocabulary, tok::AbstractString) = get(voc.token2id, tok, zero(UInt32))
 
 function decode(voc::Vocabulary, bow::Dict)
     Dict(voc.token[k] => v for (k, v) in bow)
@@ -47,14 +37,14 @@ function vocabulary_from_thesaurus(textconfig::TextConfig, tokens::AbstractVecto
 end
 
 """
-    Vocabulary(textconfig::TextConfig, n::Integer)
+    Vocabulary(textconfig::TextConfig, trainsize::Int, numtokens::Int)
 
 Creates a `Vocabulary` struct
 """
-function Vocabulary(lookup::AbstractTokenLookup, textconfig::TextConfig, n::Integer)
+function Vocabulary(textconfig::TextConfig, trainsize::Int64, numtokens::Int64)
     # n == 0 means unknown
-    voc = Vocabulary(lookup, textconfig, String[], Int32[], Int32[], Dict{String,UInt32}(), n)
-    vocsize = ceil(Int, n^0.6)  # approx based on Heaps law
+    voc = Vocabulary(textconfig, String[], Int32[], Int32[], Dict{String,UInt32}(), Ref(trainsize), Ref(numtokens))
+    vocsize = ceil(Int, trainsize^0.6)  # approx based on Heaps law
     sizehint!(voc.token, vocsize)
     sizehint!(voc.occs, vocsize)
     sizehint!(voc.ndocs, vocsize)
@@ -62,25 +52,23 @@ function Vocabulary(lookup::AbstractTokenLookup, textconfig::TextConfig, n::Inte
     voc 
 end
 
-Vocabulary(textconfig::TextConfig, n::Integer) = Vocabulary(TokenLookup(), textconfig, n)
-
 """
     Vocabulary(textconfig, corpus; minbatch=0)
 
 Computes a vocabulary from a corpus using the TextConfig `textconfig`.
 """
-function vocab_from_small_collection(textconfig::TextConfig, corpus::AbstractVector; minbatch=0)
-    voc = Vocabulary(TokenLookup(), textconfig, length(corpus))
+function vocab_from_small_collection(textconfig::TextConfig, corpus::AbstractVector; minbatch::Int=0)
+    voc = Vocabulary(textconfig, length(corpus), 0)
     tokenize_and_append!(voc, corpus; minbatch)
     voc
 end
 
-function Vocabulary(textconfig::TextConfig, corpusgenerator::Union{Base.EachLine,Base.Generator,AbstractVector}; minbatch=0, buffsize=2^16, verbose=true)
+function Vocabulary(textconfig::TextConfig, corpusgenerator::Union{Base.EachLine,Base.Generator,AbstractVector}; minbatch::Int=0, buffsize::Int=2^16, verbose::Bool=true)
     if corpusgenerator isa AbstractVector && length(corpusgenerator) <= buffsize
         return vocab_from_small_collection(textconfig, corpusgenerator; minbatch)
     end
 
-    voc = Vocabulary(TokenLookup(), textconfig, 0)
+    voc = Vocabulary(textconfig, 0, 0)
     len = 0
     corpus = []
     sizehint!(corpus, buffsize)
@@ -91,7 +79,7 @@ function Vocabulary(textconfig::TextConfig, corpusgenerator::Union{Base.EachLine
             # verbose && (@info "computing vocabulary -- advance: $len - buffsize: $buffsize")
             len += buffsize
             tokenize_and_append!(voc, corpus; minbatch)
-            empty!(corpus) 
+            empty!(corpus)
         end 
     end
 
@@ -100,13 +88,14 @@ function Vocabulary(textconfig::TextConfig, corpusgenerator::Union{Base.EachLine
         tokenize_and_append!(voc, corpus; minbatch)
     end
 
-    Vocabulary(voc; corpuslen=len)
+    voc.trainsize[] = len
+    voc
 end
 
-function locked_tokenize_and_push(voc, doc, buff, l)
-    empty!(buff)
-
-    for token in tokenize(borrowtokenizedtext, voc.textconfig, doc, buff)
+function _locked_tokenize_and_push(voc, doc, buff, l)
+    empty!(buff; bow=false)
+    tokenlist = tokenize(borrowtokenizedtext, voc.textconfig, doc, buff)
+    for token in tokenlist
         id = 0
         lock(l)
         try
@@ -115,15 +104,6 @@ function locked_tokenize_and_push(voc, doc, buff, l)
             unlock(l)
             buff.bow[id] = 1
         end
-    end
-
-    lock(l)
-    try
-        for id in keys(buff.bow)
-            voc.ndocs[id] += 1
-        end
-    finally
-        unlock(l)
     end
 end
 
@@ -142,13 +122,25 @@ function tokenize_and_append!(voc::Vocabulary, corpus; minbatch=0)
         buff = take!(TEXT_SEARCH_CACHES)
 
         try
+            empty!(buff)
             if doc isa AbstractVector
                 for text in doc
-                    locked_tokenize_and_push(voc, text, buff, l)
+                    _locked_tokenize_and_push(voc, text, buff, l)
                 end
             else # if doc isa AbstractString
-                locked_tokenize_and_push(voc, doc, buff, l)
+                _locked_tokenize_and_push(voc, doc, buff, l)
             end
+
+            lock(l)
+            voc.numtokens[] += length(buff.bow)
+            try
+                for id in keys(buff.bow)
+                    voc.ndocs[id] += 1
+                end
+            finally
+                unlock(l)
+            end
+
         finally
             put!(TEXT_SEARCH_CACHES, buff)
         end
@@ -160,7 +152,9 @@ end
 Base.length(voc::Vocabulary) = length(voc.occs)
 Base.eachindex(voc::Vocabulary) = eachindex(voc.occs)
 vocsize(voc::Vocabulary) = length(voc)
-trainsize(voc::Vocabulary) = voc.corpuslen
+trainsize(voc::Vocabulary) = voc.trainsize[]
+numtokens(voc::Vocabulary) = voc.numtokens[]
+avgdoclen(voc::Vocabulary) = numtokens(voc) / trainsize(voc)
 ndocs(voc::Vocabulary, tokenID::Integer) = tokenID == 0 ? zero(eltype(voc.ndocs)) : voc.ndocs[tokenID]
 occs(voc::Vocabulary, tokenID::Integer) = tokenID == 0 ? zero(eltype(voc.occs)) : voc.occs[tokenID]
 token(voc::Vocabulary, tokenID::Integer) = tokenID == 0 ? "" : voc.token[tokenID]
@@ -203,10 +197,7 @@ itertokenid(idlist::AbstractVector{<:NamedTuple}) = (p.id for p in idlist)
 itertokenid(idlist::Dict) = keys(idlist) 
 itertokenid(idlist::AbstractKnn) = IdView(idlist)
 
-function Base.getindex(voc::Vocabulary, idlist)
-    [voc[i] for i in itertokenid(idlist)]
-end
-
+Base.getindex(voc::Vocabulary, idlist) = [voc[i] for i in itertokenid(idlist)]
 Base.getindex(voc::Vocabulary, token::AbstractString) = voc[get(voc.token2id, token, 0)]
 
 function Base.getindex(voc::Vocabulary, tokenID::Integer)
@@ -218,4 +209,3 @@ function Base.getindex(voc::Vocabulary, tokenID::Integer)
         (; id=id, occs=voc.occs[id], ndocs=voc.ndocs[id], token=voc.token[id])
     end
 end
-

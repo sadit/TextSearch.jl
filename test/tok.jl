@@ -88,16 +88,18 @@ end
     textconfig = TextConfig(nlist=[1])
     A = Vocabulary(textconfig, ["hello ;)", "#jello world."])
     B = Vocabulary(textconfig, [["hello ;)", "#jello world."]])
-    @test A.occs == B.occs
-    @test sort(A.token) == sort(B.token)
-    @info A.corpuslen, B.corpuslen
-    @test A.corpuslen == 2 && B.corpuslen == 1
+    @show token(A)
+    @show token(B)
+    @test occs(A) == occs(B)
+    @test sort(token(A)) == sort(token(B))
+    @info trainsize(A), trainsize(B)
+    @test trainsize(A) == 2 && trainsize(B) == 1
     C = merge_voc(A, B)
-    @test C.token == A.token
-    @test C.occs == 2 .* A.occs
-    @test C.corpuslen == 3
+    @test token(C) == token(A)
+    @test occs(C) == 2 .* occs(A)
+    @test trainsize(C) == 3
     @test vocsize(C) == vocsize(A)
-    @show A.corpuslen, B.corpuslen, C.corpuslen
+    @show trainsize(A), trainsize(B), trainsize(C)
 end
 
 @testset "Normalize and tokenize" begin

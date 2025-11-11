@@ -1,9 +1,10 @@
 name = "TextSearch"
 uuid = "7f6f6c8a-3b03-11e9-223d-e7d88259bd6c"
 authors = ["Eric S. Tellez <donsadit@gmail.com>"]
-version = "0.19.7"
+version = "0.20.0"
 
 [deps]
+Accessors = "7d9f7c33-5ae7-4f3b-8dc6-eff91059b697"
 Intersections = "6d0fbc77-481e-44fe-9ace-1653ddcdea34"
 InvertedFiles = "b20bd276-2c70-11ec-161a-3d1e1109a1c3"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
@@ -16,6 +17,7 @@ StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 Unicode = "4ec0a83e-493e-50e2-b9ac-8f72acf5a8f5"
 
 [compat]
+Accessors = "0.1"
 Aqua = "0.8"
 Intersections = "0.4"
 InvertedFiles = "0.8"

@@ -109,20 +109,6 @@ function VectorModel(gw::GlobalWeighting, lw::LocalWeighting, voc::Vocabulary; w
     model
 end
 
-function VectorModel(
-        e::VectorModel;
-        local_weighting=e.local_weighting,
-        global_weighting=e.global_weighting,
-        voc=e.voc,
-        maxoccs=e.maxoccs,
-        weight=e.weight
-    )
-
-    VectorModel(global_weighting, local_weighting, voc, maxoccs, weight)
-end
-
-Base.copy(e::VectorModel; kwargs...) = VectorModel(e::VectorModel; kwargs...)
-
 @inline trainsize(model::VectorModel) = trainsize(model.voc)
 @inline vocsize(model::VectorModel) = vocsize(model.voc)
 
@@ -163,7 +149,7 @@ Base.show(io::IO, model::VectorModel) = print(io, """{VectorModel
 
 function filter_tokens(pred::Function, model::VectorModel)
     voc = model.voc
-    V = Vocabulary(voc.textconfig, voc.corpuslen)
+    V = Vocabulary(voc.textconfig, trainsize(voc), numtokens(voc))
     W = Vector{Float32}(undef, 0)
     
     for i in eachindex(voc)
@@ -174,7 +160,7 @@ function filter_tokens(pred::Function, model::VectorModel)
         end
     end
 
-    VectorModel(model; voc=V, weight=W)
+    VectorModel(model.global_weighting, model.local_weighting, V, model.maxoccs, W)
 end
 
 

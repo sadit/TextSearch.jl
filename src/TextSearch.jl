@@ -4,6 +4,7 @@ module TextSearch
 
 import Base: broadcastable
 import StatsBase: fit, predict
+using Accessors
 using SimilaritySearch, InvertedFiles, LinearAlgebra, SparseArrays
 using SimilaritySearch: getminbatch
 using SimilaritySearch.AdjacencyLists
@@ -41,12 +42,12 @@ end
 
 const TEXT_SEARCH_CACHES = Channel{TextSearchBuffer}(Inf)
 
-function Base.empty!(buff::TextSearchBuffer)
-    empty!(buff.normtext)
-    empty!(buff.tokens)
-    empty!(buff.unigrams)
-    empty!(buff.bow)
-    empty!(buff.vec)
+function Base.empty!(buff::TextSearchBuffer; normtext::Bool=true, tokens::Bool=true, unigrams::Bool=true, bow::Bool=true, vec::Bool=true)
+    normtext && empty!(buff.normtext)
+    tokens && empty!(buff.tokens)
+    unigrams && empty!(buff.unigrams)
+    bow && empty!(buff.bow)
+    vec && empty!(buff.vec)
 end
 
 function __init__()

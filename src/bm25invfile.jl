@@ -3,7 +3,6 @@
 export BM25InvertedFile, search, filter_lists!, append_items!, push_item!, InvertedFileContext
 
 import SimilaritySearch: search, append_items!, push_item!, database, distance
-import SimilaritySearch: serializeindex, restoreindex
 
 using Intersections
 using InvertedFiles
@@ -29,37 +28,14 @@ Base.length(invfile::BM25InvertedFile) = length(invfile.doclens)
 database(invfile::BM25InvertedFile) = invfile.db
 distance(::BM25InvertedFile) = error("BM25InvertedFile is not a metric index")
 
-BM25InvertedFile(invfile::BM25InvertedFile;
-    db=invfile.db,
-    voc=invfile.voc,
-    bm25=invfile.bm25,
-    adj=invfile.adj,
-    doclens=invfile.doclens
-) = BM25InvertedFile(db, voc, bm25, adj, doclens)
+"""
+    BM25InvertedFile(voc::Vocabulary, db=nothing)
 
-Base.copy(I::BM25InvertedFile; kwargs...) = BM25InvertedFile(I; kwargs...)
+Fits the BM25 score from the given vocabulary it also creates the associated inverted file structure.
 
 """
-    BM25InvertedFile(filter_tokens, textconfig, corpus; db=nothing)
-    BM25InvertedFile(voc::Vocabulary; avg_doc_len::Float32=32f0, ndocs::Int=10^5, db=nothing)
-
-Fits the vocabulary and BM25 score, it also creates the associated inverted file structure.
-NOTE: The corpus is not indexed since here we expect a relatively small sample of documents here and then an indexing stage on a larger corpus.
-"""
-function BM25InvertedFile(filter_tokens_::Union{Nothing,Function}, textconfig::TextConfig, corpus; db=nothing)
-    tok_corpus = tokenize_corpus(textconfig, corpus)
-    voc = Vocabulary(textconfig, tok_corpus)
-    if filter_tokens_ !== nothing
-        voc = filter_tokens(filter_tokens_, voc)
-    end
-    doclen = Int32[length(text) for text in tok_corpus]
-    avg_doc_len = mean(doclen)
-
-    BM25InvertedFile(voc; avg_doc_len, ndocs=length(doclen), db)
-end
-
-function BM25InvertedFile(voc::Vocabulary; avg_doc_len::AbstractFloat=32.0, ndocs::Integer=10^5, db=nothing)
-    bm25 = BM25(avg_doc_len, ndocs)
+function BM25InvertedFile(voc::Vocabulary, db=nothing)
+    bm25 = BM25(voc)
 
     BM25InvertedFile(
         db,
@@ -68,10 +44,6 @@ function BM25InvertedFile(voc::Vocabulary; avg_doc_len::AbstractFloat=32.0, ndoc
         AdjacencyList(IdIntWeight; n=vocsize(voc)),
         Vector{Int32}(undef, 0),
     )
-end
-
-function BM25InvertedFile(textconfig::TextConfig, corpus; db=nothing)
-    BM25InvertedFile(nothing, textconfig, corpus; db)
 end
 
 function filter_lists!(

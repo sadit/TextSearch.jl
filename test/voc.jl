@@ -6,7 +6,7 @@
     @test Set(voc1.token) == Set(voc2.token)
     @test sum(voc1.ndocs) == sum(voc2.ndocs)
     @test sum(voc1.occs) == sum(voc2.occs)
-    @test voc1.corpuslen == voc2.corpuslen
+    @test trainsize(voc1) == trainsize(voc2)
 end
 
 @testset "Vocabulary and BOW" begin
@@ -18,6 +18,7 @@ end
     @test decode.(Ref(voc), B) == decode.(Ref(voc), C)
 end
 
+#=
 @testset "Approximate vocabulary" begin
     textconfig = TextConfig(nlist=[1])
     voc = Vocabulary(textconfig, _corpus)
@@ -31,3 +32,4 @@ end
     #@test decode.(Ref(voc), B) == decode.(Ref(voc), C)
 end
 
+=#

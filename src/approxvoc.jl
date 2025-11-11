@@ -1,4 +1,4 @@
-# This file is a part of TextSearch.jl
+#=# This file is a part of TextSearch.jl
 
 export QgramsLookup, approxvoc
 
@@ -56,3 +56,4 @@ function token2id(voc::Vocabulary{QgramsLookup}, tok)::UInt32
     p.weight > lookup.maxdist ? 0 : p.id
 end
 
+=#
