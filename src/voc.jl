@@ -12,6 +12,16 @@ struct Vocabulary
     numtokens::Ref{Int64}
 end
 
+function Base.show(io::IO, voc::Vocabulary; prefix="", indent="  ")
+    println(io, prefix, "Vocabulary:")
+    prefix = indent * prefix
+    println(io, prefix, "vocsize: ", vocsize(voc))
+    println(io, prefix, "trainsize: ", trainsize(voc))
+    println(io, prefix, "numtokens: ", numtokens(voc))
+    println(io, prefix, "avgdoclen: ", avgdoclen(voc))
+    show(io, voc.textconfig; prefix, indent)
+end
+
 token2id(voc::Vocabulary, tok::AbstractString) = get(voc.token2id, tok, zero(UInt32))
 
 function decode(voc::Vocabulary, bow::Dict)
@@ -63,7 +73,7 @@ function vocab_from_small_collection(textconfig::TextConfig, corpus::AbstractVec
     voc
 end
 
-function Vocabulary(textconfig::TextConfig, corpusgenerator::Union{Base.EachLine,Base.Generator,AbstractVector}; minbatch::Int=0, buffsize::Int=2^16, verbose::Bool=true)
+function Vocabulary(textconfig::TextConfig, corpusgenerator; minbatch::Int=0, buffsize::Int=2^16, verbose::Bool=true)
     if corpusgenerator isa AbstractVector && length(corpusgenerator) <= buffsize
         return vocab_from_small_collection(textconfig, corpusgenerator; minbatch)
     end

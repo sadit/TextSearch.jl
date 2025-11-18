@@ -11,6 +11,21 @@ struct BM25
     trainsize::Int32
 end
 
+
+function Base.show(io::IO, bm::BM25; prefix="", indent="  ")
+    println(io, prefix, "BM25:")
+    prefix = indent * prefix
+    k1 = bm.k1_plus_1 - 1
+    b = - (bm.k1_mult_1_min_b / k1 - 1)
+    avgdoclen = 1 / (bm.k1_mult_b_div_avg_doc_len / b / k1)
+    println(io, prefix, "k1: ", k1)
+    println(io, prefix, "b: ", b)
+    println(io, prefix, "avgdoclen: ", avgdoclen)
+    println(io, prefix, "δ: ", bm.δ)
+    println(io, prefix, "trainsize: ", bm.trainsize)
+end
+
+
 function BM25(trainsize::Integer, avgdoclen::AbstractFloat; k1=1.2f0, b=0.75f0, δ=1f0)
     BM25( #k1, b,
         convert(Float32, k1 + 1f0),

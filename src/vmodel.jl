@@ -93,6 +93,15 @@ mutable struct VectorModel{_G<:GlobalWeighting, _L<:LocalWeighting} <: TextModel
     weight::Vector{Float32}
 end
 
+function Base.show(io::IO, model::VectorModel; prefix="", indent="  ")
+    println(io, prefix, "VectorModel:")
+    prefix = indent * prefix
+    println(io, prefix, "global_weighting: ", model.global_weighting)
+    println(io, prefix, "local_weighting: ", model.local_weighting)
+    println(io, prefix, "maxoccs: ", model.maxoccs)
+    show(io, model.voc; prefix, indent)
+end
+
 function VectorModel(gw::GlobalWeighting, lw::LocalWeighting, voc::Vocabulary; weight=nothing)
     vocsize(voc) > 0 || error("empty vocabulary")
     maxoccs = convert(Int32, maximum(voc.occs))
@@ -138,14 +147,6 @@ function Base.getindex(model::VectorModel, tokenID::Integer)
         (; id=id, occs=voc.occs[id], ndocs=voc.ndocs[id], weight=model.weight[id], token=voc.token[id])
     end
 end
-
-Base.show(io::IO, model::VectorModel) = print(io, """{VectorModel
-    global_weighting: $(model.global_weighting)
-    local_weighting: $(model.local_weighting)
-    vocsize: $(vocsize(model))
-    trainsize=$(trainsize(model))
-    maxoccs=$(model.maxoccs)                                    
-}""")
 
 function filter_tokens(pred::Function, model::VectorModel)
     voc = model.voc
@@ -215,14 +216,16 @@ function vectorize(model::VectorModel, text; normalize=true, minweight=1e-6)
     end
 end
 
-function vectorize_corpus(model::VectorModel, corpus::AbstractVector; normalize=true, minweight=1e-6, minbatch=0, verbose=true)
+function vectorize_corpus(model::VectorModel, corpus; normalize=true, minweight=1e-6, minbatch=0, verbose=true)
+    corpus = collect(corpus)
     n = length(corpus)
-    V = [vectorize(model, corpus[1]; normalize, minweight)] # Vector{SVEC}(undef, n)
+    V = DVEC[] 
     resize!(V, n)
     minbatch = getminbatch(minbatch, n)
 
     # @batch minbatch=minbatch per=thread for i in 2:n
-    @showprogress dt=1 enabled=verbose desc="vectorizing corpus" Threads.@threads for i in 2:n
+    vectorize(model, corpus[1]; normalize, minweight)
+    @showprogress dt=1 enabled=verbose desc="vectorizing corpus" Threads.@threads for i in 1:n
         V[i] = vectorize(model, corpus[i]; normalize, minweight)
     end
 

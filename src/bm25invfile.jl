@@ -14,18 +14,24 @@ using StatsBase
 
 # Parameters
 """
-struct BM25InvertedFile{
-                        DbType<:Union{<:AbstractDatabase,Nothing},
-                        AdjType<:AbstractAdjacencyList} <: AbstractInvertedFile
-    db::DbType
+struct BM25InvertedFile{AdjType<:AbstractAdjacencyList} <: AbstractInvertedFile
     voc::Vocabulary
     bm25::BM25
     adj::AdjType
     doclens::Vector{Int32}  ## number of tokens per document
 end
 
+function Base.show(io::IO, invfile::BM25InvertedFile; prefix="", indent="  ")
+    println(io, prefix, "BM25InvertedFile:")
+    prefix = indent * prefix
+    println(io, prefix, "length: ", length(invfile))
+    println(io, prefix, "adj: ", typeof(invfile.adj))
+    show(io, invfile.voc; prefix, indent)
+    show(io, invfile.bm25; prefix, indent)
+end
+
 Base.length(invfile::BM25InvertedFile) = length(invfile.doclens)
-database(invfile::BM25InvertedFile) = invfile.db
+database(invfile::BM25InvertedFile) = error("database() is not accesible in BM25InvertedFile")
 distance(::BM25InvertedFile) = error("BM25InvertedFile is not a metric index")
 
 """
@@ -34,11 +40,10 @@ distance(::BM25InvertedFile) = error("BM25InvertedFile is not a metric index")
 Fits the BM25 score from the given vocabulary it also creates the associated inverted file structure.
 
 """
-function BM25InvertedFile(voc::Vocabulary, db=nothing)
-    bm25 = BM25(voc)
+function BM25InvertedFile(voc::Vocabulary;  k1=1.2f0, b=0.75f0, δ=1f0)
+    bm25 = BM25(voc; k1, b, δ)
 
     BM25InvertedFile(
-        db,
         voc,
         bm25,
         AdjacencyList(IdIntWeight; n=vocsize(voc)),

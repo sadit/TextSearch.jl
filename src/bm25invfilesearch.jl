@@ -36,9 +36,7 @@ end
 
 function SimilaritySearch.search(accept_posting_list::Function, idx::BM25InvertedFile, ctx::InvertedFileContext, q, res::AbstractKnn; t::Int=1)
   Q = select_posting_lists(accept_posting_list, idx, ctx, q)
-  if length(Q) == 0
-      return SearchResult(res, 0)
-  end
+  length(Q) == 0 && return res
   P = getpositions(length(Q), ctx)
   res.costevals = xmerge!(BM25InvFileOutput(idx, res), Q, P; t)
   res

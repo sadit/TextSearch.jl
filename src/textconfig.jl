@@ -85,6 +85,14 @@ Base.@kwdef struct TextConfig
     end
 end
 
+function Base.show(io::IO, c::TextConfig; prefix="", indent="  ")
+    println(io, prefix, "TextConfig:")
+    for f in fieldnames(TextConfig)
+        v = getfield(c, f)
+        println(io, prefix, indent, f, ": ", v)
+    end
+end
+
 function TextConfig(c::TextConfig;
         del_diac::Bool=c.del_diac,
         del_dup::Bool=c.del_dup,

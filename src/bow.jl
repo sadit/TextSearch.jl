@@ -33,12 +33,12 @@ function bagofwords_(copy_::Function, voc::Vocabulary, text)
 end
 
 """
-    bagofwords(voc::Vocabulary, messages::AbstractVector)
-    bagofwords!(buff, voc::Vocabulary, messages::AbstractVector)
+    bagofwords(voc::Vocabulary, messages)
+    bagofwords!(buff, voc::Vocabulary, messages)
 
 Computes a bag of words from messages
 """
-function bagofwords!(buff::TextSearchBuffer, voc::Vocabulary, messages::AbstractVector)
+function bagofwords!(buff::TextSearchBuffer, voc::Vocabulary, messages)
     empty!(buff.bow)
     for text in messages
         empty!(buff.normtext); empty!(buff.tokens); empty!(buff.unigrams)
