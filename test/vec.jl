@@ -94,7 +94,7 @@ end
     v = Dict(:el => 0.4, :hola => 0.2, :mundo => 0.4) |> normalize!
     w = Dict(:xel => 0.4, :xhola => 0.2, :xmundo => 0.4) |> normalize!
 
-    dist = AngleDistance()
+    dist = Dist.Angle()
     @test evaluate(dist, u, v) ≈ 0.5975474808029686
     @test evaluate(dist, u, u) <= eps(Float32)
     @test evaluate(dist, w, u) ≈ 1.5707963267948966

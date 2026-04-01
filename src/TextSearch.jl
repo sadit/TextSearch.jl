@@ -7,7 +7,9 @@ import StatsBase: fit, predict
 using Accessors
 using SimilaritySearch, InvertedFiles, LinearAlgebra, SparseArrays
 using SimilaritySearch: getminbatch
-using SimilaritySearch.AdjacencyLists
+using InvertedFiles
+using InvertedFiles: getcontext, getpositions, InvertedFileContext, IdWeight, IdIntWeight
+
 using Polyester, ProgressMeter
 
 include("dvec.jl")

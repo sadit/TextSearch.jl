@@ -37,7 +37,7 @@ end
     append_items!(invfile, ctx, _corpus)
     R = search(invfile, ctx, "la casa de la manzana verde", knnqueue(KnnSorted, 3))
     @test collect(IdView(R)) == UInt32[0x00000006, 0x00000002, 0x00000004]
-    @test evaluate(SqL2Distance(), collect(DistView(R)), Float32[-3.3956785, -3.1118512, -2.5816276]) <= 1e-4
+    @test evaluate(Dist.SqL2(), collect(DistView(R)), Float32[-3.3956785, -3.1118512, -2.5816276]) <= 1e-4
     @show invfile.voc
     @show invfile.bm25
 end
@@ -64,7 +64,7 @@ end
 
             G, meta = loadindex(tmpfile, database(invfile); staticgraph=true)
             @test meta == [1, 2, 4, 8]
-            @test G.adj isa StaticAdjacencyList
+            @test G.adj isa StaticAdjList
             R = search(G, ctx, "la casa de la manzana verde", knnqueue(KnnSorted, 3))
             @test collect(IdView(R)) == UInt32[0x00000006, 0x00000002, 0x00000004]
     end=#

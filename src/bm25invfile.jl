@@ -5,7 +5,6 @@ export BM25InvertedFile, search, filter_lists!, append_items!, push_item!, Inver
 import SimilaritySearch: search, append_items!, push_item!, database, distance
 
 using Intersections
-using InvertedFiles
 using StatsBase
 
 
@@ -14,7 +13,7 @@ using StatsBase
 
 # Parameters
 """
-struct BM25InvertedFile{AdjType<:AbstractAdjacencyList} <: AbstractInvertedFile
+struct BM25InvertedFile{AdjType<:AbstractAdjList} <: AbstractInvertedFile
     voc::Vocabulary
     bm25::BM25
     adj::AdjType
@@ -46,7 +45,7 @@ function BM25InvertedFile(voc::Vocabulary;  k1=1.2f0, b=0.75f0, δ=1f0)
     BM25InvertedFile(
         voc,
         bm25,
-        AdjacencyList(IdIntWeight; n=vocsize(voc)),
+        AdjList(IdIntWeight, vocsize(voc)),
         Vector{Int32}(undef, 0),
     )
 end
@@ -60,7 +59,7 @@ function filter_lists!(
         always_sort::Bool=false
     )
     adj = idx.adj
-    @assert adj isa AdjacencyList
+    @assert adj isa AdjList
     buff = IdIntWeight[]
     sizehint!(buff, list_max_allowed_length)
 
@@ -104,32 +103,49 @@ function append_items!(idx::BM25InvertedFile, ctx::InvertedFileContext, corpus::
     append_items!(idx, ctx, VectorDatabase(bagofwords_corpus(idx.voc, corpus)); kwargs...)
 end
 
-push_item!(idx::BM25InvertedFile, ctx::InvertedFileContext, doc::T) where {T<:Union{AbstractString,AbstractVector,TokenizedText}} =
+function push_item!(idx::BM25InvertedFile, ctx::InvertedFileContext, doc::T) where {T<:Union{AbstractString,AbstractVector,TokenizedText}}
     push_item!(idx, ctx, bagofwords(idx.voc, doc))
-
-function InvertedFiles.internal_push!(idx::BM25InvertedFile, ctx::InvertedFileContext, tokenID, objID, freq, sort)
-    if sort
-        add_edge!(idx.adj, tokenID, IdIntWeight(objID, freq), IdOrder)
-    else
-        add_edge!(idx.adj, tokenID, IdIntWeight(objID, freq), nothing)
-    end
 end
 
-function InvertedFiles.internal_push_object!(idx::BM25InvertedFile, ctx::InvertedFileContext, docID::Integer, obj, tol::Float64, sort, is_push)
+function SimilaritySearch.push_item!(idx::BM25InvertedFile, ctx::InvertedFileContext, obj; docID::UInt32=length(idx) + 1, tol::Float64=1e-6)
+    len = bm25_internal_push_object!(idx, ctx, docID, obj, tol)
+    for (tokenID, _) in sparseiterator(obj)
+        N = neighbors(idx.adj, tokenID)
+        N === nothing && continue
+        sort!(N)
+    end
+
+    push!(idx.doclens, len)
+    !isnothing(idx.db) && push_item!(idx.db, obj)
+    LOG(ctx.logger, :push_item!, idx, ctx, docID, docID)
+    idx
+end
+
+function bm25_internal_push_object!(idx::BM25InvertedFile, ctx::InvertedFileContext, docID::Integer, obj, tol::Float64)
     len = 0
     @inbounds for (tokenID, freq) in InvertedFiles.sparseiterator(obj)  # obj is a BOW-like struct
         freq < tol && continue
         len += freq
-        InvertedFiles.internal_push!(idx, ctx, tokenID, docID, freq, sort)
+        SimilaritySearch.add!(idx.adj, tokenID, (IdIntWeight(docID, freq),))
     end
 
-    if is_push
-        push!(idx.doclens, len)
-    else
-        idx.doclens[docID] = len
-    end
+    len
 end
 
-function InvertedFiles.internal_parallel_prepare_append!(idx::BM25InvertedFile, new_size::Integer)
-    resize!(idx.doclens, new_size)
+function InvertedFiles.parallel_append!(idx::BM25InvertedFile, ctx::InvertedFileContext, db::AbstractDatabase, startID::Int, n::Int, tol::Float64)
+    resize!(idx.doclens, startID + n)
+    minbatch = getminbatch(n)
+
+    @batch minbatch = minbatch per = thread for i in 1:n
+        docID = i + startID
+        idx.doclens[docID] = bm25_internal_push_object!(idx, ctx, docID, db[i], tol)
+    end
+
+    @batch minbatch = minbatch per = thread for i in 1:length(idx.adj)
+        N = neighbors(idx.adj, i)
+        N === nothing && continue
+        sort!(N, by=p -> p.id)
+    end
+
+    idx
 end

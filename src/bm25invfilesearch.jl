@@ -1,7 +1,5 @@
 # This file is part of TextSearch.jl
 
-using InvertedFiles: getcontext, getpositions, InvertedFileContext
-
 struct BM25InvFileOutput{InvFileType<:BM25InvertedFile}
     idx::InvFileType
     res::KnnSorted
@@ -20,7 +18,7 @@ function Intersections.onmatch!(output::BM25InvFileOutput, L::T, P, m::Int) wher
 			S -= s
 		end
 
-    push_item!(output.res, IdWeight(docID, S))
+    push_item!(output.res, IdDist(docID, S))
 end
 
 """
@@ -38,7 +36,9 @@ function SimilaritySearch.search(accept_posting_list::Function, idx::BM25Inverte
   Q = select_posting_lists(accept_posting_list, idx, ctx, q)
   length(Q) == 0 && return res
   P = getpositions(length(Q), ctx)
-  res.costevals = xmerge!(BM25InvFileOutput(idx, res), Q, P; t)
+
+  costevals = xmerge!(BM25InvFileOutput(idx, res), Q, P; t)
+  SimilaritySearch.add_distance_evaluations!(res, costevals)
   res
 end
 

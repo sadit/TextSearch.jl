@@ -31,8 +31,8 @@
 
     @test (norm(sum(AL)) - norm(sum(aL))) < 1e-3
 
-    adist = AngleDistance()
-    cdist = CosineDistance()
+    adist = Dist.Angle()
+    cdist = Dist.Cosine()
 
     for i in 1:length(aL)-1
         @test abs(evaluate(adist, aL[i], aL[i+1]) - evaluate(adist, AL[i], AL[i+1])) < 1e-3

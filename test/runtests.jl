@@ -1,4 +1,4 @@
-using SimilaritySearch, SimilaritySearch.AdjacencyLists, TextSearch, InvertedFiles
+using SimilaritySearch, TextSearch, InvertedFiles
 using Test, SparseArrays, LinearAlgebra, StatsBase, Random
 
 using Aqua
