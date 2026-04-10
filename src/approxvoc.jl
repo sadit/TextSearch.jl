@@ -12,7 +12,7 @@ end
 """
     approxvoc(
         voc::Vocabulary,
-        dist::SemiMetric=JaccardDistance();
+        dist::SemiMetric=Dist.Sets.Jaccard();
         maxdist::Real = 0.7,
         textconfig=TextConfig(qlist=[3]),
         doc_min_freq::Integer=1,  # any hard vocabulary pruning are expected to be made in `voc`
@@ -24,7 +24,7 @@ Vocabulary Lookup that retrieves the nearest token under some set distance (see 
 """
 function approxvoc(::Type{QgramsLookup},
         voc::Vocabulary,
-        dist::SemiMetric=JaccardDistance();
+        dist::SemiMetric=Dist.Sets.Jaccard();
         maxdist::Real = 0.7,
         textconfig=TextConfig(qlist=[3]),
         doc_min_freq::Integer=1,  # any hard vocabulary pruning are expected to be made in `voc`
