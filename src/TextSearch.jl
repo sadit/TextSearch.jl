@@ -14,7 +14,11 @@ using Polyester, ProgressMeter
 
 include("dvec.jl")
 
-const BOW = DVEC{UInt32,Int32}
+const BOW = Dict{UInt32,Int32}
+const SVEC = Dict{UInt32,Float32}
+
+export SVEC, BOW
+
 
 struct TextSearchBuffer
     normtext::Vector{Char}

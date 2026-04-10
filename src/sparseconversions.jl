@@ -7,18 +7,18 @@ export dvec, sparse_coo, sparse
 """
     dvec(x::AbstractSparseVector)
 
-Converts an sparse vector into a DVEC sparse vector
+Converts an sparse vector into a dict-based sparse vector
 """
 function dvec(x::AbstractSparseVector)
-    DVEC{eltype(x.nzind), eltype(x.nzval)}(t => v for (t, v) in zip(x.nzind, x.nzval))
+    Dict{eltype(x.nzind),eltype(x.nzval)}(t => v for (t, v) in zip(x.nzind, x.nzval))
 end
 
 """
-    sparsevec(vec::DVEC{Ti,Tv}, m=0) where {Ti<:Integer,Tv<:Number}
+    sparsevec(vec::Dict{Ti,Tv}, m=0) where {Ti<:Integer,Tv<:Number}
 
-Creates a sparse vector from a DVEC sparse vector
+Creates a sparse vector from a Dict-based sparse vector
 """
-function sparsevec(vec::DVEC{Ti,Tv}, m::Integer=0) where {Ti<:Integer,Tv<:Number}
+function sparsevec(vec::Dict{Ti,Tv}, m::Integer=0) where {Ti<:Integer,Tv<:Number}
     I = Ti[]
     F = Tv[]
 
@@ -39,18 +39,27 @@ end
 
 
 """
-    sparse(cols::AbstractVector{S}, m=0; minweight=1e-9) where S<:DVEC{Ti,Tv} where {Ti<:Integer,Tv<:Number}
-    sparse_coo(cols::AbstractVector{S}, minweight=1e-9) where S<:DVEC{Ti,Tv} where {Ti<:Integer,Tv<:Number}
+    sparse(cols::AbstractVector{<:Dict}, m=0; minweight=1e-9) 
+    sparse_coo(cols::AbstractVector{<:Dict}, minweight=1e-9)
 
-Creates a sparse matrix from an array of DVEC sparse vectors.
+Creates a sparse matrix from an array of Dict sparse vectors.
 """
-function sparse_coo(cols::AbstractVector{DVEC{Ti,Tv}}, minweight=1e-9) where {Ti<:Integer,Tv<:Number}
-    I = Ti[]
-    J = Ti[]
-    F = Tv[]
+function sparse_coo(cols::AbstractVector{S}, minweight=1e-9) where {S<:Dict}
+    I = keytype(S)[]
+    J = keytype(S)[]
+    F = valtype(S)[]
 
-    for j in eachindex(cols)
-        for (term, weight) in cols[j]
+    n = length(cols)
+    n == 0 && return I, J, F
+
+    let n = n * length(cols[1])
+        sizehint!(I, n)
+        sizehint!(J, n)
+        sizehint!(F, n)
+    end
+
+    for (j, c) in enumerate(cols)
+        for (term, weight) in c
             if term > 0 && weight >= minweight
                 push!(I, term)
                 push!(J, j)
@@ -62,7 +71,7 @@ function sparse_coo(cols::AbstractVector{DVEC{Ti,Tv}}, minweight=1e-9) where {Ti
     I, J, F
 end
 
-function sparse(cols::AbstractVector{DVEC{Ti,Tv}}, m=0; minweight=1e-9) where {Ti<:Integer,Tv<:Number}
+function sparse(cols::AbstractVector{<:Dict}, m=0; minweight=1e-9)
     I, J, F = sparse_coo(cols, minweight)
     if m == 0
         sparse(I, J, F)

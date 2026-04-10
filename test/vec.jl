@@ -1,5 +1,5 @@
 
-@testset "Tokenizer, DVEC, and vectorize" begin
+@testset "Tokenizer, Dict-based vectors, and vectorize" begin
     textconfig = TextConfig(group_usr=true, nlist=[1])
     voc = Vocabulary(textconfig, corpus)
     model = VectorModel(BinaryGlobalWeighting(), FreqWeighting(), voc)
@@ -20,7 +20,7 @@ end
 end
 
 
-@testset "Tokenizer, DVEC, and vectorize" begin
+@testset "Tokenizer, Dict-based vectors, and vectorize" begin
     textconfig = TextConfig(group_usr=true, nlist=[1])
     voc = Vocabulary(textconfig, sentiment_corpus)
     corpus_bows = bagofwords_corpus(voc, sentiment_corpus)

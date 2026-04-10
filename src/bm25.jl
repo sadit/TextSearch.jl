@@ -38,7 +38,7 @@ end
 
 BM25(voc::Vocabulary; k1=1.2f0, b=0.75f0, δ=1f0) = BM25(trainsize(voc), avgdoclen(voc); k1, b, δ)
 
-function bm25score(bm25::BM25, voc::Vocabulary, query::DVEC, doc::DVEC)::Float32
+function bm25score(bm25::BM25, voc::Vocabulary, query::Dict, doc::Dict)::Float32
     s = 0f0
 
     doclen = sum(f for f in values(doc))

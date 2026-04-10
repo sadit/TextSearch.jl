@@ -219,7 +219,7 @@ end
 function vectorize_corpus(model::VectorModel, corpus; normalize=true, minweight=1e-6, minbatch=0, verbose=true)
     corpus = collect(corpus)
     n = length(corpus)
-    V = DVEC[] 
+    V = SVEC[]
     resize!(V, n)
     minbatch = getminbatch(minbatch, n)
 

@@ -1,5 +1,5 @@
 
-@testset "DVEC" begin
+@testset "Dict-based vectors" begin
     cmpex(u, v) = abs(u[1] - v[1]) < 1e-3 && u[2] == v[2]
 
     aL = []

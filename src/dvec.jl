@@ -3,19 +3,18 @@
 import Base: +, -, *, /, ==, zero
 using LinearAlgebra, SparseArrays
 import LinearAlgebra: dot, norm, normalize!
-import SparseArrays: nnz
+#import SparseArrays: nnz
 using SimilaritySearch
 using SimilaritySearch.Dist: NormAngle, NormCosine, Angle, Cosine
 import SimilaritySearch: evaluate
 export centroid, evaluate, NormAngle, NormCosine, Angle, Cosine, l1norm, l1normalize!
 
-const DVEC{Ti,Tv<:Number} = Dict{Ti,Tv}
-const SVEC = DVEC{UInt32,Float32}
+#const Dict{Ti<:Union{Integer,Symbol,String},Tv<:Number} = Dict{Ti,Tv}
+#const Dict{Ti,Tv} where Ti where Tv = Dict{Ti<:Union{Integer,Symbol,String},Tv<:Number}
+#const Dict{Ti,Tv<:Number} = Dict{Ti,Tv}
+#nnz(Dict::Dict) = length(Dict)
 
-export DVEC, SVEC
-nnz(dvec::DVEC) = length(dvec)
-
-function Base.findmax(voc::DVEC{I,F}) where {I,F}
+function Base.findmax(voc::Dict{I,F}) where {I,F}
     m = typemin(F)
     maxkey = "typemax(I)"
     for (k, v) in voc
@@ -28,10 +27,10 @@ function Base.findmax(voc::DVEC{I,F}) where {I,F}
     (m, maxkey)
 end
 
-Base.argmax(voc::DVEC{I,F}) where {I,F} = last(findmax(voc))
-Base.maximum(voc::DVEC{I,F}) where {I,F} = maximum(values(voc))
+Base.argmax(voc::Dict) = last(findmax(voc))
+Base.maximum(voc::Dict) = maximum(values(voc))
 
-function Base.findmin(voc::DVEC{I,F}) where {I,F}
+function Base.findmin(voc::Dict{I,F}) where {I,F}
     m = typemax(F)
     mk = typemax(I)
     for (k, v) in voc
@@ -44,16 +43,16 @@ function Base.findmin(voc::DVEC{I,F}) where {I,F}
     (m, mk)
 end
 
-Base.argmin(voc::DVEC{I,F}) where {I,F} = last(findmin(voc))
-Base.minimum(voc::DVEC{I,F}) where {I,F} = first(findmin(voc))
+Base.argmin(voc::Dict) = last(findmin(voc))
+Base.minimum(voc::Dict) = first(findmin(voc))
 
 """
-    normalize!(bow::DVEC)
+    normalize!(bow::Dict)
 
 Inplace normalization of `bow`
 """
-function normalize!(bow::DVEC{Ti,Tv}) where {Ti,Tv<:AbstractFloat}
-    s = one(Tv) / norm(bow)
+function normalize!(bow::Dict)
+    s = one(valtype(bow)) / norm(bow)
     for (k, v) in bow
         bow[k] = v * s
     end
@@ -61,16 +60,17 @@ function normalize!(bow::DVEC{Ti,Tv}) where {Ti,Tv<:AbstractFloat}
     bow
 end
 
-function normalize!(bow::DVEC{Ti,Tv}) where {Ti,Tv<:Integer}
-    s = 1.0 / norm(bow)
-    for (k, v) in bow
-        bow[k] = round(Tv, v * s)
-    end
+# function normalize!(bow::Dict)
+#     Tv = valtype(bow)
+#     s = 1.0 / norm(bow)
+#     for (k, v) in bow
+#         bow[k] = round(Tv, v * s)
+#     end
+# 
+#     bow
+# end
 
-    bow
-end
-
-function normalize!(matrix::AbstractVector{<:DVEC})
+function normalize!(matrix::AbstractVector{<:Dict})
     for bow in matrix
         normalize!(bow)
     end
@@ -79,57 +79,57 @@ function normalize!(matrix::AbstractVector{<:DVEC})
 end
 
 function l1norm(v::AbstractVector{T}) where T
-    s = zero(T)
+    s = zero(valtype(T))
     @inbounds @simd for i in eachindex(v)
         s += v[i]
     end
-    
+
     s
 end
 
 function l1normalize!(v::AbstractVector{T}) where T
-    invl1 = one(T) / l1norm(v)
+    invl1 = one(valtype(T)) / l1norm(v)
 
     @inbounds @simd for i in eachindex(v)
         v[i] = v[i] * invl1
     end
-    
+
     v
 end
 
-function l1norm(V::DVEC{Ti,Tv}) where {Ti,Tv}
-    s = zero(Tv)
+function l1norm(V::Dict)
+    s = zero(valtype(V))
 
     for (_, v) in V
         s += v[i]
     end
-    
+
     s
 end
 
-function l1normalize!(V::DVEC{Ti,Tv}) where {Ti,Tv}
-    invl1 = one(Tv) / l1norm(V)
+function l1normalize!(V::Dict)
+    invl1 = one(valtype(V)) / l1norm(V)
 
     for (k, v) in V
         v[k] = v * invl1
     end
-    
+
     v
 end
 
 """
-    dot(a::DVEC, b::DVEC)::Float64 
+    dot(a::Dict, b::Dict)
 
-Computes the dot product for two DVEC vectors
+Computes the dot product for two Dict vectors
 """
-function dot(a::DVEC, b::DVEC)::Float64
+function dot(a::Dict, b::Dict)
     if length(b) < length(a)
         a, b = b, a  # a must be the smallest bow
     end
-    
-    s = 0.0
+    Tv = valtype(a)
+    s = zero(Tv)
     for (k, v) in a
-        w = convert(Float64, get(b, k, 0))
+        w = convert(Tv, get(b, k, 0))
         s += v * w
     end
 
@@ -137,12 +137,12 @@ function dot(a::DVEC, b::DVEC)::Float64
 end
 
 """
-    norm(a::DVEC)
+    norm(a::Dict)
 
-Computes a normalized DVEC vector
+Computes a normalized Dict vector
 """
-function norm(a::DVEC{Ti,Tv}) where {Ti,Tv}
-    s = zero(Tv)
+function norm(a::Dict)
+    s = zero(valtype(a))
     for (_, w) in a
         s = muladd(w, w, s)
     end
@@ -151,23 +151,23 @@ function norm(a::DVEC{Ti,Tv}) where {Ti,Tv}
 end
 
 """
-    zero(::Type{DVEC{Ti,Tv}}) where {Ti,Tv}
+    zero(::Type{Dict{Ti,Tv}}) where {Ti,Tv}
 
-Creates an empty DVEC vector
+Creates an empty Dict vector
 """
-function zero(::Type{DVEC{Ti,Tv}}) where {Ti,Tv}
-    DVEC{Ti,Tv}()
+function zero(::Type{Dict{Ti,Tv}}) where {Ti,Tv}
+    Dict{Ti,Tv}()
 end
 
 ## inplace sum
 """
-    add!(a::DVEC{Ti,Tv}, b::DVEC{Ti,Tv}) where {Ti,Tv<:Real}
-    add!(a::DVEC{Ti,Tv}, b::AbstractSparseArray) where {Ti,Tv<:Real}
-    add!(a::DVEC{Ti,Tv}, b::Pair{Ti,Tv}) where {Ti,Tv<:Real}
+    add!(a::Dict{Ti,Tv}, b::Dict{Ti,Tv}) where {Ti,Tv<:Real}
+    add!(a::Dict{Ti,Tv}, b::AbstractSparseArray) where {Ti,Tv<:Real}
+    add!(a::Dict{Ti,Tv}, b::Pair{Ti,Tv}) where {Ti,Tv<:Real}
 
 Updates `a` to the sum of `a+b`
 """
-function add!(a::DVEC{Ti,Tv}, b::DVEC{Ti,Tv}) where {Ti,Tv<:Real}
+function add!(a::Dict{Ti,Tv}, b::Dict{Ti,Tv}) where {Ti,Tv<:Real}
     for (k, w) in b
         if w != 0
             a[k] = get(a, k, zero(Tv)) + w
@@ -177,7 +177,7 @@ function add!(a::DVEC{Ti,Tv}, b::DVEC{Ti,Tv}) where {Ti,Tv<:Real}
     a
 end
 
-function add!(a::DVEC{Ti,Tv}, b::AbstractSparseArray) where {Ti,Tv<:Real}
+function add!(a::Dict{Ti,Tv}, b::AbstractSparseArray) where {Ti,Tv<:Real}
     for (k, w) in zip(b.nzind, b.nzval)
         if w != 0
             a[k] = get(a, k, zero(Tv)) + w
@@ -187,18 +187,18 @@ function add!(a::DVEC{Ti,Tv}, b::AbstractSparseArray) where {Ti,Tv<:Real}
     a
 end
 
-function add!(a::DVEC{Ti,Tv}, b::Pair{Ti,Tv}) where {Ti,Tv<:Real}
+function add!(a::Dict{Ti,Tv}, b::Pair{Ti,Tv}) where {Ti,Tv<:Real}
     k, w = b
     a[k] = get(a, k, zero(Tv)) + w
     a
 end
 
 """
-    Base.sum(col::AbstractVector{<:DVEC})
+    Base.sum(col::AbstractVector{<:Dict})
 
 Computes the sum of the given list of vectors
 """
-function Base.sum(col::AbstractVector{<:DVEC})
+function Base.sum(col::AbstractVector{<:Dict})
     v = copy(col[1])
     for i in 2:length(col)
         add!(v, col[i])
@@ -209,36 +209,36 @@ end
 
 
 """
-    centroid(cluster::AbstractVector{<:DVEC})
+    centroid(cluster::AbstractVector{<:Dict})
 
-Computes a centroid of the given list of DVEC vectors
+Computes a centroid of the given list of Dict vectors
 """
-function centroid(cluster::AbstractVector{<:DVEC})
+function centroid(cluster::AbstractVector{<:Dict})
     normalize!(sum(cluster))
 end
 
 """
-    +(a::DVEC{Ti,Tv}, b::DVEC{Ti,Tv}) where {Ti,Tv<:Real}
-    +(a::DVEC, b::Pair)
+    +(a::Dict{Ti,Tv}, b::Dict{Ti,Tv}) where {Ti,Tv<:Real}
+    +(a::Dict, b::Pair)
 
 Computes the sum of `a` and `b`
 """
-function +(a::DVEC{Ti,Tv}, b::DVEC{Ti,Tv}) where {Ti,Tv<:Real}
-    if length(a) < length(b) 
+function +(a::Dict{Ti,Tv}, b::Dict{Ti,Tv}) where {Ti,Tv<:Real}
+    if length(a) < length(b)
         a, b = b, a  # a must be the largest bow
     end
-    
+
     c = copy(a)
     for (k, w) in b
         if w != 0
-            c[k] = get(c, k, zero(Tv)) + w 
+            c[k] = get(c, k, zero(Tv)) + w
         end
     end
 
     c
 end
 
-function +(a::DVEC, b::Pair)
+function +(a::Dict, b::Pair)
     c = copy(a)
     add!(c, b)
 end
@@ -246,15 +246,15 @@ end
 ## definitions for substraction
 
 """
-    -(a::DVEC{Ti,Tv}, b::DVEC{Ti,Tv}) where {Ti,Tv<:Real}
+    -(a::Dict{Ti,Tv}, b::Dict{Ti,Tv}) where {Ti,Tv<:Real}
 
 Substracts of `b` of `a`
 """
-function -(a::DVEC{Ti,Tv}, b::DVEC{Ti,Tv}) where {Ti,Tv<:Real}
+function -(a::Dict{Ti,Tv}, b::Dict{Ti,Tv}) where {Ti,Tv<:Real}
     c = copy(a)
     for (k, w) in b
         if w != 0
-            c[k] = get(c, k, zero(Tv)) - w 
+            c[k] = get(c, k, zero(Tv)) - w
         end
     end
 
@@ -263,16 +263,16 @@ end
 
 ## definitions for product
 """
-    *(a::DVEC{Ti,Tv}, b::DVEC{Ti,Tv}) where {Ti,Tv<:Real}
-    *(a::DVEC{K, V}, b::F) where K where {V<:Real} where {F<:Real}
+    *(a::Dict{Ti,Tv}, b::Dict{Ti,Tv}) where {Ti,Tv<:Real}
+    *(a::Dict{K, V}, b::F) where K where {V<:Real} where {F<:Real}
 
 Computes the element-wise product of a and b
 """
-function *(a::DVEC{Ti,Tv}, b::DVEC{Ti,Tv}) where {Ti,Tv<:Real}
+function *(a::Dict{Ti,Tv}, b::Dict{Ti,Tv}) where {Ti,Tv<:Real}
     if length(b) < length(a)
         a, b = b, a  # a must be the smallest bow
     end
-    
+
     c = copy(a)
     for k in keys(a)
         w = get(b, k, zero(Tv))
@@ -286,7 +286,7 @@ function *(a::DVEC{Ti,Tv}, b::DVEC{Ti,Tv}) where {Ti,Tv<:Real}
     c
 end
 
-function *(a::DVEC{K, V}, b::F) where K where {V<:Real} where {F<:Real}
+function *(a::Dict{K,V}, b::F) where K where {V<:Real} where {F<:Real}
     c = copy(a)
     for (k, v) in a
         c[k] = convert(V, v * b)
@@ -295,53 +295,53 @@ function *(a::DVEC{K, V}, b::F) where K where {V<:Real} where {F<:Real}
     c
 end
 
-function *(b::F, a::DVEC) where {F<:Real}
+function *(b::F, a::Dict) where {F<:Real}
     a * b
 end
 
 """
-    /(a::DVEC{K, V}, b::F) where K where {V<:Real} where {F<:Real}
+    /(a::Dict{K, V}, b::F) where K where {V<:Real} where {F<:Real}
 
 Computes the element-wise division of a and b
 """
-function /(a::DVEC{K,V}, b::F) where K where {V<:Real} where {F<:Real}
-    a * (1.0/b)
+function /(a::Dict{K,V}, b::F) where K where {V<:Real} where {F<:Real}
+    a * (1.0 / b)
 end
 
 
 """
-    evaluate(::NormCosine, a::DVEC, b::DVEC)::Float64
+    evaluate(::NormCosine, a::Dict, b::Dict)::Float64
 
-Computes the cosine distance between two DVEC sparse vectors
+Computes the cosine distance between two Dict sparse vectors
 
 It supposes that bags are normalized (see `normalize!` function)
 
 """
-function evaluate(::NormCosine, a::DVEC, b::DVEC)::Float64
+function evaluate(::NormCosine, a::Dict, b::Dict)::Float64
     1.0 - dot(a, b)
 end
 
 """
-    evaluate(::Cosine, a::DVEC, b::DVEC)::Float64
+    evaluate(::Cosine, a::Dict, b::Dict)::Float64
 
-Computes the cosine distance between two DVEC sparse vectors
+Computes the cosine distance between two Dict sparse vectors
 
 """
-function evaluate(::Cosine, a::DVEC, b::DVEC)::Float64
+function evaluate(::Cosine, a::Dict, b::Dict)::Float64
     1.0 - full_cosine(a, b)
 end
 
 const π_2 = π / 2
 
 """
-    evaluate(::NormAngle, a::DVEC, b::DVEC)::Float64
+    evaluate(::NormAngle, a::Dict, b::Dict)::Float64
 
-Computes the angle  between two DVEC sparse vectors
+Computes the angle  between two Dict sparse vectors
 
 It supposes that all bags are normalized (see `normalize!` function)
 
 """
-function evaluate(::NormAngle, a::DVEC, b::DVEC)::Float64
+function evaluate(::NormAngle, a::Dict, b::Dict)::Float64
     d = dot(a, b)
 
     if d <= -1.0
@@ -356,12 +356,12 @@ function evaluate(::NormAngle, a::DVEC, b::DVEC)::Float64
 end
 
 """
-    evaluate(::Angle, a::DVEC, b::DVEC)::Float64
+    evaluate(::Angle, a::Dict, b::Dict)::Float64
 
-Computes the angle between two DVEC sparse vectors
+Computes the angle between two Dict sparse vectors
 
 """
-function evaluate(::Angle, a::DVEC, b::DVEC)::Float64
+function evaluate(::Angle, a::Dict, b::Dict)::Float64
     d = full_cosine(a, b)
 
     if d <= -1.0
@@ -375,6 +375,6 @@ function evaluate(::Angle, a::DVEC, b::DVEC)::Float64
     end
 end
 
-function full_cosine(a::DVEC, b::DVEC)::Float64
+function full_cosine(a::Dict, b::Dict)::Float64
     return dot(a, b) / (norm(a) * norm(b))
 end
