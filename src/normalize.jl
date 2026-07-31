@@ -23,6 +23,16 @@ const RE_NUM = r"[-+]?(\d+\.?\d*)|(\.\d+)"
 
 Tests whether `c` is one of the emoji characters known to TextSearch (loaded from
 `emojis.txt`). Used by [`normalize_text`](@ref) when `TextConfig`'s `group_emo` option is set.
+
+# Example
+
+```julia
+julia> isemoji('😀')
+true
+
+julia> isemoji('a')
+false
+```
 """
 function isemoji(c::Char)
     c in EMOJIS
@@ -52,6 +62,17 @@ end
     normalize_text(config::TextConfig, text::AbstractString, output::Vector{Char}; limits::Bool=true)
 
 Normalizes a given text using the specified transformations of `config`
+
+# Example
+
+```julia
+julia> buff = Char[];
+
+julia> normalize_text(TextConfig(), "Café", buff);
+
+julia> String(buff)
+" cafe "
+```
 """
 function normalize_text(config::TextConfig, text::AbstractString, output::Vector{Char}; limits::Bool=true)
     text = _preprocessing(config, text)

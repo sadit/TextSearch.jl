@@ -6,6 +6,13 @@ export TextConfig, Skipgram
     Skipgram(qsize, skip)
 
 A skipgram is a kind of tokenization where `qsize` words having `skip` separation are used as a single token.
+
+# Example
+
+```julia
+julia> collect(tokenize(TextConfig(slist=[Skipgram(2, 1)]), "the cat sat down"))
+["the sat\ts", "cat down\ts"]
+```
 """
 struct Skipgram
     qsize::Int8
@@ -55,6 +62,15 @@ Defines a preprocessing and tokenization pipeline
 - `tt`: An `AbstractTokenTransformation` struct
 
 Note: If qlist, nlist, and slists are all empty arrays, then it defaults to nlist=[1]
+
+# Example
+
+```julia
+julia> cfg = TextConfig(nlist=[1], qlist=[3]);
+
+julia> collect(tokenize(cfg, "cats"))
+[" ca\tq", "cat\tq", "ats\tq", "ts \tq", "cats"]
+```
 """
 Base.@kwdef struct TextConfig
     del_diac::Bool  = true

@@ -18,6 +18,18 @@ later consumed by [`VectorModel`](@ref), [`BM25`](@ref), and [`bagofwords`](@ref
 - `token2id`: `token -> id` reverse mapping (`0` means "unknown token").
 - `trainsize`: number of documents used to build the vocabulary.
 - `numtokens`: total number of (non-unique) tokens seen while building the vocabulary.
+
+# Example
+
+```julia
+julia> voc = Vocabulary(TextConfig(), ["hello world", "hello there"]; verbose=false);
+
+julia> vocsize(voc)
+3
+
+julia> token2id(voc, "hello")
+0x00000001
+```
 """
 struct Vocabulary
     textconfig::TextConfig
@@ -43,6 +55,18 @@ end
     token2id(voc::Vocabulary, tok::AbstractString)::UInt32
 
 Looks up the id of `tok` in `voc`; returns `0` when `tok` is out of vocabulary.
+
+# Example
+
+```julia
+julia> voc = Vocabulary(TextConfig(), ["hello world"]; verbose=false);
+
+julia> token2id(voc, "hello")
+0x00000001
+
+julia> token2id(voc, "unknown")
+0x00000000
+```
 """
 token2id(voc::Vocabulary, tok::AbstractString) = get(voc.token2id, tok, zero(UInt32))
 
@@ -51,6 +75,15 @@ token2id(voc::Vocabulary, tok::AbstractString) = get(voc.token2id, tok, zero(UIn
 
 Converts a `Dict` sparse vector indexed by token id (e.g., a [`BOW`](@ref)) into a
 `Dict` indexed by the corresponding token string.
+
+# Example
+
+```julia
+julia> voc = Vocabulary(TextConfig(), ["hello world"]; verbose=false);
+
+julia> decode(voc, bagofwords(voc, "hello hello"))
+Dict{String, Int32}("hello" => 2)
+```
 """
 function decode(voc::Vocabulary, bow::Dict)
     Dict(voc.token[k] => v for (k, v) in bow)
@@ -61,6 +94,15 @@ end
 
 Converts a `Dict` sparse vector indexed by token string into a `Dict` indexed by
 token id, the inverse of [`decode`](@ref).
+
+# Example
+
+```julia
+julia> voc = Vocabulary(TextConfig(), ["hello world"]; verbose=false);
+
+julia> encode(voc, Dict("hello" => 2))
+Dict{UInt32, Int64}(0x00000001 => 2)
+```
 """
 function encode(voc::Vocabulary, bow::Dict)
     Dict(token2id(voc, k) => v for (k, v) in bow)
@@ -72,6 +114,28 @@ end
 Builds a Tables.jl-compatible table (e.g., a `DataFrame`) with one row per token,
 using `TableConstructor` (e.g. `DataFrame`) as the row-table constructor. Columns are
 `token`, `ndocs`, and `occs`.
+
+# Example
+
+```julia
+julia> using DataFrames
+
+julia> corpus = ["hello world", "hello there", "the cat sat"];
+
+julia> voc = Vocabulary(TextConfig(), corpus; verbose=false);
+
+julia> table(voc, DataFrame)
+6×3 DataFrame
+ Row │ token   ndocs  occs
+     │ String  Int32  Int32
+─────┼──────────────────────
+   1 │ hello       2      2
+   2 │ world       1      1
+   3 │ there       1      1
+   4 │ the         1      1
+   5 │ cat         1      1
+   6 │ sat         1      1
+```
 """
 function table(voc::Vocabulary, TableConstructor)
     TableConstructor(; voc.token, voc.ndocs, voc.occs)
@@ -82,10 +146,22 @@ end
 
 Creates a [`Vocabulary`](@ref) directly from a list of tokens (a thesaurus), instead
 of tokenizing a corpus; every token is registered with `occs=1` and `ndocs=1`.
+
+# Example
+
+```julia
+julia> voc = vocabulary_from_thesaurus(TextConfig(), ["cat", "dog", "bird"]);
+
+julia> vocsize(voc)
+3
+
+julia> token2id(voc, "cat")
+0x00000001
+```
 """
 function vocabulary_from_thesaurus(textconfig::TextConfig, tokens::AbstractVector)
     n = length(tokens)
-    voc = Vocabulary(textconfig, n)
+    voc = Vocabulary(textconfig, n, n)
     for t in tokens
         push_token!(voc, t, 1, 1)
     end
@@ -101,6 +177,18 @@ hints based on `trainsize` (following Heaps' law). `trainsize` and `numtokens` m
 `0` when unknown ahead of time; use [`push_token!`](@ref) or [`tokenize_and_append!`](@ref)
 to fill it, or use [`Vocabulary(textconfig, corpus)`](@ref Vocabulary) to build it directly
 from a corpus.
+
+# Example
+
+```julia
+julia> voc = Vocabulary(TextConfig(), 0, 0);
+
+julia> TextSearch.push_token!(voc, "cat"; occs=1, ndocs=1)
+0x00000001
+
+julia> vocsize(voc)
+1
+```
 """
 function Vocabulary(textconfig::TextConfig, trainsize::Int64, numtokens::Int64)
     # n == 0 means unknown
@@ -127,6 +215,15 @@ Tokenizes `corpus` under `textconfig` and builds the resulting [`Vocabulary`](@r
 or an iterable/generator of documents (useful for corpora too large to fit in memory);
 in the generator case, documents are consumed and tokenized in batches of `buffsize`.
 `minbatch` controls the batch size used for multithreading (`0` picks an automatic value).
+
+# Example
+
+```julia
+julia> voc = Vocabulary(TextConfig(), ["hello world", "hello there"]; verbose=false);
+
+julia> vocsize(voc), trainsize(voc)
+(3, 2)
+```
 """
 function Vocabulary(textconfig::TextConfig, corpusgenerator; minbatch::Int=0, buffsize::Int=2^16, verbose::Bool=true)
     if corpusgenerator isa AbstractVector && length(corpusgenerator) <= buffsize
@@ -176,6 +273,17 @@ end
     tokenize_and_append!(voc::Vocabulary, corpus; minbatch=0)
 
 Parse each document in the given corpus and appends each token to the vocabulary.
+
+# Example
+
+```julia
+julia> voc = Vocabulary(TextConfig(), 0, 0);
+
+julia> tokenize_and_append!(voc, ["hello world", "hello there"]);
+
+julia> vocsize(voc)
+3
+```
 """
 function tokenize_and_append!(voc::Vocabulary, corpus; minbatch=0)
     l = Threads.SpinLock()
@@ -251,6 +359,15 @@ avgdoclen(voc::Vocabulary) = numtokens(voc) / trainsize(voc)
 
 Number of documents containing the token `tokenID` (`0` is out-of-vocabulary and yields
 `0` instead of erroring), or the whole per-token vector when called without a `tokenID`.
+
+# Example
+
+```julia
+julia> voc = Vocabulary(TextConfig(), ["hello world", "hello there"]; verbose=false);
+
+julia> ndocs(voc, token2id(voc, "hello"))
+2
+```
 """
 ndocs(voc::Vocabulary, tokenID::Integer) = tokenID == 0 ? zero(eltype(voc.ndocs)) : voc.ndocs[tokenID]
 
@@ -260,6 +377,15 @@ ndocs(voc::Vocabulary, tokenID::Integer) = tokenID == 0 ? zero(eltype(voc.ndocs)
 
 Total occurrences of the token `tokenID` across the corpus (`0` is out-of-vocabulary and
 yields `0` instead of erroring), or the whole per-token vector when called without a `tokenID`.
+
+# Example
+
+```julia
+julia> voc = Vocabulary(TextConfig(), ["hello world", "hello there"]; verbose=false);
+
+julia> occs(voc, token2id(voc, "hello"))
+2
+```
 """
 occs(voc::Vocabulary, tokenID::Integer) = tokenID == 0 ? zero(eltype(voc.occs)) : voc.occs[tokenID]
 
@@ -269,6 +395,15 @@ occs(voc::Vocabulary, tokenID::Integer) = tokenID == 0 ? zero(eltype(voc.occs)) 
 
 The token string for `tokenID` (`0` is out-of-vocabulary and yields `""` instead of
 erroring), or the whole token vector when called without a `tokenID`.
+
+# Example
+
+```julia
+julia> voc = Vocabulary(TextConfig(), ["hello world", "hello there"]; verbose=false);
+
+julia> token(voc, token2id(voc, "hello"))
+"hello"
+```
 """
 token(voc::Vocabulary, tokenID::Integer) = tokenID == 0 ? "" : voc.token[tokenID]
 
@@ -282,6 +417,15 @@ token(voc::Vocabulary, tokenID::Integer) = tokenID == 0 ? "" : voc.token[tokenID
 
 Registers `token` in `voc` if not already present (assigning it a new id), or accumulates
 `occs`/`ndocs` into its existing entry otherwise. Returns the token's id.
+
+# Example
+
+```julia
+julia> voc = Vocabulary(TextConfig(), 0, 0);
+
+julia> TextSearch.push_token!(voc, "cat"; occs=1, ndocs=1)
+0x00000001
+```
 """
 function push_token!(voc::Vocabulary, token, occs::Integer, ndocs::Integer)
     id = token2id(voc, token)

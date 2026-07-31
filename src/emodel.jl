@@ -19,6 +19,21 @@ abstract type CombineWeighting end
 A [`CombineWeighting`](@ref) that weights a token as `1 - entropy / maxent`: tokens that
 discriminate well between classes (low entropy) get a weight close to `1`, tokens spread
 uniformly across classes (entropy close to `maxent`) get a weight close to `0`.
+
+# Example
+
+```julia
+julia> corpus = ["me gusta", "me encanta", "no me gusta", "odio esto"];
+
+julia> labels = ["pos", "pos", "neg", "neg"];
+
+julia> voc = Vocabulary(TextConfig(), corpus; verbose=false);
+
+julia> model = VectorModel(EntropyWeighting(), TfWeighting(), voc, corpus, labels; mindocs=1, comb=NormalizedEntropy(), verbose=false);
+
+julia> vectorize(model, "me gusta")
+Dict{UInt32, Float32}(0x00000002 => 0.02782909, 0x00000001 => 0.9996127)
+```
 """
 struct NormalizedEntropy <: CombineWeighting end
 combine_weight(::NormalizedEntropy, model, tokenID, entropy, maxent)::Float32 = 1.0 - entropy / maxent
@@ -34,6 +49,21 @@ combine_weight(::PenalizeFewSamples, model, tokenID, entropy, maxent)::Float32 =
 Like [`NormalizedEntropy`](@ref), but additionally down-weights tokens seen in very few
 documents (low `ndocs`) via a sigmoid-like penalty on `log2(ndocs)`, so that rare tokens
 don't get an unduly high weight just because they appear in a single class.
+
+# Example
+
+```julia
+julia> corpus = ["me gusta", "me encanta", "no me gusta", "odio esto"];
+
+julia> labels = ["pos", "pos", "neg", "neg"];
+
+julia> voc = Vocabulary(TextConfig(), corpus; verbose=false);
+
+julia> model = VectorModel(EntropyWeighting(), TfWeighting(), voc, corpus, labels; mindocs=1, comb=SigmoidPenalizeFewSamples(), verbose=false);
+
+julia> vectorize(model, "me gusta")
+Dict{UInt32, Float32}(0x00000002 => 0.02269659, 0x00000001 => 0.99974245)
+```
 """
 struct SigmoidPenalizeFewSamples <: CombineWeighting end
 combine_weight(::SigmoidPenalizeFewSamples, model, tokenID, entropy, maxent)::Float32 = (1 - entropy/maxent) * (1-1/(1+log2(ndocs(model, tokenID))))
@@ -48,6 +78,21 @@ higher weight than tokens spread uniformly across all classes. Since it needs do
 labels, it is not built via the generic [`VectorModel(gw, lw, voc)`](@ref VectorModel)
 constructor; use [`VectorModel(::EntropyWeighting, lw, voc, corpus, labels)`](@ref
 VectorModel) instead.
+
+# Example
+
+```julia
+julia> corpus = ["me gusta", "me encanta", "no me gusta", "odio esto"];
+
+julia> labels = ["pos", "pos", "neg", "neg"];
+
+julia> voc = Vocabulary(TextConfig(), corpus; verbose=false);
+
+julia> model = VectorModel(EntropyWeighting(), TfWeighting(), voc, corpus, labels; verbose=false);
+
+julia> vectorize(model, "me gusta")
+Dict{UInt32, Float32}(0x00000001 => 1.0)
+```
 """
 struct EntropyWeighting <: GlobalWeighting end
 
@@ -90,6 +135,21 @@ resulting entropy-based weight.
   `AbstractVector` of per-class weights directly.
 - `comb`: the [`CombineWeighting`](@ref) strategy combining entropy and evidence into the
   final per-token weight.
+
+# Example
+
+```julia
+julia> corpus = ["me gusta", "me encanta", "no me gusta", "odio esto"];
+
+julia> labels = ["pos", "pos", "neg", "neg"];
+
+julia> voc = Vocabulary(TextConfig(), corpus; verbose=false);
+
+julia> model = VectorModel(EntropyWeighting(), TfWeighting(), voc, corpus, labels; mindocs=1, verbose=false);
+
+julia> vectorize(model, "me gusta")
+Dict{UInt32, Float32}(0x00000002 => 0.02782909, 0x00000001 => 0.9996127)
+```
 """
 function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, voc::Vocabulary, corpus::AbstractVector, labels::AbstractVector;
             mindocs=3,

@@ -9,6 +9,13 @@ Wraps the token list produced by [`tokenize`](@ref) for a single document. Behav
 an `AbstractVector{String}` (it supports indexing, iteration, `push!`, `append!`, etc.)
 and is the type consumed by [`bagofwords`](@ref)/[`bagofwords!`](@ref) and by
 [`Vocabulary`](@ref)-building functions.
+
+# Example
+
+```julia
+julia> collect(tokenize(TextConfig(), "Hello world!!"))
+["hello", "world", "!!"]
+```
 """
 struct TokenizedText{StringVector<:AbstractVector{String}}
     tokens::StringVector
@@ -48,6 +55,12 @@ and when these buffers are shared it is mandatory to create a copy of the result
 Change the default `copy` function to make an additional filtering of the tokens.
 You can also pass the `identity` function to avoid copying.
 
+# Example
+
+```julia
+julia> collect(tokenize(TextConfig(), "Hello world!!"))
+["hello", "world", "!!"]
+```
 """
 function tokenize(copy_::Function, textconfig::TextConfig, text::AbstractString, buff::TextSearchBuffer)
     normalize_text(textconfig, text, buff.normtext)
@@ -86,6 +99,13 @@ end
 Convenience method that normalizes `text` under `textconfig` (see
 [`normalize_text(config, text, output; limits)`](@ref normalize_text)) and returns the
 result as a `String` instead of writing into a caller-provided buffer.
+
+# Example
+
+```julia
+julia> normalize_text(TextConfig(), "Café!!")
+"cafe!!"
+```
 """
 function normalize_text(textconfig::TextConfig, text; limits::Bool=false)
     buff = take!(TEXT_SEARCH_CACHES)
@@ -103,6 +123,17 @@ end
     tokenize_corpus(copy_::Function, textconfig::TextConfig, arr; minbatch=0, verbose=true)
 
 Tokenize a list of texts. The `copy_` function is passed to [`tokenize`](@ref) as first argument.
+
+# Example
+
+```julia
+julia> corpus = ["hello world", "the cat sat"];
+
+julia> toks = tokenize_corpus(TextConfig(), corpus; verbose=false);
+
+julia> collect(toks[1])
+["hello", "world"]
+```
 """
 function tokenize_corpus(copy_::Function, textconfig::TextConfig, arr; minbatch::Int=0, verbose::Bool=true)
     n = length(arr)

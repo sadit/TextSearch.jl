@@ -16,6 +16,19 @@ uses a `BM25` internally to answer top-k queries efficiently.
 BM25 `k1`/`b` hyperparameters and the corpus' average document length, precomputed for
 faster scoring; `δ` is the BM25+ lower-bound correction term; `trainsize` is the number
 of documents the corpus statistics were computed from.
+
+# Example
+
+```julia
+julia> corpus = ["hello world", "hello there", "the cat sat"];
+
+julia> voc = Vocabulary(TextConfig(), corpus; verbose=false);
+
+julia> bm25 = BM25(voc);
+
+julia> bm25.trainsize
+3
+```
 """
 struct BM25
     #k1::Float32
@@ -48,6 +61,15 @@ end
 Creates a [`BM25`](@ref) scorer for a corpus of `trainsize` documents with average
 document length `avgdoclen`. `k1` controls term-frequency saturation, `b` controls
 document-length normalization, and `δ` is the BM25+ lower-bound correction.
+
+# Example
+
+```julia
+julia> bm25 = BM25(3, 3.5);
+
+julia> bm25.trainsize
+3
+```
 """
 function BM25(trainsize::Integer, avgdoclen::AbstractFloat; k1=1.2f0, b=0.75f0, δ=1f0)
     BM25( #k1, b,
@@ -64,6 +86,17 @@ end
 
 Creates a [`BM25`](@ref) scorer using the training size and average document length
 already computed in `voc` (see [`trainsize`](@ref) and [`avgdoclen`](@ref)).
+
+# Example
+
+```julia
+julia> corpus = ["hello world", "hello there", "the cat sat"];
+
+julia> voc = Vocabulary(TextConfig(), corpus; verbose=false);
+
+julia> BM25(voc).trainsize
+3
+```
 """
 BM25(voc::Vocabulary; k1=1.2f0, b=0.75f0, δ=1f0) = BM25(trainsize(voc), avgdoclen(voc); k1, b, δ)
 
@@ -72,6 +105,19 @@ BM25(voc::Vocabulary; k1=1.2f0, b=0.75f0, δ=1f0) = BM25(trainsize(voc), avgdocl
 
 Computes the BM25 relevance score of `doc` (a bag of words) for `query` (a bag of words),
 summing [`tokenscore`](@ref) over every query token present in `doc`. Higher is more relevant.
+
+# Example
+
+```julia
+julia> corpus = ["hello world", "hello there", "the cat sat"];
+
+julia> voc = Vocabulary(TextConfig(), corpus; verbose=false);
+
+julia> bm25 = BM25(voc);
+
+julia> bm25score(bm25, voc, bagofwords(voc, "hello"), bagofwords(voc, "hello world"))
+0.96917987f0
+```
 """
 function bm25score(bm25::BM25, voc::Vocabulary, query::Dict, doc::Dict)::Float32
     s = 0f0
@@ -94,6 +140,17 @@ Computes the BM25 contribution of a single token to a document's score, given th
 number of documents containing the token (`toknumdocs`, i.e. its document frequency),
 the document's length in tokens (`doclen`), and the token's frequency in the document
 (`tokfreqindoc`). Used internally by [`bm25score`](@ref) and [`BM25InvertedFile`](@ref) search.
+
+# Example
+
+```julia
+julia> corpus = ["hello world", "hello there", "the cat sat"];
+
+julia> voc = Vocabulary(TextConfig(), corpus; verbose=false);
+
+julia> tokenscore(BM25(voc), 2, 3, 1)
+0.8908208f0
+```
 """
 function tokenscore(bm25::BM25, toknumdocs, doclen, tokfreqindoc)
     idf = log(1f0 + (bm25.trainsize - toknumdocs + 0.5f0) / (toknumdocs + 0.5f0))

@@ -35,6 +35,29 @@ The `accept_posting_list` variant additionally receives a predicate called with 
 query token's posting list before scanning it, letting the caller skip lists (e.g. to
 implement stopword-like filtering at query time); it defaults to accepting every list.
 Returns `res`.
+
+# Example
+
+```julia
+julia> corpus = ["hello world", "hello there", "the cat sat"];
+
+julia> voc = Vocabulary(TextConfig(), corpus; verbose=false);
+
+julia> invfile = BM25InvertedFile(voc);
+
+julia> ctx = InvertedFileContext();
+
+julia> append_items!(invfile, ctx, corpus);
+
+julia> res = knnqueue(KnnSorted, 2);
+
+julia> search(invfile, ctx, "hello", res) do lst
+           true
+       end;
+
+julia> collect(IdView(res))
+UInt32[0x00000001, 0x00000002]
+```
 """
 function SimilaritySearch.search(accept_posting_list::Function, idx::BM25InvertedFile, ctx::InvertedFileContext, qtext::T, res::AbstractKnn) where {T<:Union{AbstractString,TokenizedText}}
     q = bagofwords(idx.voc, qtext)
