@@ -2,6 +2,23 @@
 
 export Vocabulary, occs, ndocs, token, vocsize, trainsize, numtokens, filter_tokens, tokenize_and_append!, merge_voc, update_voc!, vocabulary_from_thesaurus, token2id, encode, decode, table
 
+"""
+    Vocabulary
+
+Holds the token ⇄ id mapping produced while parsing a corpus, along with per-token
+occurrence and document-frequency counters. A `Vocabulary` is the entry point of the
+processing pipeline: it is built from a [`TextConfig`](@ref) and a corpus, and is
+later consumed by [`VectorModel`](@ref), [`BM25`](@ref), and [`bagofwords`](@ref).
+
+# Fields
+- `textconfig`: the [`TextConfig`](@ref) used to tokenize the corpus that produced this vocabulary.
+- `token`: `id -> token` string table.
+- `occs`: `id -> total number of occurrences` of the token across the corpus.
+- `ndocs`: `id -> number of documents` containing the token.
+- `token2id`: `token -> id` reverse mapping (`0` means "unknown token").
+- `trainsize`: number of documents used to build the vocabulary.
+- `numtokens`: total number of (non-unique) tokens seen while building the vocabulary.
+"""
 struct Vocabulary
     textconfig::TextConfig
     token::Vector{String}
@@ -22,20 +39,50 @@ function Base.show(io::IO, voc::Vocabulary; prefix="", indent="  ")
     show(io, voc.textconfig; prefix, indent)
 end
 
+"""
+    token2id(voc::Vocabulary, tok::AbstractString)::UInt32
+
+Looks up the id of `tok` in `voc`; returns `0` when `tok` is out of vocabulary.
+"""
 token2id(voc::Vocabulary, tok::AbstractString) = get(voc.token2id, tok, zero(UInt32))
 
+"""
+    decode(voc::Vocabulary, bow::Dict)
+
+Converts a `Dict` sparse vector indexed by token id (e.g., a [`BOW`](@ref)) into a
+`Dict` indexed by the corresponding token string.
+"""
 function decode(voc::Vocabulary, bow::Dict)
     Dict(voc.token[k] => v for (k, v) in bow)
 end
 
+"""
+    encode(voc::Vocabulary, bow::Dict)
+
+Converts a `Dict` sparse vector indexed by token string into a `Dict` indexed by
+token id, the inverse of [`decode`](@ref).
+"""
 function encode(voc::Vocabulary, bow::Dict)
     Dict(token2id(voc, k) => v for (k, v) in bow)
 end
 
+"""
+    table(voc::Vocabulary, TableConstructor)
+
+Builds a Tables.jl-compatible table (e.g., a `DataFrame`) with one row per token,
+using `TableConstructor` (e.g. `DataFrame`) as the row-table constructor. Columns are
+`token`, `ndocs`, and `occs`.
+"""
 function table(voc::Vocabulary, TableConstructor)
     TableConstructor(; voc.token, voc.ndocs, voc.occs)
 end
 
+"""
+    vocabulary_from_thesaurus(textconfig::TextConfig, tokens::AbstractVector)
+
+Creates a [`Vocabulary`](@ref) directly from a list of tokens (a thesaurus), instead
+of tokenizing a corpus; every token is registered with `occs=1` and `ndocs=1`.
+"""
 function vocabulary_from_thesaurus(textconfig::TextConfig, tokens::AbstractVector)
     n = length(tokens)
     voc = Vocabulary(textconfig, n)
@@ -49,7 +96,11 @@ end
 """
     Vocabulary(textconfig::TextConfig, trainsize::Int, numtokens::Int)
 
-Creates a `Vocabulary` struct
+Creates an empty `Vocabulary` (no tokens registered yet) preallocated with capacity
+hints based on `trainsize` (following Heaps' law). `trainsize` and `numtokens` may be
+`0` when unknown ahead of time; use [`push_token!`](@ref) or [`tokenize_and_append!`](@ref)
+to fill it, or use [`Vocabulary(textconfig, corpus)`](@ref Vocabulary) to build it directly
+from a corpus.
 """
 function Vocabulary(textconfig::TextConfig, trainsize::Int64, numtokens::Int64)
     # n == 0 means unknown
@@ -59,20 +110,24 @@ function Vocabulary(textconfig::TextConfig, trainsize::Int64, numtokens::Int64)
     sizehint!(voc.occs, vocsize)
     sizehint!(voc.ndocs, vocsize)
     sizehint!(voc.token2id, vocsize)
-    voc 
+    voc
 end
 
-"""
-    Vocabulary(textconfig, corpus; minbatch=0)
-
-Computes a vocabulary from a corpus using the TextConfig `textconfig`.
-"""
 function vocab_from_small_collection(textconfig::TextConfig, corpus::AbstractVector; minbatch::Int=0)
     voc = Vocabulary(textconfig, length(corpus), 0)
     tokenize_and_append!(voc, corpus; minbatch)
     voc
 end
 
+"""
+    Vocabulary(textconfig::TextConfig, corpus; minbatch=0, buffsize=2^16, verbose=true)
+
+Tokenizes `corpus` under `textconfig` and builds the resulting [`Vocabulary`](@ref).
+`corpus` can be any vector of documents (each document a string or a list of strings)
+or an iterable/generator of documents (useful for corpora too large to fit in memory);
+in the generator case, documents are consumed and tokenized in batches of `buffsize`.
+`minbatch` controls the batch size used for multithreading (`0` picks an automatic value).
+"""
 function Vocabulary(textconfig::TextConfig, corpusgenerator; minbatch::Int=0, buffsize::Int=2^16, verbose::Bool=true)
     if corpusgenerator isa AbstractVector && length(corpusgenerator) <= buffsize
         return vocab_from_small_collection(textconfig, corpusgenerator; minbatch)
@@ -161,18 +216,73 @@ end
 
 Base.length(voc::Vocabulary) = length(voc.occs)
 Base.eachindex(voc::Vocabulary) = eachindex(voc.occs)
+
+"""
+    vocsize(voc::Vocabulary)
+
+Number of unique tokens in `voc`.
+"""
 vocsize(voc::Vocabulary) = length(voc)
+
+"""
+    trainsize(voc::Vocabulary)
+
+Number of documents used to build `voc`.
+"""
 trainsize(voc::Vocabulary) = voc.trainsize[]
+
+"""
+    numtokens(voc::Vocabulary)
+
+Total number of (non-unique) tokens seen while building `voc`.
+"""
 numtokens(voc::Vocabulary) = voc.numtokens[]
+
+"""
+    avgdoclen(voc::Vocabulary)
+
+Average document length in tokens (`numtokens(voc) / trainsize(voc)`), used by [`BM25`](@ref).
+"""
 avgdoclen(voc::Vocabulary) = numtokens(voc) / trainsize(voc)
+
+"""
+    ndocs(voc::Vocabulary, tokenID::Integer)
+    ndocs(voc::Vocabulary)
+
+Number of documents containing the token `tokenID` (`0` is out-of-vocabulary and yields
+`0` instead of erroring), or the whole per-token vector when called without a `tokenID`.
+"""
 ndocs(voc::Vocabulary, tokenID::Integer) = tokenID == 0 ? zero(eltype(voc.ndocs)) : voc.ndocs[tokenID]
+
+"""
+    occs(voc::Vocabulary, tokenID::Integer)
+    occs(voc::Vocabulary)
+
+Total occurrences of the token `tokenID` across the corpus (`0` is out-of-vocabulary and
+yields `0` instead of erroring), or the whole per-token vector when called without a `tokenID`.
+"""
 occs(voc::Vocabulary, tokenID::Integer) = tokenID == 0 ? zero(eltype(voc.occs)) : voc.occs[tokenID]
+
+"""
+    token(voc::Vocabulary, tokenID::Integer)
+    token(voc::Vocabulary)
+
+The token string for `tokenID` (`0` is out-of-vocabulary and yields `""` instead of
+erroring), or the whole token vector when called without a `tokenID`.
+"""
 token(voc::Vocabulary, tokenID::Integer) = tokenID == 0 ? "" : voc.token[tokenID]
 
 @inline occs(voc::Vocabulary) = voc.occs
 @inline ndocs(voc::Vocabulary) = voc.ndocs
 @inline token(voc::Vocabulary) = voc.token
 
+"""
+    push_token!(voc::Vocabulary, token, occs::Integer, ndocs::Integer)
+    push_token!(voc::Vocabulary, token; occs::Integer=0, ndocs::Integer=0)
+
+Registers `token` in `voc` if not already present (assigning it a new id), or accumulates
+`occs`/`ndocs` into its existing entry otherwise. Returns the token's id.
+"""
 function push_token!(voc::Vocabulary, token, occs::Integer, ndocs::Integer)
     id = token2id(voc, token)
 

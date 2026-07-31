@@ -2,8 +2,16 @@
 
 export TokenizedText, tokenize, tokenize_corpus, qgrams, unigrams, filter_tokens!
 
+"""
+    TokenizedText(tokens::AbstractVector{String})
+
+Wraps the token list produced by [`tokenize`](@ref) for a single document. Behaves like
+an `AbstractVector{String}` (it supports indexing, iteration, `push!`, `append!`, etc.)
+and is the type consumed by [`bagofwords`](@ref)/[`bagofwords!`](@ref) and by
+[`Vocabulary`](@ref)-building functions.
+"""
 struct TokenizedText{StringVector<:AbstractVector{String}}
-    tokens::StringVector 
+    tokens::StringVector
 end
 
 @inline Base.getindex(T::TokenizedText, i::Integer) = T.tokens[i]
@@ -72,6 +80,13 @@ function tokenize(copy_::Function, textconfig::TextConfig, text)
     end
 end
 
+"""
+    normalize_text(textconfig::TextConfig, text; limits::Bool=false)
+
+Convenience method that normalizes `text` under `textconfig` (see
+[`normalize_text(config, text, output; limits)`](@ref normalize_text)) and returns the
+result as a `String` instead of writing into a caller-provided buffer.
+"""
 function normalize_text(textconfig::TextConfig, text; limits::Bool=false)
     buff = take!(TEXT_SEARCH_CACHES)
     empty!(buff)

@@ -64,9 +64,10 @@ bagofwords(voc::Vocabulary, messages) = bagofwords_(copy, voc, messages)
 bagofwords(voc::Vocabulary, messages::BOW) = messages
 
 """
-    bagofwords_corpus(voc::Vocabulary, corpus::AbstractVector; minbatch=0)
+    bagofwords_corpus(voc::Vocabulary, corpus::AbstractVector; minbatch=0, verbose=true)
 
-Computes a list of bag of words from a corpus
+Computes a list of bag of words ([`BOW`](@ref)s) from a corpus, one per document,
+in parallel across threads.
 """
 bagofwords_corpus(voc::Vocabulary, corpus::AbstractVector{BOW}; minbatch=0, verbose=true) = corpus
 function bagofwords_corpus(voc::Vocabulary, corpus::AbstractVector; minbatch=0, verbose=true)

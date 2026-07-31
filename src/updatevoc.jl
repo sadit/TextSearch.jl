@@ -42,9 +42,9 @@ function filter_tokens!(voc::Vocabulary, text::TokenizedText)
 end
 
 """
-    filter_tokens!(voc::Vocabulary, text::TokenizedText)
+    filter_tokens!(voc::Vocabulary, arr::AbstractVector{TokenizedText})
 
-Removes tokens from text array
+Applies [`filter_tokens!(voc, text)`](@ref filter_tokens!) to every tokenized document in `arr`.
 """
 function filter_tokens!(voc::Vocabulary, arr::AbstractVector{TokenizedText})
     for t in arr

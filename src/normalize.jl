@@ -18,6 +18,12 @@ const RE_USER = r"""@[^;:,.@#&\\\-\"'/:\*\(\)\[\]\¿\?\¡\!\{\}~\<\>\|\s]+"""
 const RE_URL = r"(http|ftp|https)://\S+"
 const RE_NUM = r"[-+]?(\d+\.?\d*)|(\.\d+)"
 
+"""
+    isemoji(c::Char)::Bool
+
+Tests whether `c` is one of the emoji characters known to TextSearch (loaded from
+`emojis.txt`). Used by [`normalize_text`](@ref) when `TextConfig`'s `group_emo` option is set.
+"""
 function isemoji(c::Char)
     c in EMOJIS
 end
