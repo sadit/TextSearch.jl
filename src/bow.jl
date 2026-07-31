@@ -4,12 +4,9 @@ export bagofwords_corpus, bagofwords
 
 """
     bagofwords!(bow::BOW, voc::Vocabulary, tokenlist::TokenizedText)
-    bagofwords!(buff::TextSearchBuffer, voc::Vocabulary, text)
-    bagofwords(voc::Vocabulary, messages)
 
-Creates a bag of words from the given text (a string or a list of strings).
-If bow is given then updates the bag with the text.
-When `config` is given, the text is parsed according to it.
+Accumulates the tokens in `tokenlist` into `bow` (a [`BOW`](@ref)), looking up each
+token's id in `voc`; out-of-vocabulary tokens are skipped. Returns `bow`.
 """
 function bagofwords!(bow::BOW, voc::Vocabulary, tokenlist::TokenizedText)
     for token in tokenlist
@@ -33,10 +30,10 @@ function bagofwords_(copy_::Function, voc::Vocabulary, text)
 end
 
 """
-    bagofwords(voc::Vocabulary, messages)
-    bagofwords!(buff, voc::Vocabulary, messages)
+    bagofwords!(buff::TextSearchBuffer, voc::Vocabulary, messages)
 
-Computes a bag of words from messages
+Computes a bag of words from a multi-field document (a list of texts), storing the
+result in `buff.bow`. See [`bagofwords`](@ref) for the non-mutating version.
 """
 function bagofwords!(buff::TextSearchBuffer, voc::Vocabulary, messages)
     empty!(buff.bow)
@@ -60,6 +57,13 @@ function bagofwords!(buff::TextSearchBuffer, voc::Vocabulary, tokens::TokenizedT
     buff
 end
 
+"""
+    bagofwords(voc::Vocabulary, messages)
+
+Tokenizes `messages` (a string or a list of strings) under `voc`'s [`TextConfig`](@ref)
+and returns its bag of words ([`BOW`](@ref)): a `token id => occurrence count` mapping.
+An already-computed [`BOW`](@ref) is returned unchanged.
+"""
 bagofwords(voc::Vocabulary, messages) = bagofwords_(copy, voc, messages)
 bagofwords(voc::Vocabulary, messages::BOW) = messages
 
