@@ -79,12 +79,40 @@ struct BinaryGlobalWeighting <: GlobalWeighting end
 ##
 #####
 """
-    Model
+    TextModel
 
-An abstract type that represents a weighting model
+Abstract type for text-to-vector weighting models (see [`VectorModel`](@ref)).
 """
 abstract type TextModel end
 
+"""
+    VectorModel{_G<:GlobalWeighting, _L<:LocalWeighting}
+
+Combines a [`Vocabulary`](@ref) with a local/global term-weighting scheme
+(e.g. [`TfWeighting`](@ref)+[`IdfWeighting`](@ref) for classical TF-IDF) to turn
+bags of words into weighted sparse vectors (`SVEC`) via [`vectorize`](@ref)/[`vectorize!`](@ref).
+Build one with [`VectorModel(gw, lw, voc)`](@ref VectorModel).
+
+# Fields
+- `global_weighting`: the [`GlobalWeighting`](@ref) scheme (e.g. IDF), applied per-token, corpus-wide.
+- `local_weighting`: the [`LocalWeighting`](@ref) scheme (e.g. TF), applied per-token, per-document.
+- `voc`: the underlying [`Vocabulary`](@ref).
+- `maxoccs`: maximum per-token occurrence count in `voc`, used by some local weightings.
+- `weight`: precomputed per-token global weight (`weight[tokenID]`).
+
+# Example
+
+```julia
+julia> corpus = ["hello world", "hello there", "the cat sat"];
+
+julia> voc = Vocabulary(TextConfig(), corpus; verbose=false);
+
+julia> model = VectorModel(IdfWeighting(), TfWeighting(), voc);
+
+julia> vectorize(model, "hello world")
+Dict{UInt32, Float32}(0x00000002 => 0.9293994, 0x00000001 => 0.36907572)
+```
+"""
 mutable struct VectorModel{_G<:GlobalWeighting, _L<:LocalWeighting} <: TextModel
     global_weighting::_G
     local_weighting::_L
@@ -102,6 +130,27 @@ function Base.show(io::IO, model::VectorModel; prefix="", indent="  ")
     show(io, model.voc; prefix, indent)
 end
 
+"""
+    VectorModel(gw::GlobalWeighting, lw::LocalWeighting, voc::Vocabulary; weight=nothing)
+
+Creates a [`VectorModel`](@ref) for the given vocabulary `voc` using the local weighting
+`lw` (e.g. [`TfWeighting`](@ref)) and global weighting `gw` (e.g. [`IdfWeighting`](@ref)).
+The per-token global weight vector is computed from `voc` unless `weight` is given
+explicitly (e.g. when reusing weights computed elsewhere, such as [`EntropyWeighting`](@ref)).
+
+# Example
+
+```julia
+julia> corpus = ["hello world", "hello there", "the cat sat"];
+
+julia> voc = Vocabulary(TextConfig(), corpus; verbose=false);
+
+julia> model = VectorModel(IdfWeighting(), TfWeighting(), voc);
+
+julia> length(model.weight)
+6
+```
+"""
 function VectorModel(gw::GlobalWeighting, lw::LocalWeighting, voc::Vocabulary; weight=nothing)
     vocsize(voc) > 0 || error("empty vocabulary")
     maxoccs = convert(Int32, maximum(voc.occs))
@@ -132,6 +181,37 @@ end
 @inline ndocs(model::VectorModel) = ndocs(model.voc)
 @inline token(model::VectorModel) = token(model.voc)
 
+"""
+    table(model::VectorModel, TableConstructor)
+
+Builds a Tables.jl-compatible table (e.g., a `DataFrame`) with one row per token,
+using `TableConstructor` (e.g. `DataFrame`) as the row-table constructor. Columns are
+`token`, `ndocs`, `occs`, and `weight`.
+
+# Example
+
+```julia
+julia> using DataFrames
+
+julia> corpus = ["hello world", "hello there", "the cat sat"];
+
+julia> voc = Vocabulary(TextConfig(), corpus; verbose=false);
+
+julia> model = VectorModel(IdfWeighting(), TfWeighting(), voc);
+
+julia> table(model, DataFrame)
+6×4 DataFrame
+ Row │ token   ndocs  occs   weight
+     │ String  Int32  Int32  Float32
+─────┼────────────────────────────────
+   1 │ hello       2      2  0.485427
+   2 │ world       1      1  1.22239
+   3 │ there       1      1  1.22239
+   4 │ the         1      1  1.22239
+   5 │ cat         1      1  1.22239
+   6 │ sat         1      1  1.22239
+```
+"""
 function table(model::VectorModel, TableConstructor)
     TableConstructor(; token=token(model), ndocs=ndocs(model), occs=occs(model), weight=weight(model))
 end
@@ -148,6 +228,26 @@ function Base.getindex(model::VectorModel, tokenID::Integer)
     end
 end
 
+"""
+    filter_tokens(pred::Function, model::VectorModel)
+
+Returns a copy of `model` reduced to the tokens for which `pred(t)` is `true`, where
+`t` is a `(; id, occs, ndocs, weight, token)` named tuple (see also
+[`filter_tokens(pred, voc::Vocabulary)`](@ref filter_tokens)).
+
+# Example
+
+```julia
+julia> corpus = ["hello world", "hello there", "the cat sat"];
+
+julia> voc = Vocabulary(TextConfig(), corpus; verbose=false);
+
+julia> model = VectorModel(IdfWeighting(), TfWeighting(), voc);
+
+julia> vocsize(filter_tokens(t -> t.ndocs >= 2, model))
+1
+```
+"""
 function filter_tokens(pred::Function, model::VectorModel)
     voc = model.voc
     V = Vocabulary(voc.textconfig, trainsize(voc), numtokens(voc))
@@ -196,9 +296,29 @@ function vectorize_!(buff::TextSearchBuffer, model::VectorModel{G_,L_}, bow::BOW
 end
 
 """
-    vectorize!(buff::TextSearchBuffer, model::VectorModel{G_,L_}, bow::BOW; normalize=true, minweight=1e-9) where {G_,L_}
+    vectorize!(buff::TextSearchBuffer, model::VectorModel, text; normalize=true, minweight=1e-6)
 
-Computes a weighted vector using the given bag of words and the specified weighting scheme.
+Tokenizes `text`, computes its bag of words, and weights it using `model`'s local/global
+weighting scheme, storing the result in `buff.vec` (a [`SVEC`](@ref)); entries with a
+weight below `minweight` are dropped, and the result is L2-normalized unless
+`normalize=false`. Returns `buff`. See [`vectorize`](@ref) for a non-mutating version.
+
+# Example
+
+```julia
+julia> corpus = ["hello world", "hello there", "the cat sat"];
+
+julia> voc = Vocabulary(TextConfig(), corpus; verbose=false);
+
+julia> model = VectorModel(IdfWeighting(), TfWeighting(), voc);
+
+julia> buff = TextSearch.TextSearchBuffer();
+
+julia> TextSearch.vectorize!(buff, model, "hello world");
+
+julia> buff.vec
+Dict{UInt32, Float32}(0x00000002 => 0.9293994, 0x00000001 => 0.36907572)
+```
 """
 function vectorize!(buff::TextSearchBuffer, model::VectorModel, text; normalize=true, minweight=1e-6)
     empty!(buff)
@@ -206,6 +326,25 @@ function vectorize!(buff::TextSearchBuffer, model::VectorModel, text; normalize=
     vectorize_!(buff, model, buff.bow; normalize, minweight)
 end
 
+"""
+    vectorize(model::VectorModel, text; normalize=true, minweight=1e-6)
+
+Computes the weighted sparse vector ([`SVEC`](@ref)) representation of `text` under
+`model`. `text` can be a string or a list of strings (a multi-field document).
+
+# Example
+
+```julia
+julia> corpus = ["hello world", "hello there", "the cat sat"];
+
+julia> voc = Vocabulary(TextConfig(), corpus; verbose=false);
+
+julia> model = VectorModel(IdfWeighting(), TfWeighting(), voc);
+
+julia> vectorize(model, "hello world")
+Dict{UInt32, Float32}(0x00000002 => 0.9293994, 0x00000001 => 0.36907572)
+```
+"""
 function vectorize(model::VectorModel, text; normalize=true, minweight=1e-6)
     buff = take!(TEXT_SEARCH_CACHES)
     try
@@ -216,6 +355,26 @@ function vectorize(model::VectorModel, text; normalize=true, minweight=1e-6)
     end
 end
 
+"""
+    vectorize_corpus(model::VectorModel, corpus; normalize=true, minweight=1e-6, minbatch=0, verbose=true)
+
+Computes the [`vectorize`](@ref) representation of every document in `corpus`,
+processed in parallel across threads (`minbatch` controls the batch size, `0` picks an
+automatic value).
+
+# Example
+
+```julia
+julia> corpus = ["hello world", "hello there", "the cat sat"];
+
+julia> voc = Vocabulary(TextConfig(), corpus; verbose=false);
+
+julia> model = VectorModel(IdfWeighting(), TfWeighting(), voc);
+
+julia> vectorize_corpus(model, corpus; verbose=false)[1]
+Dict{UInt32, Float32}(0x00000002 => 0.9293994, 0x00000001 => 0.36907572)
+```
+"""
 function vectorize_corpus(model::VectorModel, corpus; normalize=true, minweight=1e-6, minbatch=0, verbose=true)
     corpus = collect(corpus)
     n = length(corpus)

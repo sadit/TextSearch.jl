@@ -50,6 +50,17 @@ Base.minimum(voc::Dict) = first(findmin(voc))
     normalize!(bow::Dict)
 
 Inplace normalization of `bow`
+
+# Example
+
+```julia
+julia> using LinearAlgebra
+
+julia> a = Dict{UInt32,Float32}(1 => 3.0, 2 => 4.0);
+
+julia> normalize!(a)
+Dict{UInt32, Float32}(0x00000002 => 0.8, 0x00000001 => 0.6)
+```
 """
 function normalize!(bow::Dict)
     s = one(valtype(bow)) / norm(bow)
@@ -121,6 +132,15 @@ end
     dot(a::Dict, b::Dict)
 
 Computes the dot product for two Dict vectors
+
+# Example
+
+```julia
+julia> using LinearAlgebra
+
+julia> dot(Dict{UInt32,Float32}(1 => 0.6, 2 => 0.8), Dict{UInt32,Float32}(2 => 1.0))
+0.8f0
+```
 """
 function dot(a::Dict, b::Dict)
     if length(b) < length(a)
@@ -140,6 +160,15 @@ end
     norm(a::Dict)
 
 Computes a normalized Dict vector
+
+# Example
+
+```julia
+julia> using LinearAlgebra
+
+julia> norm(Dict{UInt32,Float32}(1 => 0.6, 2 => 0.8))
+1.0f0
+```
 """
 function norm(a::Dict)
     s = zero(valtype(a))
@@ -166,6 +195,15 @@ end
     add!(a::Dict{Ti,Tv}, b::Pair{Ti,Tv}) where {Ti,Tv<:Real}
 
 Updates `a` to the sum of `a+b`
+
+# Example
+
+```julia
+julia> a = Dict{UInt32,Float32}(1 => 0.6, 2 => 0.8);
+
+julia> TextSearch.add!(a, Dict{UInt32,Float32}(2 => 0.5))
+Dict{UInt32, Float32}(0x00000002 => 1.3, 0x00000001 => 0.6)
+```
 """
 function add!(a::Dict{Ti,Tv}, b::Dict{Ti,Tv}) where {Ti,Tv<:Real}
     for (k, w) in b
@@ -212,6 +250,13 @@ end
     centroid(cluster::AbstractVector{<:Dict})
 
 Computes a centroid of the given list of Dict vectors
+
+# Example
+
+```julia
+julia> centroid([Dict{UInt32,Float32}(1 => 0.6, 2 => 0.8), Dict{UInt32,Float32}(2 => 1.0)])
+Dict{UInt32, Float32}(0x00000002 => 0.9486834, 0x00000001 => 0.3162278)
+```
 """
 function centroid(cluster::AbstractVector{<:Dict})
     normalize!(sum(cluster))
@@ -222,6 +267,13 @@ end
     +(a::Dict, b::Pair)
 
 Computes the sum of `a` and `b`
+
+# Example
+
+```julia
+julia> Dict{UInt32,Float32}(1 => 0.6, 2 => 0.8) + Dict{UInt32,Float32}(2 => 1.0)
+Dict{UInt32, Float32}(0x00000002 => 1.8, 0x00000001 => 0.6)
+```
 """
 function +(a::Dict{Ti,Tv}, b::Dict{Ti,Tv}) where {Ti,Tv<:Real}
     if length(a) < length(b)
@@ -249,6 +301,13 @@ end
     -(a::Dict{Ti,Tv}, b::Dict{Ti,Tv}) where {Ti,Tv<:Real}
 
 Substracts of `b` of `a`
+
+# Example
+
+```julia
+julia> Dict{UInt32,Float32}(1 => 0.6, 2 => 0.8) - Dict{UInt32,Float32}(2 => 1.0)
+Dict{UInt32, Float32}(0x00000002 => -0.19999999, 0x00000001 => 0.6)
+```
 """
 function -(a::Dict{Ti,Tv}, b::Dict{Ti,Tv}) where {Ti,Tv<:Real}
     c = copy(a)
@@ -267,6 +326,16 @@ end
     *(a::Dict{K, V}, b::F) where K where {V<:Real} where {F<:Real}
 
 Computes the element-wise product of a and b
+
+# Example
+
+```julia
+julia> Dict{UInt32,Float32}(1 => 0.6, 2 => 0.8) * Dict{UInt32,Float32}(2 => 1.0)
+Dict{UInt32, Float32}(0x00000002 => 0.8)
+
+julia> Dict{UInt32,Float32}(1 => 0.6, 2 => 0.8) * 2.0
+Dict{UInt32, Float32}(0x00000002 => 1.6, 0x00000001 => 1.2)
+```
 """
 function *(a::Dict{Ti,Tv}, b::Dict{Ti,Tv}) where {Ti,Tv<:Real}
     if length(b) < length(a)
@@ -303,6 +372,13 @@ end
     /(a::Dict{K, V}, b::F) where K where {V<:Real} where {F<:Real}
 
 Computes the element-wise division of a and b
+
+# Example
+
+```julia
+julia> Dict{UInt32,Float32}(1 => 0.6, 2 => 0.8) / 2.0
+Dict{UInt32, Float32}(0x00000002 => 0.4, 0x00000001 => 0.3)
+```
 """
 function /(a::Dict{K,V}, b::F) where K where {V<:Real} where {F<:Real}
     a * (1.0 / b)
@@ -316,6 +392,12 @@ Computes the cosine distance between two Dict sparse vectors
 
 It supposes that bags are normalized (see `normalize!` function)
 
+# Example
+
+```julia
+julia> evaluate(NormCosine(), Dict{UInt32,Float32}(1 => 0.6, 2 => 0.8), Dict{UInt32,Float32}(2 => 1.0))
+0.19999998807907104
+```
 """
 function evaluate(::NormCosine, a::Dict, b::Dict)::Float64
     1.0 - dot(a, b)
@@ -324,8 +406,15 @@ end
 """
     evaluate(::Cosine, a::Dict, b::Dict)::Float64
 
-Computes the cosine distance between two Dict sparse vectors
+Computes the cosine distance between two Dict sparse vectors (unlike `NormCosine`,
+`a`/`b` need not be pre-normalized).
 
+# Example
+
+```julia
+julia> evaluate(Cosine(), Dict{UInt32,Float32}(1 => 3.0, 2 => 4.0), Dict{UInt32,Float32}(2 => 1.0))
+0.19999998807907104
+```
 """
 function evaluate(::Cosine, a::Dict, b::Dict)::Float64
     1.0 - full_cosine(a, b)
@@ -340,6 +429,12 @@ Computes the angle  between two Dict sparse vectors
 
 It supposes that all bags are normalized (see `normalize!` function)
 
+# Example
+
+```julia
+julia> evaluate(NormAngle(), Dict{UInt32,Float32}(1 => 0.6, 2 => 0.8), Dict{UInt32,Float32}(2 => 1.0))
+0.6435011029243469
+```
 """
 function evaluate(::NormAngle, a::Dict, b::Dict)::Float64
     d = dot(a, b)
@@ -358,8 +453,15 @@ end
 """
     evaluate(::Angle, a::Dict, b::Dict)::Float64
 
-Computes the angle between two Dict sparse vectors
+Computes the angle between two Dict sparse vectors (unlike `NormAngle`, `a`/`b`
+need not be pre-normalized).
 
+# Example
+
+```julia
+julia> evaluate(Angle(), Dict{UInt32,Float32}(1 => 3.0, 2 => 4.0), Dict{UInt32,Float32}(2 => 1.0))
+0.6435010889250692
+```
 """
 function evaluate(::Angle, a::Dict, b::Dict)::Float64
     d = full_cosine(a, b)

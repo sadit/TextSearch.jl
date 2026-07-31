@@ -22,10 +22,42 @@ function Intersections.onmatch!(output::BM25InvFileOutput, L::T, P, m::Int) wher
 end
 
 """
-  search(accept_posting_list::Function, idx::BM25InvertedFile, ctx::InvertedFileContext, qtext::AbstractString, res::AbstractKnn
-  search(idx::BM25InvertedFile, ctx::InvertedFileContext, qtext::AbstractString, res::AbstractKnn
+    search(idx::BM25InvertedFile, ctx::InvertedFileContext, qtext, res::AbstractKnn)
+    search(accept_posting_list::Function, idx::BM25InvertedFile, ctx::InvertedFileContext, qtext, res::AbstractKnn; t::Int=1)
 
-Find candidates for solving query `Q` using `idx`. It calls `callback` on each candidate `(docID, dist)`
+Solves a top-k query over `idx` for `qtext` (raw text, [`TokenizedText`](@ref), or an
+already-computed bag of words), accumulating matches into `res` (an `AbstractKnn`, e.g.
+`KnnResult`/`KnnSorted`). Documents are ranked by BM25 score (stored internally as a
+negative value in `res`, so lower "distance" still means better match, consistent with
+`SimilaritySearch.jl`'s convention).
+
+The `accept_posting_list` variant additionally receives a predicate called with each
+query token's posting list before scanning it, letting the caller skip lists (e.g. to
+implement stopword-like filtering at query time); it defaults to accepting every list.
+Returns `res`.
+
+# Example
+
+```julia
+julia> corpus = ["hello world", "hello there", "the cat sat"];
+
+julia> voc = Vocabulary(TextConfig(), corpus; verbose=false);
+
+julia> invfile = BM25InvertedFile(voc);
+
+julia> ctx = InvertedFileContext();
+
+julia> append_items!(invfile, ctx, corpus);
+
+julia> res = knnqueue(KnnSorted, 2);
+
+julia> search(invfile, ctx, "hello", res) do lst
+           true
+       end;
+
+julia> collect(IdView(res))
+UInt32[0x00000001, 0x00000002]
+```
 """
 function SimilaritySearch.search(accept_posting_list::Function, idx::BM25InvertedFile, ctx::InvertedFileContext, qtext::T, res::AbstractKnn) where {T<:Union{AbstractString,TokenizedText}}
     q = bagofwords(idx.voc, qtext)

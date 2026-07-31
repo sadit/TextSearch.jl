@@ -8,6 +8,13 @@ export dvec, sparse_coo, sparse
     dvec(x::AbstractSparseVector)
 
 Converts an sparse vector into a dict-based sparse vector
+
+# Example
+
+```julia
+julia> dvec(sparsevec(Dict{UInt32,Float32}(1 => 0.5, 3 => 0.2)))
+Dict{UInt32, Float32}(0x00000003 => 0.2, 0x00000001 => 0.5)
+```
 """
 function dvec(x::AbstractSparseVector)
     Dict{eltype(x.nzind),eltype(x.nzval)}(t => v for (t, v) in zip(x.nzind, x.nzval))
@@ -17,6 +24,14 @@ end
     sparsevec(vec::Dict{Ti,Tv}, m=0) where {Ti<:Integer,Tv<:Number}
 
 Creates a sparse vector from a Dict-based sparse vector
+
+# Example
+
+```julia
+julia> sparsevec(Dict{UInt32,Float32}(1 => 0.5, 3 => 0.2))
+  [1]  =  0.5
+  [3]  =  0.2
+```
 """
 function sparsevec(vec::Dict{Ti,Tv}, m::Integer=0) where {Ti<:Integer,Tv<:Number}
     I = Ti[]
@@ -43,6 +58,17 @@ end
     sparse_coo(cols::AbstractVector{<:Dict}, minweight=1e-9)
 
 Creates a sparse matrix from an array of Dict sparse vectors.
+
+# Example
+
+```julia
+julia> cols = [Dict{UInt32,Float32}(1 => 0.5), Dict{UInt32,Float32}(2 => 0.8)];
+
+julia> Matrix(sparse(cols))
+2×2 Matrix{Float32}:
+ 0.5  0.0
+ 0.0  0.8
+```
 """
 function sparse_coo(cols::AbstractVector{S}, minweight=1e-9) where {S<:Dict}
     I = keytype(S)[]

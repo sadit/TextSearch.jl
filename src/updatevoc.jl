@@ -6,6 +6,19 @@ Update `voc` vocabulary using another vocabulary. Optionally a predicate can be 
 
 Note 1: `corpuslen` remains unchanged (the structure is immutable and a new `Vocabulary` should be created to update this field).
 Note 2: Both `voc` and `another` vocabularies should had been created with a _compatible_ [`TextConfig`](@ref) to be able to work on them.
+
+# Example
+
+```julia
+julia> cfg = TextConfig();
+
+julia> voc = Vocabulary(cfg, 0, 0);
+
+julia> update_voc!(voc, Vocabulary(cfg, ["hello world"]; verbose=false));
+
+julia> vocsize(voc)
+2
+```
 """
 update_voc!(voc::Vocabulary, another::Vocabulary) = update_voc!(t->true, voc, another)
 
@@ -26,6 +39,17 @@ end
     filter_tokens!(voc::Vocabulary, text::TokenizedText)
 
 Removes tokens from a given tokenized text based using the valid vocabulary
+
+# Example
+
+```julia
+julia> voc = Vocabulary(TextConfig(), ["hello world"]; verbose=false);
+
+julia> tks = tokenize(TextConfig(), "hello unknownword world");
+
+julia> filter_tokens!(voc, tks); collect(tks)
+["hello", "world"]
+```
 """
 function filter_tokens!(voc::Vocabulary, text::TokenizedText)
     j = 0
@@ -42,9 +66,9 @@ function filter_tokens!(voc::Vocabulary, text::TokenizedText)
 end
 
 """
-    filter_tokens!(voc::Vocabulary, text::TokenizedText)
+    filter_tokens!(voc::Vocabulary, arr::AbstractVector{TokenizedText})
 
-Removes tokens from text array
+Applies [`filter_tokens!(voc, text)`](@ref filter_tokens!) to every tokenized document in `arr`.
 """
 function filter_tokens!(voc::Vocabulary, arr::AbstractVector{TokenizedText})
     for t in arr
@@ -61,6 +85,19 @@ end
 Merges two or more vocabularies into a new one. A predicate function can be used to filter token entries.
 
 Note: All vocabularies should had been created with a _compatible_ [`TextConfig`](@ref) to be able to work on them.
+
+# Example
+
+```julia
+julia> cfg = TextConfig();
+
+julia> voc1 = Vocabulary(cfg, ["hello world"]; verbose=false);
+
+julia> voc2 = Vocabulary(cfg, ["hello there"]; verbose=false);
+
+julia> vocsize(merge_voc(voc1, voc2))
+3
+```
 """
 merge_voc(voc1::Vocabulary, voc2::Vocabulary, voclist...) = merge_voc(x->true, voc1, voc2, voclist...)
 
@@ -86,6 +123,17 @@ end
     filter_tokens(pred::Function, voc::Vocabulary)
 
 Returns a copy of reduced vocabulary based on evaluating `pred` function for each entry in `voc`
+
+# Example
+
+```julia
+julia> voc = Vocabulary(TextConfig(), ["hello world", "hello there"]; verbose=false);
+
+julia> voc2 = filter_tokens(t -> t.ndocs >= 2, voc);
+
+julia> vocsize(voc2)
+1
+```
 """
 function filter_tokens(pred::Function, voc::Vocabulary)
     V = Vocabulary(voc.textconfig, trainsize(voc), numtokens(voc))

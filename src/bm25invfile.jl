@@ -9,9 +9,46 @@ using StatsBase
 
 
 """
-    struct BM25InvertedFile <: AbstractInvertedFile
+    BM25InvertedFile{AdjType<:AbstractAdjList} <: AbstractInvertedFile
 
-# Parameters
+An inverted-file index (built on top of `InvertedFiles.jl`) that answers approximate/exact
+top-k queries ranked by BM25 relevance. Build it with [`BM25InvertedFile(voc)`](@ref
+BM25InvertedFile), populate it with [`append_items!`](@ref)/[`push_item!`](@ref), and
+query it with `search` (from `SimilaritySearch.jl`).
+
+# Fields
+- `voc`: the [`Vocabulary`](@ref) shared by every indexed document (also used to
+  tokenize/encode query text).
+- `bm25`: the [`BM25`](@ref) scorer used to rank matches.
+- `adj`: the adjacency list of posting lists (one per token id), mapping each token to
+  the documents containing it and their term frequency.
+- `doclens`: number of tokens per indexed document.
+
+# Example
+
+```julia
+julia> using SimilaritySearch
+
+julia> corpus = ["hello world", "hello there", "the cat sat"];
+
+julia> voc = Vocabulary(TextConfig(), corpus; verbose=false);
+
+julia> invfile = BM25InvertedFile(voc);
+
+julia> ctx = InvertedFileContext();
+
+julia> append_items!(invfile, ctx, corpus);
+
+julia> length(invfile)
+3
+
+julia> res = knnqueue(KnnSorted, 2);
+
+julia> search(invfile, ctx, "hello", res);
+
+julia> collect(IdView(res))
+UInt32[0x00000001, 0x00000002]
+```
 """
 struct BM25InvertedFile{AdjType<:AbstractAdjList} <: AbstractInvertedFile
     voc::Vocabulary
@@ -34,10 +71,22 @@ database(invfile::BM25InvertedFile) = error("database() is not accesible in BM25
 distance(::BM25InvertedFile) = error("BM25InvertedFile is not a metric index")
 
 """
-    BM25InvertedFile(voc::Vocabulary, db=nothing)
+    BM25InvertedFile(voc::Vocabulary; k1=1.2f0, b=0.75f0, δ=1f0)
 
-Fits the BM25 score from the given vocabulary it also creates the associated inverted file structure.
+Creates an empty [`BM25InvertedFile`](@ref), fitting its [`BM25`](@ref) scorer from `voc`
+(see [`BM25(voc)`](@ref BM25) for `k1`/`b`/`δ`). Populate it with
+[`append_items!`](@ref)/[`push_item!`](@ref).
 
+# Example
+
+```julia
+julia> voc = Vocabulary(TextConfig(), ["hello world"]; verbose=false);
+
+julia> invfile = BM25InvertedFile(voc);
+
+julia> length(invfile)
+0
+```
 """
 function BM25InvertedFile(voc::Vocabulary;  k1=1.2f0, b=0.75f0, δ=1f0)
     bm25 = BM25(voc; k1, b, δ)
@@ -50,6 +99,40 @@ function BM25InvertedFile(voc::Vocabulary;  k1=1.2f0, b=0.75f0, δ=1f0)
     )
 end
 
+"""
+    filter_lists!(
+        idx::BM25InvertedFile;
+        list_min_length_for_checking::Int=96,
+        list_max_allowed_length::Int=1024,
+        doc_min_freq::Int=1,
+        doc_max_freq::Int=128,
+        always_sort::Bool=false
+    )
+
+Prunes each posting list of `idx` in place, once it is already populated. Lists shorter
+than `list_min_length_for_checking` are left untouched (optionally sorted by document id
+when `always_sort=true`). Longer lists are filtered to entries whose term frequency lies
+in `[doc_min_freq, doc_max_freq]`, then truncated to the `list_max_allowed_length`
+highest-frequency entries — this both discards overly rare/common (likely noisy) postings
+and bounds the cost of scanning very long lists at query time. Returns `idx`.
+
+# Example
+
+```julia
+julia> corpus = ["hello world", "hello there", "the cat sat"];
+
+julia> voc = Vocabulary(TextConfig(), corpus; verbose=false);
+
+julia> invfile = BM25InvertedFile(voc);
+
+julia> ctx = InvertedFileContext();
+
+julia> append_items!(invfile, ctx, corpus);
+
+julia> filter_lists!(invfile) === invfile
+true
+```
+"""
 function filter_lists!(
         idx::BM25InvertedFile;
         list_min_length_for_checking::Int=96,
@@ -91,6 +174,30 @@ function filter_lists!(
     idx
 end
 
+"""
+    append_items!(idx::BM25InvertedFile, ctx::InvertedFileContext, corpus; kwargs...)
+
+Adds every document in `corpus` to `idx`, computing each one's bag of words under
+`idx.voc` first. `corpus` can hold raw text (`AbstractString`), already-tokenized
+[`TokenizedText`](@ref), or pre-tokenized string vectors; a corpus of already-computed
+[`BOW`](@ref)s is accepted directly by the generic `SimilaritySearch.append_items!`
+method without going through this conversion. See also [`push_item!`](@ref).
+
+# Example
+
+```julia
+julia> voc = Vocabulary(TextConfig(), ["hello world", "hello there"]; verbose=false);
+
+julia> invfile = BM25InvertedFile(voc);
+
+julia> ctx = InvertedFileContext();
+
+julia> append_items!(invfile, ctx, ["hello world", "hello there"]);
+
+julia> length(invfile)
+2
+```
+"""
 function append_items!(idx::BM25InvertedFile, ctx::InvertedFileContext, corpus::AbstractVector{T}; kwargs...) where {T<:AbstractString}
     append_items!(idx, ctx, VectorDatabase(bagofwords_corpus(idx.voc, corpus)); kwargs...)
 end
@@ -103,20 +210,47 @@ function append_items!(idx::BM25InvertedFile, ctx::InvertedFileContext, corpus::
     append_items!(idx, ctx, VectorDatabase(bagofwords_corpus(idx.voc, corpus)); kwargs...)
 end
 
+"""
+    push_item!(idx::BM25InvertedFile, ctx::InvertedFileContext, doc)
+
+Adds a single document `doc` to `idx`, computing its bag of words under `idx.voc` first.
+`doc` can be raw text (`AbstractString`), already-tokenized [`TokenizedText`](@ref), or a
+pre-tokenized string vector; an already-computed [`BOW`](@ref) is accepted directly by the
+generic `SimilaritySearch.push_item!` method without going through this conversion.
+See also [`append_items!`](@ref).
+
+# Example
+
+```julia
+julia> corpus = ["hello world", "hello there"];
+
+julia> voc = Vocabulary(TextConfig(), corpus; verbose=false);
+
+julia> invfile = BM25InvertedFile(voc);
+
+julia> ctx = InvertedFileContext();
+
+julia> append_items!(invfile, ctx, corpus);
+
+julia> push_item!(invfile, ctx, "hello again");
+
+julia> length(invfile)
+3
+```
+"""
 function push_item!(idx::BM25InvertedFile, ctx::InvertedFileContext, doc::T) where {T<:Union{AbstractString,AbstractVector,TokenizedText}}
     push_item!(idx, ctx, bagofwords(idx.voc, doc))
 end
 
-function SimilaritySearch.push_item!(idx::BM25InvertedFile, ctx::InvertedFileContext, obj; docID::UInt32=length(idx) + 1, tol::Float64=1e-6)
+function SimilaritySearch.push_item!(idx::BM25InvertedFile, ctx::InvertedFileContext, obj; docID::UInt32=UInt32(length(idx) + 1), tol::Float64=1e-6)
     len = bm25_internal_push_object!(idx, ctx, docID, obj, tol)
-    for (tokenID, _) in sparseiterator(obj)
+    for (tokenID, _) in InvertedFiles.sparseiterator(obj)
         N = neighbors(idx.adj, tokenID)
         N === nothing && continue
-        sort!(N)
+        sort!(N, by=p -> p.id)
     end
 
     push!(idx.doclens, len)
-    !isnothing(idx.db) && push_item!(idx.db, obj)
     LOG(ctx.logger, :push_item!, idx, ctx, docID, docID)
     idx
 end
