@@ -7,7 +7,7 @@ export bkt!
 
 Barybay & Kenyon t-thresholds 
 
-See [`umerge`](@ref) if you need to change how matches are captured (`onmatch!` function).
+See [`umerge!`](@ref) if you need to change how matches are captured (`onmatch!` function).
 
 """
 function bkt!(output, L::AbstractVector, findpos::Function=doublingsearch; t::Int=length(L))

@@ -4,6 +4,7 @@ module TextSearch
 
 import Base: broadcastable
 import StatsBase: fit, predict
+import SimilaritySearch: search, append_items!, push_item!, database, distance
 using Accessors
 using SimilaritySearch, LinearAlgebra, SparseArrays
 using SimilaritySearch: getminbatch
@@ -116,9 +117,11 @@ include("bow.jl")
 include("sparseconversions.jl")
 include("vmodel.jl")
 include("emodel.jl")
-include("bm25.jl")
-include("bm25invfile.jl")
-include("bm25invfilesearch.jl")
+
+include("bm25/BM25.jl")
+using .BM25
+export BM25Scorer, bm25score, tokenscore, BM25InvertedFile, filter_lists!, search, append_items!, push_item!
+
 include("approxvoc.jl")
 include("deprecated.jl")
 

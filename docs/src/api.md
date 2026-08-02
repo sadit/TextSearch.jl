@@ -8,6 +8,6 @@ end
 
 # TextSearch API
 ```@autodocs
-Modules = [TextSearch]
+Modules = [TextSearch, TextSearch.Intersections, TextSearch.InvertedFiles, TextSearch.BM25]
 Order   = [:function, :type]
 ```

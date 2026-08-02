@@ -14,7 +14,7 @@ Solves t-threshold set operation using other algorithms choosing among them by g
 
 Simple wrapper around other specific operations depending on `t` value
 
-See [`umerge`](@ref) if you need to modify the output behaviour.
+See [`umerge!`](@ref) if you need to modify the output behaviour.
 """
 function xmerge!(output, L::AbstractVector, P=ones(Int32, length(L)); t::Int=1)
     n = length(L)

@@ -7,7 +7,7 @@ export bk!
 
 Computes the intersection of a list of posting lists using the Barbay and Kenyon algorithm.
 
-See [`umerge`](@ref) if you need to change how matches are captured (`onmatch!` function).
+See [`umerge!`](@ref) if you need to change how matches are captured (`onmatch!` function).
 
 """
 function bk!(output, L::AbstractVector, findpos::Function=doublingsearch)
