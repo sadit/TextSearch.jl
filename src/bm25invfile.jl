@@ -4,7 +4,7 @@ export BM25InvertedFile, search, filter_lists!, append_items!, push_item!, Inver
 
 import SimilaritySearch: search, append_items!, push_item!, database, distance
 
-using Intersections
+using .Intersections
 using StatsBase
 
 
