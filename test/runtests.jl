@@ -44,5 +44,6 @@ include("invertedfiles.jl")
 include("tok.jl")
 include("voc.jl")
 include("vec.jl")
+include("svec.jl")
 include("search.jl")
 @info "FINISH"
