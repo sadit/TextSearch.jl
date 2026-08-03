@@ -256,7 +256,7 @@ end
 
 function _locked_tokenize_and_push(voc, doc, buff, l)
     empty!(buff; bow=false)
-    tokenlist = tokenize(borrowtokenizedtext, voc.textconfig, doc, buff)
+    tokenlist = tokenize(borrowtokenizedtext, voc.textconfig, doc, buff.tok)
     for token in tokenlist
         id = 0
         lock(l)

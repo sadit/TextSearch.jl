@@ -17,6 +17,17 @@ using .Intersections
 include("invertedfiles/InvertedFiles.jl")
 using .InvertedFiles
 using .InvertedFiles: getcontext, getpositions, InvertedFileContext, IdWeight, IdIntWeight
+export WeightedInvertedFile, BinaryInvertedFile, AbstractInvertedFile, SortedIntSet,
+       InvertedFileContext, getcontext, set_distance_evaluate, search_invfile, select_posting_lists
+
+include("tokenizer/Tokenizer.jl")
+using .Tokenizer
+using .Tokenizer: borrowtokenizedtext
+export TextConfig, Skipgram, TokenizedText, tokenize, tokenize_corpus, qgrams, unigrams,
+       normalize_text, isemoji,
+       AbstractTokenTransformation, IdentityTokenTransformation, IgnoreStopwords, ChainTransformation, transform,
+       AbstractTokenGenerator, QGramGenerator, UnigramGenerator, NWordGenerator, SkipgramGenerator, CollocationGenerator,
+       needs_unigrams, tokentag, generate!, flush_token!, alltokengenerators
 
 include("dvec.jl")
 
@@ -55,38 +66,33 @@ const SVEC = Dict{UInt32,Float32}
 export SVEC, BOW
 
 
+"""
+    TextSearchBuffer(n=128)
+
+Pooled per-thread scratch space: `tok` (a [`TokenizerBuffer`](@ref)) is used for
+tokenization, `bow` accumulates a [`BOW`](@ref), and `vec` accumulates an [`SVEC`](@ref).
+"""
 struct TextSearchBuffer
-    normtext::Vector{Char}
-    tokens::Vector{String}
-    unigrams::Vector{String}
-    io::IOBuffer
+    tok::TokenizerBuffer
     bow::BOW
     vec::SVEC
 
     function TextSearchBuffer(n=128)
-        normtext = Char[]
-        tokens = UInt64[]
-        unigrams = String[]
-        io = IOBuffer()
+        tok = TokenizerBuffer(n)
         bow = BOW()
         vec = SVEC()
 
-        sizehint!(normtext, n)
-        sizehint!(tokens, n)
-        sizehint!(unigrams, n)
         sizehint!(bow, n)
         sizehint!(vec, n)
 
-        new(normtext, tokens, unigrams, io, bow, vec)
+        new(tok, bow, vec)
     end
 end
 
 const TEXT_SEARCH_CACHES = Channel{TextSearchBuffer}(Inf)
 
 function Base.empty!(buff::TextSearchBuffer; normtext::Bool=true, tokens::Bool=true, unigrams::Bool=true, bow::Bool=true, vec::Bool=true)
-    normtext && empty!(buff.normtext)
-    tokens && empty!(buff.tokens)
-    unigrams && empty!(buff.unigrams)
+    empty!(buff.tok; normtext, tokens, unigrams)
     bow && empty!(buff.bow)
     vec && empty!(buff.vec)
 end
@@ -106,10 +112,6 @@ end
     end
 end
 
-include("tokentrans.jl")
-include("textconfig.jl")
-include("normalize.jl")
-include("tokenize.jl")
 include("voc.jl")
 include("updatevoc.jl")
 include("tokcorpus.jl")

@@ -1,3 +1,5 @@
+export filter_tokens!
+
 """
     update_voc!(voc::Vocabulary, another::Vocabulary)
     update_voc!(pred::Function, voc::Vocabulary, another::Vocabulary)

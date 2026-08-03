@@ -1,14 +1,14 @@
 # This file is a part of TextSearch.jl
 
-export TokenizedText, tokenize, tokenize_corpus, qgrams, unigrams, filter_tokens!
+export TokenizedText, tokenize, tokenize_corpus, qgrams, unigrams, generate!, flush_token!
 
 """
     TokenizedText(tokens::AbstractVector{String})
 
 Wraps the token list produced by [`tokenize`](@ref) for a single document. Behaves like
 an `AbstractVector{String}` (it supports indexing, iteration, `push!`, `append!`, etc.)
-and is the type consumed by [`bagofwords`](@ref)/[`bagofwords!`](@ref) and by
-[`Vocabulary`](@ref)-building functions.
+and is the type consumed by `bagofwords`/`bagofwords!` and by `Vocabulary`-building
+functions.
 
 # Example
 
@@ -35,9 +35,9 @@ end
 tokenizedtext(s) = TokenizedText(Vector(s))
 borrowtokenizedtext(s) = TokenizedText(s)
 
-tokenize(copy_::Function, textconfig::TextConfig, text::TokenizedText, buff::TextSearchBuffer) = text 
-tokenize(copy_::Function, textconfig::TextConfig, text::TokenizedText) = text 
-tokenize(copy_::Function, textconfig::TextConfig, arr::AbstractVector{T}, buff::TextSearchBuffer) where {T<:TokenizedText} = arr
+tokenize(copy_::Function, textconfig::TextConfig, text::TokenizedText, buff::TokenizerBuffer) = text
+tokenize(copy_::Function, textconfig::TextConfig, text::TokenizedText) = text
+tokenize(copy_::Function, textconfig::TextConfig, arr::AbstractVector{T}, buff::TokenizerBuffer) where {T<:TokenizedText} = arr
 tokenize_corpus(copy_::Function, textconfig::TextConfig, arr::AbstractVector{T}; minbatch=0) where {T<:TokenizedText} = arr
 
 const EXTRA_PUNCT = Set(['~', '+', '^', '$', '|', '<', '>'])
@@ -62,13 +62,13 @@ julia> collect(tokenize(TextConfig(), "Hello world!!"))
 ["hello", "world", "!!"]
 ```
 """
-function tokenize(copy_::Function, textconfig::TextConfig, text::AbstractString, buff::TextSearchBuffer)
+function tokenize(copy_::Function, textconfig::TextConfig, text::AbstractString, buff::TokenizerBuffer)
     normalize_text(textconfig, text, buff.normtext)
     t = tokenize_(textconfig, buff)
     copy_(t)
 end
 
-function tokenize(copy_::Function, textconfig::TextConfig, arr, buff::TextSearchBuffer)
+function tokenize(copy_::Function, textconfig::TextConfig, arr, buff::TokenizerBuffer)
     normalize_text(textconfig, arr[1], buff.normtext)
     tokenize_(textconfig, buff)
 
@@ -84,12 +84,12 @@ end
 tokenize(textconfig::TextConfig, text) = tokenize(tokenizedtext, textconfig, text)
 
 function tokenize(copy_::Function, textconfig::TextConfig, text)
-    buff = take!(TEXT_SEARCH_CACHES)
+    buff = take!(TOKENIZER_CACHES)
     empty!(buff)
     try
         tokenize(copy_, textconfig, text, buff)
     finally
-        put!(TEXT_SEARCH_CACHES, buff)
+        put!(TOKENIZER_CACHES, buff)
     end
 end
 
@@ -108,12 +108,12 @@ julia> normalize_text(TextConfig(), "Café!!")
 ```
 """
 function normalize_text(textconfig::TextConfig, text; limits::Bool=false)
-    buff = take!(TEXT_SEARCH_CACHES)
+    buff = take!(TOKENIZER_CACHES)
     empty!(buff)
     try
         String(normalize_text(textconfig, text, buff.normtext; limits))
     finally
-        put!(TEXT_SEARCH_CACHES, buff)
+        put!(TOKENIZER_CACHES, buff)
     end
 end
 
@@ -139,7 +139,7 @@ function tokenize_corpus(copy_::Function, textconfig::TextConfig, arr; minbatch:
     n = length(arr)
     L = Vector{TokenizedText}(undef, n)
     minbatch = getminbatch(minbatch, n)
-    
+
     # @batch minbatch=minbatch per=thread
     @showprogress dt=1 enabled=verbose desc="tokenizing" Threads.@threads for i in 1:n
         L[i] = tokenize(copy_, textconfig, arr[i])
@@ -150,34 +150,41 @@ end
 
 tokenize_corpus(textconfig::TextConfig, arr; minbatch::Int=0, verbose::Bool=true) = tokenize_corpus(tokenizedtext, textconfig, arr; minbatch, verbose)
 
-function tokenize_(config::TextConfig, buff::TextSearchBuffer)
-    for q in config.qlist
-        qgrams(q, buff, config.tt, config.mark_token_type)
+function tokenize_(config::TextConfig, buff::TokenizerBuffer)
+    gens = alltokengenerators(config)
+
+    for gen in gens
+        needs_unigrams(gen) || generate!(gen, buff, config.tt, config.mark_token_type)
     end
-    
-    if length(config.nlist) > 0 || length(config.slist) > 0 || config.collocations > 1
+
+    if any(needs_unigrams, gens)
         n1 = length(buff.tokens)
-        unigrams(buff, config.tt)  # unigrams are always activated if any |nlist| > 0 or |slist| > 0
+        unigrams(buff, config.tt)  # always populates buff.unigrams; also emits unigram tokens to buff.tokens
 
-        if length(config.nlist) == 0 || config.nlist[1] != 1 # always sorted
-            resize!(buff.tokens, n1)
-        end
+        any(g -> g isa UnigramGenerator, gens) || resize!(buff.tokens, n1)
 
-        for q in config.nlist 
-            q != 1 && nwords(q, buff, config.tt, config.mark_token_type)
-        end
-
-        for q in config.slist
-            skipgrams(q, buff, config.tt, config.mark_token_type)
-        end
-
-        if config.collocations > 1
-            collocations(config.collocations, buff, config.tt, config.mark_token_type)
+        for gen in gens
+            needs_unigrams(gen) && generate!(gen, buff, config.tt, config.mark_token_type)
         end
     end
 
     buff.tokens
 end
+
+"""
+    generate!(gen::AbstractTokenGenerator, buff::TokenizerBuffer, tt::AbstractTokenTransformation, mark_token_type::Bool)
+
+Runs `gen` over `buff`, appending its produced tokens to `buff.tokens`. Called by
+[`tokenize`](@ref) for every generator in [`alltokengenerators`](@ref); a new
+[`AbstractTokenGenerator`](@ref) subtype implements this method to define what it does.
+[`UnigramGenerator`](@ref)'s tokens are emitted as a side effect of the shared
+[`unigrams`](@ref) pass, so its own `generate!` is a no-op.
+"""
+generate!(gen::QGramGenerator, buff::TokenizerBuffer, tt::AbstractTokenTransformation, mark_token_type::Bool) = qgrams(gen, buff, tt, mark_token_type)
+generate!(::UnigramGenerator, buff::TokenizerBuffer, tt::AbstractTokenTransformation, mark_token_type::Bool) = nothing
+generate!(gen::NWordGenerator, buff::TokenizerBuffer, tt::AbstractTokenTransformation, mark_token_type::Bool) = nwords(gen, buff, tt, mark_token_type)
+generate!(gen::SkipgramGenerator, buff::TokenizerBuffer, tt::AbstractTokenTransformation, mark_token_type::Bool) = skipgrams(gen, buff, tt, mark_token_type)
+generate!(gen::CollocationGenerator, buff::TokenizerBuffer, tt::AbstractTokenTransformation, mark_token_type::Bool) = collocations(gen, buff, tt, mark_token_type)
 
 function push_token_from_transform!(tokens, s::Nothing)
 end
@@ -193,78 +200,38 @@ function push_token_from_transform!(tokens, slist::AbstractVector)
 end
 
 """
-    flush_unigram!(buff::TextSearchBuffer, tt::AbstractTokenTransformation)
+    flush_token!(buff::TokenizerBuffer, tt::AbstractTokenTransformation, gen::AbstractTokenGenerator, mark_token_type::Bool)
 
-Pushes the word inside the buffer to the token list; it discards empty strings.
+Pushes the token accumulated in `buff.io` to the token list, applying `gen`'s
+[`tokentag`](@ref) (when `mark_token_type`) and [`transform`](@ref) hook; discards empty
+strings and tokens the transformation drops (returns `nothing` for).
 """
-function flush_unigram!(buff::TextSearchBuffer, tt::AbstractTokenTransformation)
+function flush_token!(buff::TokenizerBuffer, tt::AbstractTokenTransformation, gen::AbstractTokenGenerator, mark_token_type::Bool)
     buff.io.size == 0 && return nothing
-    s = transform_unigram(tt, String(take!(buff.io)))
+
+    if mark_token_type
+        tag = tokentag(gen)
+        tag !== nothing && write(buff.io, '\t', tag)
+    end
+
+    s = transform(tt, gen, String(take!(buff.io)))
     push_token_from_transform!(buff.tokens, s)
 end
 
 """
-    flush_nword!(buff::TextSearchBuffer, tt::AbstractTokenTransformation, mark_token_type)
-
-Pushes the nword inside the buffer to the token list; it discards empty strings.
-"""
-function flush_nword!(buff::TextSearchBuffer, tt::AbstractTokenTransformation, mark_token_type)
-    buff.io.size == 0 && return nothing
-    mark_token_type && write(buff.io, '\t', 'n')
-    s = transform_nword(tt, String(take!(buff.io)))
-    push_token_from_transform!(buff.tokens, s)
-end
-
-"""
-    flush_qgram!(buff::TextSearchBuffer, tt::AbstractTokenTransformation, mark_token_type)
-
-Pushes the qgram inside the buffer to the token list; it discards empty strings.
-"""
-function flush_qgram!(buff::TextSearchBuffer, tt::AbstractTokenTransformation, mark_token_type)
-    buff.io.size == 0 && return nothing
-    mark_token_type && write(buff.io, '\t', 'q')
-    s = transform_qgram(tt, String(take!(buff.io)))
-    push_token_from_transform!(buff.tokens, s)
-end
-
-"""
-    flush_skipgram!(buff::TextSearchBuffer, tt::AbstractTokenTransformation, mark_token_type)
-
-Pushes the skipgram inside the buffer to the token list; it discards empty strings.
-"""
-function flush_skipgram!(buff::TextSearchBuffer, tt::AbstractTokenTransformation, mark_token_type)
-    buff.io.size == 0 && return nothing
-    mark_token_type && write(buff.io, '\t', 's')
-    s = transform_skipgram(tt, String(take!(buff.io)))
-    push_token_from_transform!(buff.tokens, s)
-end
-
-"""
-    flush_collocations!(buff::TextSearchBuffer, tt::AbstractTokenTransformation, mark_token_type)
-
-Pushes a collocation inside the buffer to the token list; it discards empty strings.
-"""
-function flush_collocation!(buff::TextSearchBuffer, tt::AbstractTokenTransformation, mark_token_type)
-    buff.io.size == 0 && return nothing
-    mark_token_type && write(buff.io, '\t', 'c')
-    s = transform_collocation(tt, String(take!(buff.io)))
-    push_token_from_transform!(buff.tokens, s)
-end
-
-
-"""
-    qgrams(q::Integer, buff::TextSearchBuffer, tt::AbstractTokenTransformation, mark_token_type)
+    qgrams(gen::QGramGenerator, buff::TokenizerBuffer, tt::AbstractTokenTransformation, mark_token_type)
 
 Computes character q-grams for the given input
 """
-function qgrams(q::Integer, buff::TextSearchBuffer, tt::AbstractTokenTransformation, mark_token_type)
+function qgrams(gen::QGramGenerator, buff::TokenizerBuffer, tt::AbstractTokenTransformation, mark_token_type)
+    q = gen.q
     n = length(buff.normtext)
 
     for i in 1:(n - q + 1)
         for j in i:i+q-1
             @inbounds write(buff.io, buff.normtext[j])
         end
-        flush_qgram!(buff, tt, mark_token_type)
+        flush_token!(buff, tt, gen, mark_token_type)
     end
 
     buff.tokens
@@ -272,12 +239,14 @@ end
 
 ispunct2(c) = ispunct(c) || c in EXTRA_PUNCT
 
+const UNIGRAM_GENERATOR = UnigramGenerator()
+
 """
-    unigrams(buff::TextSearchBuffer, tt::AbstractTokenTransformation)
+    unigrams(buff::TokenizerBuffer, tt::AbstractTokenTransformation)
 
 Performs the word tokenization
 """
-function unigrams(buff::TextSearchBuffer, tt::AbstractTokenTransformation)
+function unigrams(buff::TokenizerBuffer, tt::AbstractTokenTransformation)
     n = length(buff.normtext)
     mfirst = length(buff.tokens) + 1
     # @info buff.normtext
@@ -286,32 +255,32 @@ function unigrams(buff::TextSearchBuffer, tt::AbstractTokenTransformation)
         p = buff.normtext[i-1]
 
         if c == BLANK
-            flush_unigram!(buff, tt)
+            flush_token!(buff, tt, UNIGRAM_GENERATOR, false)
         elseif isemoji(c)
             # emoji
-            flush_unigram!(buff, tt)
+            flush_token!(buff, tt, UNIGRAM_GENERATOR, false)
             write(buff.io, c)
-            flush_unigram!(buff, tt)
+            flush_token!(buff, tt, UNIGRAM_GENERATOR, false)
         elseif ispunct2(p)
             # previous char is punct
             if ispunct2(c)
                 # a punctuaction string
-                buff.io.size >= 3 && flush_unigram!(buff, tt)  # a bit large, so we flush and restart the punc string (3 is for most emojis and ...)
+                buff.io.size >= 3 && flush_token!(buff, tt, UNIGRAM_GENERATOR, false)  # a bit large, so we flush and restart the punc string (3 is for most emojis and ...)
                 write(buff.io, c)
             else
-                !(p in ('#', '@', '_')) && flush_unigram!(buff, tt)  # current is not punctuaction so we flush if not a meta word
+                !(p in ('#', '@', '_')) && flush_token!(buff, tt, UNIGRAM_GENERATOR, false)  # current is not punctuaction so we flush if not a meta word
                 write(buff.io, c)
             end
         elseif ispunct2(c) && p !== BLANK
             ## single punctuaction alone
-            flush_unigram!(buff, tt)
+            flush_token!(buff, tt, UNIGRAM_GENERATOR, false)
             write(buff.io, c)
         else
             write(buff.io, c)
         end
     end
 
-    flush_unigram!(buff, tt)
+    flush_token!(buff, tt, UNIGRAM_GENERATOR, false)
     mlast = length(buff.tokens)
 
     for i in mfirst:mlast
@@ -322,9 +291,10 @@ function unigrams(buff::TextSearchBuffer, tt::AbstractTokenTransformation)
 end
 
 """
-    nwords(q::Integer, buff::TextSearchBuffer, tt::AbstractTokenTransformation, mark_token_type)
+    nwords(gen::NWordGenerator, buff::TokenizerBuffer, tt::AbstractTokenTransformation, mark_token_type)
 """
-function nwords(q::Integer, buff::TextSearchBuffer, tt::AbstractTokenTransformation, mark_token_type)
+function nwords(gen::NWordGenerator, buff::TokenizerBuffer, tt::AbstractTokenTransformation, mark_token_type)
+    q = gen.q
     n = length(buff.unigrams)
 
     @inbounds for i in 1:(n - q + 1)
@@ -335,7 +305,7 @@ function nwords(q::Integer, buff::TextSearchBuffer, tt::AbstractTokenTransformat
         end
 
         write(buff.io, buff.unigrams[_last])
-        flush_nword!(buff, tt, mark_token_type)
+        flush_token!(buff, tt, gen, mark_token_type)
     end
 
     buff.tokens
@@ -343,33 +313,35 @@ end
 
 
 """
-    collocations(q, buff::TextSearchBuffer, tt::AbstractTokenTransformation, mark_token_type)
+    collocations(gen::CollocationGenerator, buff::TokenizerBuffer, tt::AbstractTokenTransformation, mark_token_type)
 
 Computes a kind of collocations of the given text
 """
-function collocations(q::Integer, buff::TextSearchBuffer, tt::AbstractTokenTransformation, mark_token_type)
+function collocations(gen::CollocationGenerator, buff::TokenizerBuffer, tt::AbstractTokenTransformation, mark_token_type)
+    q = gen.window
     tokens = buff.unigrams
     n = length(tokens)
 
-    for i in 1:n-1 # the upper limit is an implementation detail to discard some entries 
+    for i in 1:n-1 # the upper limit is an implementation detail to discard some entries
         for j in i+1:min(i+1+q, n)
             write(buff.io, buff.unigrams[i])
             write(buff.io, BLANK)
             write(buff.io, buff.unigrams[j])
-            flush_collocation!(buff, tt, mark_token_type)
+            flush_token!(buff, tt, gen, mark_token_type)
         end
     end
-    
+
     buff.tokens
 end
 
 
 """
-    skipgrams(q::Skipgram, buff::TextSearchBuffer, tt::AbstractTokenTransformation, mark_token_type)
+    skipgrams(gen::SkipgramGenerator, buff::TokenizerBuffer, tt::AbstractTokenTransformation, mark_token_type)
 
 Tokenizes using skipgrams
 """
-function skipgrams(q::Skipgram, buff::TextSearchBuffer, tt::AbstractTokenTransformation, mark_token_type)
+function skipgrams(gen::SkipgramGenerator, buff::TokenizerBuffer, tt::AbstractTokenTransformation, mark_token_type)
+    q = gen.skipgram
     n = length(buff.unigrams)
 
     for start in 1:(n - (q.qsize + (q.qsize - 1) * q.skip) + 1)
@@ -387,9 +359,8 @@ function skipgrams(q::Skipgram, buff::TextSearchBuffer, tt::AbstractTokenTransfo
             write(buff.io, buff.unigrams[start + ep * (1+q.skip)])
         end
 
-        flush_skipgram!(buff, tt, mark_token_type)
+        flush_token!(buff, tt, gen, mark_token_type)
     end
 
     buff.tokens
 end
-
