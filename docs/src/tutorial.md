@@ -126,6 +126,41 @@ vecs = vectorize_corpus(model, CASK_OF_AMONTILLADO)
 vecs[1]
 ```
 
+### Pruning the vocabulary by minimum frequency
+
+`798` tokens out of a ~4000-word story is a lot — most of them are one-off words
+([hapax legomena](https://en.wikipedia.org/wiki/Hapax_legomenon)) that add noise more
+than signal. Each entry of a [`Vocabulary`](@ref) carries its own `occs` (total
+occurrence count across the corpus) and `ndocs` (number of documents it appears in), so
+[`filter_tokens`](@ref) can prune by either:
+
+```@example gutenberg
+hapax_count = count(t -> t.occs == 1, voc[i] for i in eachindex(voc))
+vocsize(voc), hapax_count
+```
+
+```@example gutenberg
+pruned_voc = filter_tokens(t -> t.occs >= 3, voc)
+vocsize(pruned_voc)
+```
+
+`filter_tokens` returns a brand new [`Vocabulary`](@ref) — `voc` itself is untouched, so
+the rest of this tutorial keeps using the original, unpruned vocabulary. To actually
+build a model on the pruned vocabulary instead, just use `pruned_voc` in place of `voc`
+from here on (e.g. `VectorModel(IdfWeighting(), TfWeighting(), pruned_voc)`); words
+below the frequency cutoff are treated as out-of-vocabulary from then on, the same as
+any other unseen word.
+
+Filtering by document frequency (`t.ndocs`) instead of raw occurrence count is often a
+better cutoff for longer/multi-document corpora — it discards words that are common
+within a single document but never recur elsewhere, which raw frequency alone wouldn't
+catch:
+
+```@example gutenberg
+pruned_by_docfreq = filter_tokens(t -> t.ndocs >= 3, voc)
+vocsize(pruned_by_docfreq)
+```
+
 ### Searching with a raw inverted file (vector-space ranking)
 
 [`WeightedInvertedFile`](@ref) indexes the weight vectors directly and ranks by a
@@ -160,6 +195,90 @@ happens to contain "search". Unsurprisingly, a 19th-century short story has noth
 do with vector search libraries anyway; every score here is essentially noise. Try a
 query drawn from the story itself, like `"amontillado nitre"` or `"trowel wall"`, to
 see closer, more meaningful matches.
+
+### Vector arithmetic: dot products, centroids, and normalization
+
+Since paragraph and query vectors are just [`SVEC`](@ref)s (sparse `Dict`s), ordinary
+`LinearAlgebra` operations work on them directly — `+`, `-`, [`dot`](@ref), `norm`,
+[`normalize!`](@ref) are all defined for `SVEC`/[`BOW`](@ref). Two things make this
+useful: comparing documents/queries directly via [`dot`](@ref), and building a query
+that represents *more than one* idea at once.
+
+```@example gutenberg
+using LinearAlgebra
+
+q_wine = vectorize(model, "amontillado wine")
+q_damp = vectorize(model, "nitre damp catacombs")
+norm(q_wine), norm(q_damp)
+```
+
+`vectorize` normalizes its output to unit length by default (`normalize=true`) — this is
+what makes `dot` directly meaningful as a similarity score: for unit ("spherical")
+vectors, the dot product *is* the cosine similarity, bounded the same way cosine
+similarity is. It also matches what [`WeightedInvertedFile`](@ref) itself assumes —
+its distance is a cheap running dot-product sum (see `Dist.NormCosine`'s docstring),
+valid only when the vectors being compared are already unit length.
+
+```@example gutenberg
+dot(q_wine, q_damp)
+```
+
+Zero — these two queries share no vocabulary at all, so as far as the dot product is
+concerned they're unrelated (not literally "opposite", just orthogonal). Compare that to
+two paragraphs that are actually about the same scene:
+
+```@example gutenberg
+dot(vecs[51], vecs[52])  # two consecutive paragraphs of Fortunato's manic "ha! ha!" laughter
+```
+
+To search for *both* ideas at once — say, a query that's part "the wine", part "the
+damp vaults" — combine the two query vectors into their [`centroid`](@ref) and search
+with that, instead of running two separate queries and merging results by hand:
+
+```@example gutenberg
+q_both = centroid([q_wine, q_damp])
+norm(q_both)
+```
+
+```@example gutenberg
+res = knnqueue(KnnSorted, 5)
+search(wif, wctx, q_both, res)
+[(id, first(CASK_OF_AMONTILLADO[id], 60)) for id in collect(IdView(res))]
+```
+
+The results blend both themes, rather than only ever matching one or the other.
+
+#### Why `normalize!` matters here
+
+[`centroid`](@ref) normalizes its *output*, but that alone doesn't make a fair blend —
+it fixes the final vector's length, not the direction that a plain sum already baked
+in. If the inputs going in aren't themselves unit vectors, whichever one happens to have
+the larger magnitude dominates the sum, and the final `normalize!` just rescales that
+already-skewed direction to length 1. A minimal example makes this concrete:
+
+```@example gutenberg
+a = SVEC(1 => 1.0f0)  # a unit vector, pointing along "axis 1"
+b = SVEC(2 => 1.0f0)  # a unit vector, pointing along "axis 2"
+centroid([a, b])       # evenly split between both directions, as expected
+```
+
+```@example gutenberg
+b_scaled = b * 5.0f0   # same direction as `b`, but 5x the magnitude
+norm(b_scaled)
+```
+
+```@example gutenberg
+centroid([a, b_scaled])  # direction is pulled almost entirely toward b, not an even blend
+```
+
+`vectorize`'s default `normalize=true` is precisely what saves you from this: every
+vector TextSearch itself produces already lies on the unit sphere, so summing any
+number of them and normalizing the result gives a genuinely even blend, as in
+`q_both` above. The failure mode above only bites when vectors come from somewhere
+`vectorize` didn't touch — built with `normalize=false`, assembled by hand, or imported
+from a different pipeline entirely. The fix is always the same: call [`normalize!`](@ref)
+on each vector individually before combining them, so every input to a centroid is on
+equal footing before it's summed.
 
 ### Searching with BM25 (probabilistic ranking)
 
