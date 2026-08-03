@@ -141,3 +141,38 @@ end
                      )
 end
 
+@testset "ChainTransformation actually chains" begin
+    ct = ChainTransformation([IgnoreStopwords(Set(["the"])), IgnoreStopwords(Set(["a"]))])
+    test_equals(tokenize(TextConfig(nlist=[1], tt=ct), "the cat sat on a mat"), ["cat", "sat", "on", "mat"])
+end
+
+@testset "custom AbstractTokenGenerator extends tokenize_ without editing TextConfig" begin
+    struct FirstCharGenerator <: AbstractTokenGenerator end
+    TextSearch.needs_unigrams(::FirstCharGenerator) = true
+    TextSearch.tokentag(::FirstCharGenerator) = 'i'
+
+    function TextSearch.generate!(gen::FirstCharGenerator, buff, tt, mark_token_type)
+        isempty(buff.unigrams) && return nothing
+        write(buff.io, first(buff.unigrams[1]))
+        TextSearch.flush_token!(buff, tt, gen, mark_token_type)
+    end
+
+    cfg = TextConfig(nlist=[1], generators=[FirstCharGenerator()])
+    test_equals(tokenize(cfg, "cat sat"), ["cat", "sat", "c\ti"])
+
+    # an existing AbstractTokenTransformation (only overriding the legacy per-kind hooks)
+    # keeps working unmodified against the new custom generator (defaults to identity);
+    # "cat" is filtered from buff.unigrams too, since it feeds from the post-transform
+    # token list, so the surviving first unigram is "sat".
+    cfg2 = TextConfig(nlist=[1], generators=[FirstCharGenerator()], tt=IgnoreStopwords(Set(["cat"])))
+    test_equals(tokenize(cfg2, "cat sat"), ["sat", "s\ti"])
+end
+
+@testset "overridable regex/emoji set" begin
+    cfg = TextConfig(nlist=[1], group_url=true, re_url=r"myurl")
+    test_equals(tokenize(cfg, "visit myurl now"), ["visit", "_url", "now"])
+
+    cfg2 = TextConfig(nlist=[1], group_emo=true, emojis=Set(['x']))
+    test_equals(tokenize(cfg2, "a x b"), ["a", "👾", "b"])
+end
+

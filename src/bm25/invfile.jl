@@ -4,7 +4,6 @@ export BM25InvertedFile, search, filter_lists!, append_items!, push_item!, Inver
 
 import SimilaritySearch: search, append_items!, push_item!, database, distance
 
-using Intersections
 using StatsBase
 
 
@@ -19,7 +18,7 @@ query it with `search` (from `SimilaritySearch.jl`).
 # Fields
 - `voc`: the [`Vocabulary`](@ref) shared by every indexed document (also used to
   tokenize/encode query text).
-- `bm25`: the [`BM25`](@ref) scorer used to rank matches.
+- `bm25`: the [`BM25Scorer`](@ref) used to rank matches.
 - `adj`: the adjacency list of posting lists (one per token id), mapping each token to
   the documents containing it and their term frequency.
 - `doclens`: number of tokens per indexed document.
@@ -52,7 +51,7 @@ UInt32[0x00000001, 0x00000002]
 """
 struct BM25InvertedFile{AdjType<:AbstractAdjList} <: AbstractInvertedFile
     voc::Vocabulary
-    bm25::BM25
+    bm25::BM25Scorer
     adj::AdjType
     doclens::Vector{Int32}  ## number of tokens per document
 end
@@ -73,8 +72,8 @@ distance(::BM25InvertedFile) = error("BM25InvertedFile is not a metric index")
 """
     BM25InvertedFile(voc::Vocabulary; k1=1.2f0, b=0.75f0, δ=1f0)
 
-Creates an empty [`BM25InvertedFile`](@ref), fitting its [`BM25`](@ref) scorer from `voc`
-(see [`BM25(voc)`](@ref BM25) for `k1`/`b`/`δ`). Populate it with
+Creates an empty [`BM25InvertedFile`](@ref), fitting its [`BM25Scorer`](@ref) from `voc`
+(see [`BM25Scorer(voc)`](@ref BM25Scorer) for `k1`/`b`/`δ`). Populate it with
 [`append_items!`](@ref)/[`push_item!`](@ref).
 
 # Example
@@ -89,7 +88,7 @@ julia> length(invfile)
 ```
 """
 function BM25InvertedFile(voc::Vocabulary;  k1=1.2f0, b=0.75f0, δ=1f0)
-    bm25 = BM25(voc; k1, b, δ)
+    bm25 = BM25Scorer(voc; k1, b, δ)
 
     BM25InvertedFile(
         voc,

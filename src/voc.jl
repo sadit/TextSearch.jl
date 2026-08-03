@@ -8,7 +8,7 @@ export Vocabulary, occs, ndocs, token, vocsize, trainsize, numtokens, filter_tok
 Holds the token ⇄ id mapping produced while parsing a corpus, along with per-token
 occurrence and document-frequency counters. A `Vocabulary` is the entry point of the
 processing pipeline: it is built from a [`TextConfig`](@ref) and a corpus, and is
-later consumed by [`VectorModel`](@ref), [`BM25`](@ref), and [`bagofwords`](@ref).
+later consumed by [`VectorModel`](@ref), [`BM25Scorer`](@ref), and [`bagofwords`](@ref).
 
 # Fields
 - `textconfig`: the [`TextConfig`](@ref) used to tokenize the corpus that produced this vocabulary.
@@ -256,7 +256,7 @@ end
 
 function _locked_tokenize_and_push(voc, doc, buff, l)
     empty!(buff; bow=false)
-    tokenlist = tokenize(borrowtokenizedtext, voc.textconfig, doc, buff)
+    tokenlist = tokenize(borrowtokenizedtext, voc.textconfig, doc, buff.tok)
     for token in tokenlist
         id = 0
         lock(l)
@@ -349,7 +349,7 @@ numtokens(voc::Vocabulary) = voc.numtokens[]
 """
     avgdoclen(voc::Vocabulary)
 
-Average document length in tokens (`numtokens(voc) / trainsize(voc)`), used by [`BM25`](@ref).
+Average document length in tokens (`numtokens(voc) / trainsize(voc)`), used by [`BM25Scorer`](@ref).
 """
 avgdoclen(voc::Vocabulary) = numtokens(voc) / trainsize(voc)
 

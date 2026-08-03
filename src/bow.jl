@@ -60,8 +60,8 @@ Dict{UInt32, Int32}(0x00000002 => 1, 0x00000001 => 2)
 function bagofwords!(buff::TextSearchBuffer, voc::Vocabulary, messages)
     empty!(buff.bow)
     for text in messages
-        empty!(buff.normtext); empty!(buff.tokens); empty!(buff.unigrams)
-        tokens = tokenize(borrowtokenizedtext, voc.textconfig, text, buff)
+        empty!(buff.tok)
+        tokens = tokenize(borrowtokenizedtext, voc.textconfig, text, buff.tok)
         bagofwords!(buff.bow, voc, tokens)
     end
 
@@ -69,7 +69,7 @@ function bagofwords!(buff::TextSearchBuffer, voc::Vocabulary, messages)
 end
 
 function bagofwords!(buff::TextSearchBuffer, voc::Vocabulary, text::AbstractString)
-    tokens = tokenize(borrowtokenizedtext, voc.textconfig, text, buff)
+    tokens = tokenize(borrowtokenizedtext, voc.textconfig, text, buff.tok)
     bagofwords!(buff.bow, voc, tokens)
     buff
 end
