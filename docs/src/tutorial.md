@@ -1,0 +1,334 @@
+```@meta
+CurrentModule = TextSearch
+DocTestSetup = quote
+    using TextSearch
+end
+```
+
+# Tutorial
+
+This tutorial walks through building, querying, persisting, and customizing text search
+indexes with `TextSearch.jl` and [`SimilaritySearch.jl`](https://github.com/sadit/SimilaritySearch.jl).
+Every code block on this page is a real, executed Julia session (not hand-typed
+transcripts), so the output you see is always in sync with the current code.
+
+A few sections use packages beyond `TextSearch`/`SimilaritySearch`:
+
+```julia
+] add JLD2 WordTokenizers
+```
+
+- [`JLD2.jl`](https://github.com/JuliaIO/JLD2.jl) — saving/loading indexes to disk.
+- [`WordTokenizers.jl`](https://github.com/JuliaText/WordTokenizers.jl) — an
+  alternative, general-purpose English tokenizer, used both to *feed* TextSearch's
+  own pipeline (sentence splitting) and to *replace* it entirely.
+
+!!! note "A naming collision to know about"
+    Both `TextSearch` and `WordTokenizers` export a function named `tokenize`. If you
+    `using` both, calling `tokenize` unqualified is ambiguous — Julia will tell you so.
+    Qualify it (`TextSearch.tokenize(...)` / `WordTokenizers.tokenize(...)`) whenever
+    both packages are loaded together, as in the examples below.
+
+## A small corpus from Project Gutenberg
+
+As a running example we use Edgar Allan Poe's short story *The Cask of Amontillado*
+(1846), split into its 54 paragraphs — public domain, small enough to read in one
+sitting, and long enough to make search results meaningful. The text comes from
+[Project Gutenberg](https://www.gutenberg.org/ebooks/1063); each paragraph below is one
+"document".
+
+```@setup gutenberg
+using TextSearch, SimilaritySearch
+
+# a quiet InvertedFileContext: SimilaritySearch's default logger prints a
+# timestamped progress line to stderr on every `append_items!`, which is noisy
+# in a tutorial; LogList([]) with no sub-loggers silences it.
+quietctx() = InvertedFileContext(logger=SimilaritySearch.LogList(SimilaritySearch.AbstractLog[]))
+
+CASK_OF_AMONTILLADO = [
+    "The thousand injuries of Fortunato I had borne as I best could, but when he ventured upon insult, I vowed revenge. You, who so well know the nature of my soul, will not suppose, however, that I gave utterance to a threat. _At length_ I would be avenged; this was a point definitely settled--but the very definitiveness with which it was resolved, precluded the idea of risk. I must not only punish, but punish with impunity. A wrong is unredressed when retribution overtakes its redresser. It is equally unredressed when the avenger fails to make himself felt as such to him who has done the wrong.",
+    "It must be understood that neither by word nor deed had I given Fortunato cause to doubt my good will. I continued, as was my wont, to smile in his face, and he did not perceive that my smile _now_ was at the thought of his immolation.",
+    "He had a weak point--this Fortunato--although in other regards he was a man to be respected and even feared. He prided himself on his connoisseurship in wine. Few Italians have the true virtuoso spirit. For the most part their enthusiasm is adopted to suit the time and opportunity--to practise imposture upon the British and Austrian _millionaires_. In painting and gemmary, Fortunato, like his countrymen, was a quack--but in the matter of old wines he was sincere. In this respect I did not differ from him materially: I was skillful in the Italian vintages myself, and bought largely whenever I could.",
+    "It was about dusk, one evening during the supreme madness of the carnival season, that I encountered my friend. He accosted me with excessive warmth, for he had been drinking much. The man wore motley. He had on a tight-fitting parti-striped dress, and his head was surmounted by the conical cap and bells. I was so pleased to see him, that I thought I should never have done wringing his hand.",
+    "I said to him--\"My dear Fortunato, you are luckily met. How remarkably well you are looking to-day! But I have received a pipe of what passes for Amontillado, and I have my doubts.\"",
+    "\"How?\" said he. \"Amontillado? A pipe? Impossible! And in the middle of the carnival!\"",
+    "\"I have my doubts,\" I replied; \"and I was silly enough to pay the full Amontillado price without consulting you in the matter. You were not to be found, and I was fearful of losing a bargain.\"",
+    "\"As you are engaged, I am on my way to Luchesi. If any one has a critical turn, it is he. He will tell me--\"",
+    "\"Luchesi cannot tell Amontillado from Sherry.\"",
+    "\"And yet some fools will have it that his taste is a match for your own.\"",
+    "\"My friend, no; I will not impose upon your good nature. I perceive you have an engagement. Luchesi--\"",
+    "\"My friend, no. It is not the engagement, but the severe cold with which I perceive you are afflicted. The vaults are insufferably damp. They are encrusted with nitre.\"",
+    "\"Let us go, nevertheless. The cold is merely nothing. Amontillado! You have been imposed upon. And as for Luchesi, he cannot distinguish Sherry from Amontillado.\"",
+    "Thus speaking, Fortunato possessed himself of my arm. Putting on a mask of black silk, and drawing a _roquelaire_ closely about my person, I suffered him to hurry me to my palazzo.",
+    "There were no attendants at home; they had absconded to make merry in honour of the time. I had told them that I should not return until the morning, and had given them explicit orders not to stir from the house. These orders were sufficient, I well knew, to insure their immediate disappearance, one and all, as soon as my back was turned.",
+    "I took from their sconces two flambeaux, and giving one to Fortunato, bowed him through several suites of rooms to the archway that led into the vaults. I passed down a long and winding staircase, requesting him to be cautious as he followed. We came at length to the foot of the descent, and stood together on the damp ground of the catacombs of the Montresors.",
+    "The gait of my friend was unsteady, and the bells upon his cap jingled as he strode.",
+    "\"It is farther on,\" said I; \"but observe the white web-work which gleams from these cavern walls.\"",
+    "He turned towards me, and looked into my eyes with two filmy orbs that distilled the rheum of intoxication.",
+    "\"Nitre,\" I replied. \"How long have you had that cough?\"",
+    "\"Ugh! ugh! ugh!--ugh! ugh! ugh!--ugh! ugh! ugh!--ugh! ugh! ugh!--ugh! ugh! ugh!\"",
+    "My poor friend found it impossible to reply for many minutes.",
+    "\"Come,\" I said, with decision, \"we will go back; your health is precious. You are rich, respected, admired, beloved; you are happy, as once I was. You are a man to be missed. For me it is no matter. We will go back; you will be ill, and I cannot be responsible. Besides, there is Luchesi--\"",
+    "\"Enough,\" he said; \"the cough is a mere nothing; it will not kill me. I shall not die of a cough.\"",
+    "\"True--true,\" I replied; \"and, indeed, I had no intention of alarming you unnecessarily--but you should use all proper caution. A draught of this Medoc will defend us from the damps.\"",
+    "Here I knocked off the neck of a bottle which I drew from a long row of its fellows that lay upon the mould.",
+    "\"Drink,\" I said, presenting him the wine.",
+    "He raised it to his lips with a leer. He paused and nodded to me familiarly, while his bells jingled.",
+    "\"I drink,\" he said, \"to the buried that repose around us.\"",
+    "\"These vaults,\" he said, \"are extensive.\"",
+    "\"The Montresors,\" I replied, \"were a great and numerous family.\"",
+    "\"A huge human foot d'or, in a field azure; the foot crushes a serpent rampant whose fangs are imbedded in the heel.\"",
+    "The wine sparkled in his eyes and the bells jingled. My own fancy grew warm with the Medoc. We had passed through walls of piled bones, with casks and puncheons intermingling, into the inmost recesses of catacombs. I paused again, and this time I made bold to seize Fortunato by an arm above the elbow.",
+    "\"The nitre!\" I said; \"see, it increases. It hangs like moss upon the vaults. We are below the river's bed. The drops of moisture trickle among the bones. Come, we will go back ere it is too late. Your cough--\"",
+    "\"It is nothing,\" he said; \"let us go on. But first, another draught of the Medoc.\"",
+    "I broke and reached him a flagon of De Grave. He emptied it at a breath. His eyes flashed with a fierce light. He laughed and threw the bottle upwards with a gesticulation I did not understand.",
+    "I looked at him in surprise. He repeated the movement--a grotesque one.",
+    "\"It is this,\" I answered, producing a trowel from beneath the folds of my _roquelaire_.",
+    "\"You jest,\" he exclaimed, recoiling a few paces. \"But let us proceed to the Amontillado.\"",
+    "\"Be it so,\" I said, replacing the tool beneath the cloak and again offering him my arm. He leaned upon it heavily. We continued our route in search of the Amontillado. We passed through a range of low arches, descended, passed on, and descending again, arrived at a deep crypt, in which the foulness of the air caused our flambeaux rather to glow than flame.",
+    "At the most remote end of the crypt there appeared another less spacious. Its walls had been lined with human remains, piled to the vault overhead, in the fashion of the great catacombs of Paris. Three sides of this interior crypt were still ornamented in this manner. From the fourth side the bones had been thrown down, and lay promiscuously upon the earth, forming at one point a mound of some size. Within the wall thus exposed by the displacing of the bones, we perceived a still interior recess, in depth about four feet in width three, in height six or seven. It seemed to have been constructed for no especial use within itself, but formed merely the interval between two of the colossal supports of the roof of the catacombs, and was backed by one of their circumscribing walls of solid granite.",
+    "It was in vain that Fortunato, uplifting his dull torch, endeavoured to pry into the depth of the recess. Its termination the feeble light did not enable us to see.",
+    "\"Proceed,\" I said; \"herein is the Amontillado. As for Luchesi--\"",
+    "\"He is an ignoramus,\" interrupted my friend, as he stepped unsteadily forward, while I followed immediately at his heels. In an instant he had reached the extremity of the niche, and finding his progress arrested by the rock, stood stupidly bewildered. A moment more and I had fettered him to the granite. In its surface were two iron staples, distant from each other about two feet, horizontally. From one of these depended a short chain, from the other a padlock. Throwing the links about his waist, it was but the work of a few seconds to secure it. He was too much astounded to resist. Withdrawing the key I stepped back from the recess.",
+    "\"Pass your hand,\" I said, \"over the wall; you cannot help feeling the nitre. Indeed, it is _very_ damp. Once more let me _implore_ you to return. No? Then I must positively leave you. But I must first render you all the little attentions in my power.\"",
+    "\"The Amontillado!\" ejaculated my friend, not yet recovered from his astonishment.",
+    "As I said these words I busied myself among the pile of bones of which I have before spoken. Throwing them aside, I soon uncovered a quantity of building stone and mortar. With these materials and with the aid of my trowel, I began vigorously to wall up the entrance of the niche.",
+    "I had scarcely laid the first tier of the masonry when I discovered that the intoxication of Fortunato had in a great measure worn off. The earliest indication I had of this was a low moaning cry from the depth of the recess. It was _not_ the cry of a drunken man. There was then a long and obstinate silence. I laid the second tier, and the third, and the fourth; and then I heard the furious vibrations of the chain. The noise lasted for several minutes, during which, that I might hearken to it with the more satisfaction, I ceased my labours and sat down upon the bones. When at last the clanking subsided, I resumed the trowel, and finished without interruption the fifth, the sixth, and the seventh tier. The wall was now nearly upon a level with my breast. I again paused, and holding the flambeaux over the mason-work, threw a few feeble rays upon the figure within.",
+    "A succession of loud and shrill screams, bursting suddenly from the throat of the chained form, seemed to thrust me violently back. For a brief moment I hesitated--I trembled. Unsheathing my rapier, I began to grope with it about the recess; but the thought of an instant reassured me. I placed my hand upon the solid fabric of the catacombs, and felt satisfied. I reapproached the wall; I replied to the yells of him who clamoured. I re-echoed--I aided--I surpassed them in volume and in strength. I did this, and the clamourer grew still.",
+    "It was now midnight, and my task was drawing to a close. I had completed the eighth, the ninth, and the tenth tier. I had finished a portion of the last and the eleventh; there remained but a single stone to be fitted and plastered in. I struggled with its weight; I placed it partially in its destined position. But now there came from out the niche a low laugh that erected the hairs upon my head. It was succeeded by a sad voice, which I had difficulty in recognizing as that of the noble Fortunato. The voice said--",
+    "\"Ha! ha! ha!--he! he! he!--a very good joke indeed--an excellent jest. We shall have many a rich laugh about it at the palazzo--he! he! he!--over our wine--he! he! he!\"",
+    "\"He! he! he!--he! he! he!--yes, the Amontillado. But is it not getting late? Will not they be awaiting us at the palazzo, the Lady Fortunato and the rest? Let us be gone.\"",
+    "But to these words I hearkened in vain for a reply. I grew impatient. I called aloud--",
+    "No answer still. I thrust a torch through the remaining aperture and let it fall within. There came forth in reply only a jingling of the bells. My heart grew sick on account of the dampness of the catacombs. I hastened to make an end of my labour. I forced the last stone into its position; I plastered it up. Against the new masonry I re-erected the old rampart of bones. For the half of a century no mortal has disturbed them. _In pace requiescat!_",
+]
+```
+
+```@example gutenberg
+length(CASK_OF_AMONTILLADO), CASK_OF_AMONTILLADO[1]
+```
+
+### Building a vocabulary and a vector model
+
+[`Vocabulary`](@ref) parses the corpus once and accumulates per-token statistics
+([`TextConfig`](@ref)`()` defaults to word unigrams). A [`VectorModel`](@ref) then turns
+that vocabulary into a weighting scheme — here, classic TF-IDF — and
+[`vectorize_corpus`](@ref) applies it to every paragraph, producing one sparse
+[`SVEC`](@ref) per document.
+
+```@example gutenberg
+voc = Vocabulary(TextConfig(), CASK_OF_AMONTILLADO; verbose=false)
+vocsize(voc), trainsize(voc)
+```
+
+```@example gutenberg
+model = VectorModel(IdfWeighting(), TfWeighting(), voc)
+vecs = vectorize_corpus(model, CASK_OF_AMONTILLADO)
+vecs[1]
+```
+
+### Searching with a raw inverted file (vector-space ranking)
+
+[`WeightedInvertedFile`](@ref) indexes the weight vectors directly and ranks by a
+distance over them — cosine here, via `NormCosine` (SimilaritySearch's cosine distance, re-exported by TextSearch). This is the same kind of
+index you'd use for any sparse vector search, not just text.
+
+```@example gutenberg
+wif = WeightedInvertedFile(vocsize(voc))
+wctx = quietctx()
+append_items!(wif, wctx, VectorDatabase(vecs))
+
+res = knnqueue(KnnSorted, 5)
+search(wif, wctx, vecs[1], res)
+collect(IdView(res))
+```
+
+The first hit is paragraph 1 itself (distance 0 — a document is always its own nearest
+neighbor); the rest are the paragraphs whose TF-IDF vectors are closest to it. Querying
+with free text instead of an existing document's vector works the same way, through
+[`vectorize`](@ref):
+
+```@example gutenberg
+qvec = vectorize(model, "vector search library")
+res = knnqueue(KnnSorted, 5)
+search(wif, wctx, qvec, res)
+[(id, first(CASK_OF_AMONTILLADO[id], 60)) for id in collect(IdView(res))]
+```
+
+Only one hit came back even though we asked for 5 — an inverted file can only rank
+documents that share at least one token with the query, and here just one paragraph
+happens to contain "search". Unsurprisingly, a 19th-century short story has nothing to
+do with vector search libraries anyway; every score here is essentially noise. Try a
+query drawn from the story itself, like `"amontillado nitre"` or `"trowel wall"`, to
+see closer, more meaningful matches.
+
+### Searching with BM25 (probabilistic ranking)
+
+[`BM25InvertedFile`](@ref) is a different index entirely: instead of building explicit
+weight vectors, it indexes the corpus's bags of words and a [`BM25Scorer`](@ref)
+directly, ranking by the Okapi BM25 formula. There's no separate `VectorModel`/
+`vectorize_corpus` step — `append_items!` takes raw text (or [`TokenizedText`](@ref),
+or a pre-computed [`BOW`](@ref)) and computes everything it needs from `voc`.
+
+```@example gutenberg
+bm25idx = BM25InvertedFile(voc)
+bctx = quietctx()
+append_items!(bm25idx, bctx, CASK_OF_AMONTILLADO)
+
+res = knnqueue(KnnSorted, 5)
+search(bm25idx, bctx, "amontillado nitre", res)
+[(id, first(CASK_OF_AMONTILLADO[id], 60)) for id in collect(IdView(res))]
+```
+
+Both index types answer top-k queries the same way (`append_items!`/`push_item!` to
+build, `search` to query), so switching between them is mostly a matter of which one
+matches your ranking needs: `WeightedInvertedFile` for vector-space similarity over any
+weighting scheme you've built, `BM25InvertedFile` when you want BM25's document-length
+normalization and term-saturation behavior without hand-building vectors first.
+
+## Saving and loading indexes with JLD2
+
+Every type used above — [`Vocabulary`](@ref), [`VectorModel`](@ref),
+[`BM25InvertedFile`](@ref), [`WeightedInvertedFile`](@ref) — is a plain Julia struct, so
+[`JLD2.jl`](https://github.com/JuliaIO/JLD2.jl) can save and load them directly with no
+special glue code.
+
+```@example gutenberg
+using JLD2
+
+path = tempname() * ".jld2"
+jldsave(path; voc, model, bm25idx)
+```
+
+```@example gutenberg
+loaded = load(path)
+voc2, model2, bm25idx2 = loaded["voc"], loaded["model"], loaded["bm25idx"]
+vectorize(model2, CASK_OF_AMONTILLADO[1]) == vecs[1]
+```
+
+```@example gutenberg
+res = knnqueue(KnnSorted, 5)
+search(bm25idx2, quietctx(), "amontillado nitre", res)
+collect(IdView(res))
+```
+
+The reloaded `BM25InvertedFile` answers the same query with the same ranking as the
+original — nothing needs to be rebuilt or refit.
+
+## Working with WordTokenizers.jl
+
+`TextSearch`'s own tokenizer ([`TextConfig`](@ref)/[`tokenize`](@ref)) is tuned for
+short, noisy, informal text (tweets, chat messages) and is deliberately
+dependency-free. For general-purpose English text you may prefer a more
+linguistically-aware tokenizer — [`WordTokenizers.jl`](https://github.com/JuliaText/WordTokenizers.jl)
+is a common choice. There are two ways to bring it in: *compose* it with TextSearch's
+pipeline, or *replace* TextSearch's tokenizer entirely.
+
+### Composing: sentence splitting as a preprocessing step
+
+`TextSearch` has no sentence segmenter of its own — it tokenizes whatever "documents"
+you give it. Nothing stops you from making the documents finer-grained first. Here we
+split each paragraph into sentences with `WordTokenizers.split_sentences`, then hand the
+resulting sentence list to [`Vocabulary`](@ref)/[`vectorize_corpus`](@ref) exactly as
+before — `TextConfig`'s own tokenizer still does the actual word-level tokenization.
+
+```@example gutenberg
+using WordTokenizers
+
+sentences = String[]
+for paragraph in CASK_OF_AMONTILLADO
+    for s in split_sentences(paragraph)
+        push!(sentences, String(s))
+    end
+end
+
+length(sentences), sentences[1]
+```
+
+```@example gutenberg
+sentence_voc = Vocabulary(TextConfig(), sentences; verbose=false)
+vocsize(sentence_voc), trainsize(sentence_voc)
+```
+
+195 sentences from 54 paragraphs — a finer search granularity, built with one extra
+preprocessing step and no changes to `TextSearch` itself.
+
+### Replacing: bypassing TextSearch's tokenizer entirely
+
+If you'd rather use WordTokenizers' own word splitting instead of `TextSearch`'s, wrap
+its output in a [`TokenizedText`](@ref) — the same type [`tokenize`](@ref) itself
+returns. `TokenizedText` is TextSearch's universal "already tokenized" contract:
+[`Vocabulary`](@ref)/[`bagofwords`](@ref)/etc. all recognize it and skip their own
+normalization and tokenization step entirely, using your tokens as-is.
+
+```@example gutenberg
+wt_docs = [TokenizedText(String.(WordTokenizers.tokenize(lowercase(p)))) for p in CASK_OF_AMONTILLADO]
+collect(wt_docs[1])[1:8]
+```
+
+```@example gutenberg
+wt_voc = Vocabulary(TextConfig(), wt_docs; verbose=false)
+vocsize(wt_voc)
+```
+
+`TextConfig()` is still passed here — `Vocabulary` keeps it around for later use (e.g.
+tokenizing a raw-text query at search time) — but since every document already arrives
+as a `TokenizedText`, none of `TextConfig`'s own tokenization settings (`nlist`,
+`qlist`, `del_diac`, ...) have any effect on how these documents were split; that
+happened entirely inside `WordTokenizers.tokenize`.
+
+## A small tweet-like corpus
+
+`TextConfig` has several options aimed specifically at short, informal, social-media
+text: grouping `@mentions`, URLs, and emoji into single normalized tokens instead of
+leaving them as noisy character soup. The messages below are a small illustrative set
+written to exercise these options (not scraped from a live feed, so the example needs
+no network access and no data-license considerations).
+
+```@example tweets
+using TextSearch, SimilaritySearch
+
+quietctx() = InvertedFileContext(logger=SimilaritySearch.LogList(SimilaritySearch.AbstractLog[]))
+
+tweets = [
+    "Just landed in Mexico City!! 🎉 cant wait to try the tacos @VisitMexico #travel",
+    "Ugh, stuck in traffic again on the highway :( #mondayblues",
+    "New paper on approximate similarity search is out! check it out https://example.org/paper",
+    "@juli_ai loved your talk on vector databases today, so insightful #ai #ml",
+    "Rainy day, perfect for reading a good book ☕📚",
+    "Why does @united keep cancelling flights?? this is the third time this month #travelfail",
+    "Excited to announce our new open source vector search release! https://github.com/example/repo #julialang",
+    "lol this meme is too real 😂😂😂 #mood",
+    "Can anyone recommend a good vector search library for Julia? asking for a friend @julialang",
+    "Beautiful sunset over the bay tonight 🌅 #nofilter",
+]
+
+cfg = TextConfig(group_usr=true, group_url=true, group_emo=true, del_punc=false)
+collect(TextSearch.tokenize(cfg, tweets[1]))
+```
+
+`@VisitMexico` collapsed to `_usr`, and the 🎉 emoji collapsed to `👾` — with
+`group_emo=true`, every emoji character is replaced by this single placeholder glyph
+before tokenization, so any emoji becomes the same token instead of each distinct emoji
+being its own rare, one-off token. `#travel` stayed intact — hashtags are treated as
+regular content, not stripped, since they usually carry meaning.
+
+```@example tweets
+voc = Vocabulary(cfg, tweets; verbose=false)
+bm25idx = BM25InvertedFile(voc)
+ctx = quietctx()
+append_items!(bm25idx, ctx, tweets)
+
+res = knnqueue(KnnSorted, 3)
+search(bm25idx, ctx, "vector search library", res)
+[(id, tweets[id]) for id in collect(IdView(res))]
+```
+
+The top matches are exactly the three tweets that actually mention vector search —
+BM25 ranks them by how much of the query they cover and how rare/salient those terms
+are across the small corpus.
+
+## Next steps
+
+See the [TextSearch API](@ref) page for the full reference — every function and type used above
+(and many more, including the lower-level building blocks in `TextSearch.Intersections`
+and `TextSearch.InvertedFiles`) is documented there with its own runnable example.

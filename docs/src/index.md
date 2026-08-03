@@ -22,3 +22,11 @@ also, you can run the set of tests as follows
 ```julia
 ] test TextSearch
 ```
+
+# Getting started
+
+See the [Tutorial](@ref) for a hands-on walkthrough: building vocabularies and vector
+models over a real text corpus, indexing with both raw (vector-space) and BM25 inverted
+files, saving/loading indexes with JLD2, and composing or replacing the tokenizer with
+[WordTokenizers.jl](https://github.com/JuliaText/WordTokenizers.jl). The
+[TextSearch API](@ref) page has the full reference.
