@@ -33,8 +33,8 @@
     cdist = Dist.Cosine()
 
     for i in 1:length(aL)-1
-        @test abs(evaluate(adist, aL[i], aL[i+1]) - evaluate(adist, AL[i], AL[i+1])) < 1e-3
-        @test abs(evaluate(cdist, aL[i], aL[i+1]) - evaluate(cdist, AL[i], AL[i+1])) < 1e-3
+        @test abs(Dist.evaluate(adist, aL[i], aL[i+1]) - Dist.evaluate(adist, AL[i], AL[i+1])) < 1e-3
+        @test abs(Dist.evaluate(cdist, aL[i], aL[i+1]) - Dist.evaluate(cdist, AL[i], AL[i+1])) < 1e-3
     end
 end
 
@@ -57,20 +57,18 @@ end
 @testset "SparseVector centroid/sum matches Dict-based centroid/sum" begin
     Random.seed!(23)
     n = 400
-    dicts = Dict{UInt32,Float32}[]
     svecs = SparseVector{Float32,Int}[]
     for _ in 1:15
         k = rand(1:30)
         idx = randperm(n)[1:k]
         vals = rand(Float32, k)
-        push!(dicts, Dict{UInt32,Float32}(UInt32(i) => v for (i, v) in zip(idx, vals)))
         push!(svecs, sparsevec(idx, vals, n))
     end
 
-    cd = centroid(dicts)
-    cs = centroid(svecs)
-    @test nnz(cs) == length(cd)
+    cd = sum(svecs); normalize!(cd)
+    cs = TextSearch.centroid(svecs)
+    @test nnz(cs) == nnz(cd)
     for i in cs.nzind
-        @test isapprox(cs[i], get(cd, UInt32(i), 0f0); atol=1e-4)
+        @test cs[i] ≈ cd[i]
     end
 end

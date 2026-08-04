@@ -90,7 +90,8 @@ abstract type TextModel end
 
 Combines a [`Vocabulary`](@ref) with a local/global term-weighting scheme
 (e.g. [`TfWeighting`](@ref)+[`IdfWeighting`](@ref) for classical TF-IDF) to turn
-bags of words into weighted sparse vectors (`SVEC`) via [`vectorize`](@ref)/[`vectorize!`](@ref).
+bags of words into weighted sparse vectors (`SparseVector{Float32,Int32}`) via
+[`vectorize`](@ref)/[`vectorize!`](@ref).
 Build one with [`VectorModel(gw, lw, voc)`](@ref VectorModel).
 
 # Fields
@@ -110,7 +111,9 @@ julia> voc = Vocabulary(TextConfig(), corpus; verbose=false);
 julia> model = VectorModel(IdfWeighting(), TfWeighting(), voc);
 
 julia> vectorize(model, "hello world")
-Dict{UInt32, Float32}(0x00000002 => 0.9293994, 0x00000001 => 0.36907572)
+6-element SparseArrays.SparseVector{Float32, Int32} with 2 stored entries:
+  [1]  =  0.369076
+  [2]  =  0.929399
 ```
 """
 mutable struct VectorModel{_G<:GlobalWeighting, _L<:LocalWeighting} <: TextModel
@@ -265,43 +268,65 @@ function filter_tokens(pred::Function, model::VectorModel)
 end
 
 
-function vectorize_!(buff::TextSearchBuffer, model::VectorModel{G_,L_}, bow::BOW; normalize=true, minweight=1e-9) where {G_,L_}
-    vec = buff.vec
-    numtokens::Int = 0
+"""
+    VectorizeBuffer(n=128)
 
-    if L_ === TpWeighting
-        for freq in values(bow)
-            numtokens += freq
+Pooled per-thread scratch space for [`vectorize!`](@ref): `ids` accumulates every
+in-vocabulary token id seen in a document (with repeats), which is then sorted and
+run-length-encoded to recover per-token occurrence counts — the same merge-based
+strategy [`sum(::AbstractVector{<:SparseVector})`](@ref sum) uses, avoiding the `Dict`
+allocation/hashing a [`BOW`](@ref) would need for this per-call, performance-sensitive
+path.
+"""
+struct VectorizeBuffer
+    ids::Vector{Int32}
+
+    function VectorizeBuffer(n=128)
+        ids = Vector{Int32}()
+        sizehint!(ids, n)
+        new(ids)
+    end
+end
+
+const VECTORIZE_CACHES = Channel{VectorizeBuffer}(Inf)
+
+Base.empty!(buff::VectorizeBuffer) = (empty!(buff.ids); buff)
+
+function _collect_token_ids!(ids::Vector{Int32}, voc::Vocabulary, text::AbstractString)
+    tokenizerbuffer() do tok
+        tokenlist = tokenize(borrowtokenizedtext, voc.textconfig, text, tok)
+        for token in tokenlist
+            tokenID = token2id(voc, token)
+            zero(UInt32) != tokenID && push!(ids, tokenID)
         end
     end
-    
-    maxoccs::Int = 0
-    if L_ === TfWeighting
-        maxoccs = length(bow) == 0 ? 0 : maximum(bow) 
-    end
-    
-    for (tokenID, freq) in bow
-        # w = local_weighting(model.local_weighting, freq, maxoccs, numtokens) * global_weighting(model, tokenID)
-        w = local_weighting(model.local_weighting, freq, maxoccs, numtokens) * weight(model, tokenID)
-        w >= minweight && (vec[tokenID] = w)
-    end
+    ids
+end
 
-    if length(vec) == 0
-        vec[0] = 1f0
-    else
-        normalize && normalize!(vec)
+function _collect_token_ids!(ids::Vector{Int32}, voc::Vocabulary, tokens::TokenizedText)
+    for token in tokens
+        tokenID = token2id(voc, token)
+        zero(UInt32) != tokenID && push!(ids, tokenID)
     end
+    ids
+end
 
-    buff
+function _collect_token_ids!(ids::Vector{Int32}, voc::Vocabulary, messages)
+    for text in messages
+        _collect_token_ids!(ids, voc, text)
+    end
+    ids
 end
 
 """
-    vectorize!(buff::TextSearchBuffer, model::VectorModel, text; normalize=true, minweight=1e-6)
+    vectorize!(buff::VectorizeBuffer, model::VectorModel, text; normalize=true, minweight=1e-6)
 
-Tokenizes `text`, computes its bag of words, and weights it using `model`'s local/global
-weighting scheme, storing the result in `buff.vec` (a [`SVEC`](@ref)); entries with a
-weight below `minweight` are dropped, and the result is L2-normalized unless
-`normalize=false`. Returns `buff`. See [`vectorize`](@ref) for a non-mutating version.
+Tokenizes `text` and weights it using `model`'s local/global weighting scheme, returning
+the result as a `SparseVector{Float32,Int32}`; entries with a weight below `minweight`
+are dropped, and the result is L2-normalized unless `normalize=false`. `buff` is used as
+scratch space (see [`VectorizeBuffer`](@ref); tokenization scratch space is borrowed
+separately via [`tokenizerbuffer`](@ref)). See [`vectorize`](@ref) for a version that
+manages the scratch buffer for you.
 
 # Example
 
@@ -312,25 +337,70 @@ julia> voc = Vocabulary(TextConfig(), corpus; verbose=false);
 
 julia> model = VectorModel(IdfWeighting(), TfWeighting(), voc);
 
-julia> buff = TextSearch.TextSearchBuffer();
+julia> buff = TextSearch.VectorizeBuffer();
 
-julia> TextSearch.vectorize!(buff, model, "hello world");
-
-julia> buff.vec
-Dict{UInt32, Float32}(0x00000002 => 0.9293994, 0x00000001 => 0.36907572)
+julia> TextSearch.vectorize!(buff, model, "hello world")
+6-element SparseArrays.SparseVector{Float32, Int32} with 2 stored entries:
+  [1]  =  0.369076
+  [2]  =  0.929399
 ```
 """
-function vectorize!(buff::TextSearchBuffer, model::VectorModel, text; normalize=true, minweight=1e-6)
-    empty!(buff)
-    bagofwords!(buff, model.voc, text)
-    vectorize_!(buff, model, buff.bow; normalize, minweight)
+function vectorize!(buff::VectorizeBuffer, model::VectorModel, text; normalize=true, minweight=1e-6)
+    ids = buff.ids
+    empty!(ids)
+    _collect_token_ids!(ids, model.voc, text)
+    sort!(ids)
+    n = length(ids)
+    numtokens::Int = n  # total in-vocabulary token occurrences (TpWeighting)
+
+    maxoccs::Int = 0
+    if model.local_weighting isa TfWeighting
+        i = 1
+        while i <= n
+            j = i
+            while j < n && ids[j+1] == ids[i]
+                j += 1
+            end
+            occs = j - i + 1
+            occs > maxoccs && (maxoccs = occs)
+            i = j + 1
+        end
+    end
+
+    nnzidx = Vector{Int32}(undef, n)
+    nnzval = Vector{Float32}(undef, n)
+
+    i = 1
+    k = 0
+    while i <= n
+        j = i
+        while j < n && ids[j+1] == ids[i]
+            j += 1
+        end
+        tokenID = ids[i]
+        occs = j - i + 1
+        w = local_weighting(model.local_weighting, occs, maxoccs, numtokens) * weight(model, tokenID)
+        if w >= minweight
+            k += 1
+            nnzidx[k] = tokenID
+            nnzval[k] = w
+        end
+        i = j + 1
+    end
+
+    resize!(nnzidx, k)
+    resize!(nnzval, k)
+
+    vec = SparseVector(vocsize(model), nnzidx, nnzval)
+    normalize && normalize!(vec)
+    vec
 end
 
 """
     vectorize(model::VectorModel, text; normalize=true, minweight=1e-6)
 
-Computes the weighted sparse vector ([`SVEC`](@ref)) representation of `text` under
-`model`. `text` can be a string or a list of strings (a multi-field document).
+Computes the weighted sparse vector (a `SparseVector{Float32,Int32}`) representation of
+`text` under `model`. `text` can be a string or a list of strings (a multi-field document).
 
 # Example
 
@@ -342,16 +412,17 @@ julia> voc = Vocabulary(TextConfig(), corpus; verbose=false);
 julia> model = VectorModel(IdfWeighting(), TfWeighting(), voc);
 
 julia> vectorize(model, "hello world")
-Dict{UInt32, Float32}(0x00000002 => 0.9293994, 0x00000001 => 0.36907572)
+6-element SparseArrays.SparseVector{Float32, Int32} with 2 stored entries:
+  [1]  =  0.369076
+  [2]  =  0.929399
 ```
 """
 function vectorize(model::VectorModel, text; normalize=true, minweight=1e-6)
-    buff = take!(TEXT_SEARCH_CACHES)
+    buff = take!(VECTORIZE_CACHES)
     try
         vectorize!(buff, model, text; normalize, minweight)
-        buff.vec |> copy
     finally
-        put!(TEXT_SEARCH_CACHES, buff)
+        put!(VECTORIZE_CACHES, buff)
     end
 end
 
@@ -372,18 +443,17 @@ julia> voc = Vocabulary(TextConfig(), corpus; verbose=false);
 julia> model = VectorModel(IdfWeighting(), TfWeighting(), voc);
 
 julia> vectorize_corpus(model, corpus; verbose=false)[1]
-Dict{UInt32, Float32}(0x00000002 => 0.9293994, 0x00000001 => 0.36907572)
+6-element SparseArrays.SparseVector{Float32, Int32} with 2 stored entries:
+  [1]  =  0.369076
+  [2]  =  0.929399
 ```
 """
 function vectorize_corpus(model::VectorModel, corpus; normalize=true, minweight=1e-6, minbatch=0, verbose=true)
     corpus = collect(corpus)
     n = length(corpus)
-    V = SVEC[]
-    resize!(V, n)
+    V = Vector{SparseVector{Float32,Int32}}(undef, n)
     minbatch = getminbatch(minbatch, n)
 
-    # @batch minbatch=minbatch per=thread for i in 2:n
-    vectorize(model, corpus[1]; normalize, minweight)
     @showprogress dt=1 enabled=verbose desc="vectorizing corpus" Threads.@threads for i in 1:n
         V[i] = vectorize(model, corpus[i]; normalize, minweight)
     end

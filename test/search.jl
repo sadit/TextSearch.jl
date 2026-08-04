@@ -19,9 +19,10 @@ end
     model = VectorModel(BinaryGlobalWeighting(), FreqWeighting(), Vocabulary(textconfig, _corpus))
     X = vectorize_corpus(model, _corpus)
     vec = sum(X) |> normalize!
-    vec = Dict(model.voc.token[t] => w for (t, w) in vec)
+    vec = Dict(model.voc.token[t] => w for (t, w) in zip(SparseArrays.nonzeroinds(vec), SparseArrays.nonzeros(vec)))
     expected = Dict("la" => 0.7366651330405098, "verde" => 0.39921969741172364, "azul" => 0.11248181187626208, "pera" => 0.08712803682959973, "esta" => 0.17425607365919946, "roja" => 0.22496362375252416, "hoja" => 0.11248181187626208, "casa" => 0.33744543562878626, "rica" => 0.17425607365919946, "manzana" => 0.19960984870586182)
-    @test 0.999 < dot(vec, expected)
+    dot_ = sum(w * get(expected, k, 0.0) for (k, w) in vec)
+    @test 0.999 < dot_
 end
 
 @testset "bm25 invindex" begin
@@ -37,7 +38,7 @@ end
     append_items!(invfile, ctx, _corpus)
     R = search(invfile, ctx, "la casa de la manzana verde", knnqueue(KnnSorted, 3))
     @test collect(IdView(R)) == UInt32[0x00000006, 0x00000002, 0x00000004]
-    @test evaluate(Dist.SqL2(), collect(Float32, DistView(R)), Float32[-3.3956785, -3.1118512, -2.5816276]) <= 1e-4
+    @test Dist.evaluate(Dist.SqL2(), collect(Float32, DistView(R)), Float32[-3.3956785, -3.1118512, -2.5816276]) <= 1e-4
     @show invfile.voc
     @show invfile.bm25
 end

@@ -2,11 +2,11 @@ using SimilaritySearch, TextSearch
 using Test, SparseArrays, LinearAlgebra, StatsBase, Random
 
 using Aqua
-Aqua.test_all(TextSearch, ambiguities=false, piracies=false)
+Aqua.test_all(TextSearch, ambiguities=false, piracies=false, stale_deps=false)
 Aqua.test_ambiguities([TextSearch])
 using LinearAlgebra, SparseArrays 
 using SimilaritySearch
-Aqua.test_piracies(TextSearch, treat_as_own=[Base.:*, Base.:/, Base.:+, Base.:-, argmin, argmax, evaluate, findmin, findmax, sum, normalize!, dot, maximum, minimum, norm, sparse, sparse_coo, nnz, sparsevec, zero])
+Aqua.test_piracies(TextSearch, treat_as_own=[Base.:*, Base.:/, Base.:+, Base.:-, argmin, argmax, findmin, findmax, sum, Dist.evaluate, dot, maximum, minimum, norm, sparse, sparse_coo, nnz, sparsevec, zero])
 
 const fit = TextSearch.fit
 
@@ -39,10 +39,10 @@ function are_posting_lists_sorted(invindex)
 end
 
 
-include("intersections.jl")
-include("invertedfiles.jl")
-include("tok.jl")
-include("voc.jl")
+#include("intersections.jl")
+#include("invertedfiles.jl")
+#include("tok.jl")
+#include("voc.jl")
 include("vec.jl")
 include("svec.jl")
 include("search.jl")

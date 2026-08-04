@@ -29,17 +29,17 @@ function bagofwords!(bow::BOW, voc::Vocabulary, tokenlist::TokenizedText)
 end
 
 function bagofwords_(copy_::Function, voc::Vocabulary, text)
-    buff = take!(TEXT_SEARCH_CACHES)
+    buff = take!(BOW_CACHES)
     empty!(buff)
     try
         copy_(bagofwords!(buff, voc, text).bow)
     finally
-        put!(TEXT_SEARCH_CACHES, buff)
+        put!(BOW_CACHES, buff)
     end
 end
 
 """
-    bagofwords!(buff::TextSearchBuffer, voc::Vocabulary, messages)
+    bagofwords!(buff::BOWBuffer, voc::Vocabulary, messages)
 
 Computes a bag of words from a multi-field document (a list of texts), storing the
 result in `buff.bow`. See [`bagofwords`](@ref) for the non-mutating version.
@@ -49,7 +49,7 @@ result in `buff.bow`. See [`bagofwords`](@ref) for the non-mutating version.
 ```julia
 julia> voc = Vocabulary(TextConfig(), ["hello world"]; verbose=false);
 
-julia> buff = TextSearch.TextSearchBuffer();
+julia> buff = TextSearch.BOWBuffer();
 
 julia> TextSearch.bagofwords!(buff, voc, "hello hello world");
 
@@ -57,24 +57,27 @@ julia> buff.bow
 Dict{UInt32, Int32}(0x00000002 => 1, 0x00000001 => 2)
 ```
 """
-function bagofwords!(buff::TextSearchBuffer, voc::Vocabulary, messages)
+function bagofwords!(buff::BOWBuffer, voc::Vocabulary, messages)
     empty!(buff.bow)
     for text in messages
-        empty!(buff.tok)
-        tokens = tokenize(borrowtokenizedtext, voc.textconfig, text, buff.tok)
-        bagofwords!(buff.bow, voc, tokens)
+        tokenizerbuffer() do tok
+            tokens = tokenize(borrowtokenizedtext, voc.textconfig, text, tok)
+            bagofwords!(buff.bow, voc, tokens)
+        end
     end
 
     buff
 end
 
-function bagofwords!(buff::TextSearchBuffer, voc::Vocabulary, text::AbstractString)
-    tokens = tokenize(borrowtokenizedtext, voc.textconfig, text, buff.tok)
-    bagofwords!(buff.bow, voc, tokens)
+function bagofwords!(buff::BOWBuffer, voc::Vocabulary, text::AbstractString)
+    tokenizerbuffer() do tok
+        tokens = tokenize(borrowtokenizedtext, voc.textconfig, text, tok)
+        bagofwords!(buff.bow, voc, tokens)
+    end
     buff
 end
 
-function bagofwords!(buff::TextSearchBuffer, voc::Vocabulary, tokens::TokenizedText)
+function bagofwords!(buff::BOWBuffer, voc::Vocabulary, tokens::TokenizedText)
     bagofwords!(buff.bow, voc, tokens)
     buff
 end

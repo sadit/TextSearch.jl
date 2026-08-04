@@ -35,7 +35,7 @@ vectors (`BOW = Dict{UInt32,Int32}`, `SVEC = Dict{UInt32,Float32}`) and
 
 | File | Responsibility |
 |---|---|
-| `TextSearch.jl` | Module entry point, includes, `TextSearchBuffer` thread-local buffer pool |
+| `TextSearch.jl` | Module entry point, includes, `BOWBuffer` thread-local buffer pool |
 | `textconfig.jl` | `TextConfig`, `Skipgram` — tokenization/preprocessing configuration |
 | `tokentrans.jl` | `AbstractTokenTransformation` hooks (stemming, stopwords, chaining) |
 | `normalize.jl` | Character-level text normalization, emoji detection |
@@ -95,9 +95,13 @@ coverage to Codecov. `documentation.yml` builds and deploys docs on pushes/tags 
 - **Sparse vectors are plain `Dict`s**, not `SparseVector`: `BOW = Dict{UInt32,Int32}`,
   `SVEC = Dict{UInt32,Float32}` (defined in `TextSearch.jl`). Arithmetic/distance
   operators for them live in `dvec.jl` — extend there, not ad hoc elsewhere.
-- **Buffer pooling**: `TextSearchBuffer`/`TEXT_SEARCH_CACHES` in `TextSearch.jl` is a
-  channel-based per-thread buffer pool used to avoid allocations during tokenization;
-  use `textbuffer(f)` rather than allocating new buffers in hot paths.
+- **Buffer pooling**: three separate channel-based per-thread pools avoid allocations —
+  `BOWBuffer`/`BOW_CACHES` in `TextSearch.jl` (use `bowbuffer(f)`) backs the public
+  `Dict`-based `bagofwords`/`bagofwords!` API; `VectorizeBuffer`/`VECTORIZE_CACHES` in
+  `vmodel.jl` backs the performance-sensitive `vectorize!` path (sorts/RLEs token ids
+  directly, no `Dict` involved); and `TokenizerBuffer`/`TOKENIZER_CACHES` inside the
+  `Tokenizer` module (use `tokenizerbuffer(f)`) backs tokenization scratch space, borrowed
+  on demand by the other two rather than duplicated.
 - **Struct immutability**: most core types (`TextConfig`, `Vocabulary`, `BM25`, …) are
   immutable `struct`s with explicit copy-constructors (e.g. `TextConfig(c::TextConfig; kwargs...)`)
   for "update a field" patterns — follow that pattern instead of adding mutability.

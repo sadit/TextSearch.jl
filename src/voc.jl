@@ -255,16 +255,17 @@ function Vocabulary(textconfig::TextConfig, corpusgenerator; minbatch::Int=0, bu
 end
 
 function _locked_tokenize_and_push(voc, doc, buff, l)
-    empty!(buff; bow=false)
-    tokenlist = tokenize(borrowtokenizedtext, voc.textconfig, doc, buff.tok)
-    for token in tokenlist
-        id = 0
-        lock(l)
-        try
-            id = push_token!(voc, token, 1, 0)
-        finally
-            unlock(l)
-            buff.bow[id] = 1
+    tokenizerbuffer() do tok
+        tokenlist = tokenize(borrowtokenizedtext, voc.textconfig, doc, tok)
+        for token in tokenlist
+            id = 0
+            lock(l)
+            try
+                id = push_token!(voc, token, 1, 0)
+            finally
+                unlock(l)
+                buff.bow[id] = 1
+            end
         end
     end
 end
@@ -292,7 +293,7 @@ function tokenize_and_append!(voc::Vocabulary, corpus; minbatch=0)
  
     Threads.@threads for i in 1:n # @batch per=thread minbatch=minbatch for i in 1:n
         doc = corpus[i]
-        buff = take!(TEXT_SEARCH_CACHES)
+        buff = take!(BOW_CACHES)
 
         try
             empty!(buff)
@@ -315,7 +316,7 @@ function tokenize_and_append!(voc::Vocabulary, corpus; minbatch=0)
             end
 
         finally
-            put!(TEXT_SEARCH_CACHES, buff)
+            put!(BOW_CACHES, buff)
         end
     end
 

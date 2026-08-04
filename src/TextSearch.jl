@@ -22,7 +22,7 @@ export WeightedInvertedFile, BinaryInvertedFile, AbstractInvertedFile, SortedInt
 
 include("tokenizer/Tokenizer.jl")
 using .Tokenizer
-using .Tokenizer: borrowtokenizedtext
+using .Tokenizer: borrowtokenizedtext, tokenizerbuffer
 export TextConfig, Skipgram, TokenizedText, tokenize, tokenize_corpus, qgrams, unigrams,
        normalize_text, isemoji,
        AbstractTokenTransformation, IdentityTokenTransformation, IgnoreStopwords, ChainTransformation, transform,
@@ -67,48 +67,39 @@ export SVEC, BOW
 
 
 """
-    TextSearchBuffer(n=128)
+    BOWBuffer(n=128)
 
-Pooled per-thread scratch space: `tok` (a [`TokenizerBuffer`](@ref)) is used for
-tokenization, `bow` accumulates a [`BOW`](@ref), and `vec` accumulates an [`SVEC`](@ref).
+Pooled per-thread scratch space accumulating a [`BOW`](@ref) while computing a bag of
+words. Tokenization scratch space is borrowed separately, on demand, from `Tokenizer`'s
+own pool (see [`tokenizerbuffer`](@ref)) rather than being held here.
 """
-struct TextSearchBuffer
-    tok::TokenizerBuffer
+struct BOWBuffer
     bow::BOW
-    vec::SVEC
 
-    function TextSearchBuffer(n=128)
-        tok = TokenizerBuffer(n)
+    function BOWBuffer(n=128)
         bow = BOW()
-        vec = SVEC()
-
         sizehint!(bow, n)
-        sizehint!(vec, n)
-
-        new(tok, bow, vec)
+        new(bow)
     end
 end
 
-const TEXT_SEARCH_CACHES = Channel{TextSearchBuffer}(Inf)
+const BOW_CACHES = Channel{BOWBuffer}(Inf)
 
-function Base.empty!(buff::TextSearchBuffer; normtext::Bool=true, tokens::Bool=true, unigrams::Bool=true, bow::Bool=true, vec::Bool=true)
-    empty!(buff.tok; normtext, tokens, unigrams)
-    bow && empty!(buff.bow)
-    vec && empty!(buff.vec)
-end
+Base.empty!(buff::BOWBuffer) = (empty!(buff.bow); buff)
 
 function __init__()
     for _ in 1:2*Threads.nthreads()+4
-        put!(TEXT_SEARCH_CACHES, TextSearchBuffer())
+        put!(BOW_CACHES, BOWBuffer())
+        put!(VECTORIZE_CACHES, VectorizeBuffer())
     end
 end
 
-@inline function textbuffer(f)
-    buff = take!(TEXT_SEARCH_CACHES)
+@inline function bowbuffer(f)
+    buff = take!(BOW_CACHES)
     try
         f(buff)
     finally
-        put!(TEXT_SEARCH_CACHES, buff)
+        put!(BOW_CACHES, buff)
     end
 end
 

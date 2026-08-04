@@ -32,7 +32,9 @@ julia> voc = Vocabulary(TextConfig(), corpus; verbose=false);
 julia> model = VectorModel(EntropyWeighting(), TfWeighting(), voc, corpus, labels; mindocs=1, comb=NormalizedEntropy(), verbose=false);
 
 julia> vectorize(model, "me gusta")
-Dict{UInt32, Float32}(0x00000002 => 0.02782909, 0x00000001 => 0.9996127)
+6-element SparseArrays.SparseVector{Float32, Int32} with 2 stored entries:
+  [1]  =  0.9996127
+  [2]  =  0.0278291
 ```
 """
 struct NormalizedEntropy <: CombineWeighting end
@@ -62,7 +64,9 @@ julia> voc = Vocabulary(TextConfig(), corpus; verbose=false);
 julia> model = VectorModel(EntropyWeighting(), TfWeighting(), voc, corpus, labels; mindocs=1, comb=SigmoidPenalizeFewSamples(), verbose=false);
 
 julia> vectorize(model, "me gusta")
-Dict{UInt32, Float32}(0x00000002 => 0.02269659, 0x00000001 => 0.99974245)
+6-element SparseArrays.SparseVector{Float32, Int32} with 2 stored entries:
+  [1]  =  0.99974245
+  [2]  =  0.02269659
 ```
 """
 struct SigmoidPenalizeFewSamples <: CombineWeighting end
@@ -91,7 +95,8 @@ julia> voc = Vocabulary(TextConfig(), corpus; verbose=false);
 julia> model = VectorModel(EntropyWeighting(), TfWeighting(), voc, corpus, labels; verbose=false);
 
 julia> vectorize(model, "me gusta")
-Dict{UInt32, Float32}(0x00000001 => 1.0)
+6-element SparseArrays.SparseVector{Float32, Int32} with 1 stored entry:
+  [1]  =  1.0
 ```
 """
 struct EntropyWeighting <: GlobalWeighting end
@@ -148,7 +153,9 @@ julia> voc = Vocabulary(TextConfig(), corpus; verbose=false);
 julia> model = VectorModel(EntropyWeighting(), TfWeighting(), voc, corpus, labels; mindocs=1, verbose=false);
 
 julia> vectorize(model, "me gusta")
-Dict{UInt32, Float32}(0x00000002 => 0.02782909, 0x00000001 => 0.9996127)
+6-element SparseArrays.SparseVector{Float32, Int32} with 2 stored entries:
+  [1]  =  0.9996127
+  [2]  =  0.0278291
 ```
 """
 function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, voc::Vocabulary, corpus::AbstractVector, labels::AbstractVector;

@@ -11,8 +11,9 @@ tokens, `unigrams` holds the word-level basis used by n-word/skip-gram/collocati
 generators, and `io` is scratch space for building individual token strings.
 
 `Tokenizer` pools these internally for its own buffer-less convenience API (see
-[`tokenize`](@ref)); callers that already manage their own buffer pool (as `TextSearch`
-does with its own `TextSearchBuffer`) can construct and reuse one directly.
+[`tokenize`](@ref)); callers that need to hold a buffer across several calls (e.g. to
+safely alias its contents via `borrowtokenizedtext`) should borrow one from the same
+pool via [`tokenizerbuffer`](@ref) instead of constructing their own.
 """
 struct TokenizerBuffer
     normtext::Vector{Char}

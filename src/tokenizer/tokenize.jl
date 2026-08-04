@@ -1,6 +1,6 @@
 # This file is a part of TextSearch.jl
 
-export TokenizedText, tokenize, tokenize_corpus, qgrams, unigrams, generate!, flush_token!
+export TokenizedText, tokenize, tokenize_corpus, qgrams, unigrams, generate!, flush_token!, tokenizerbuffer
 
 """
     TokenizedText(tokens::AbstractVector{String})
@@ -88,6 +88,34 @@ function tokenize(copy_::Function, textconfig::TextConfig, text)
     empty!(buff)
     try
         tokenize(copy_, textconfig, text, buff)
+    finally
+        put!(TOKENIZER_CACHES, buff)
+    end
+end
+
+"""
+    tokenizerbuffer(f)
+
+Borrows a [`TokenizerBuffer`](@ref) from `Tokenizer`'s own pool, passes it to `f`, and
+returns it to the pool afterwards. Unlike the buffer-less [`tokenize`](@ref) methods
+(which release their borrowed buffer before returning), the buffer stays borrowed for
+the whole extent of `f`, so it is safe to alias its contents (e.g. via
+[`borrowtokenizedtext`](@ref)) as long as they are consumed inside `f`.
+
+# Example
+
+```julia
+julia> TextSearch.Tokenizer.tokenizerbuffer() do buff
+           tokenize(borrowtokenizedtext, TextConfig(), "hello world", buff) |> collect
+       end
+["hello", "world"]
+```
+"""
+@inline function tokenizerbuffer(f)
+    buff = take!(TOKENIZER_CACHES)
+    empty!(buff)
+    try
+        f(buff)
     finally
         put!(TOKENIZER_CACHES, buff)
     end

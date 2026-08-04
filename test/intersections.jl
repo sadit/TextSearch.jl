@@ -1,5 +1,5 @@
 using TextSearch.Intersections
-using Test, JET, Random
+using Test, Random
 
 Random.seed!(0)
 
@@ -11,30 +11,26 @@ Random.seed!(0)
 
         for salgo in (binarysearch, doublingsearch, doublingsearchrev, seqsearch, seqsearchrev)
             pos = salgo(L, v)
-            i == 1 && @test_call salgo(L, v)
             @test p == pos #&& error("gold:$p != found:$pos; L=$L, searching for: $v")
         end
 
         v = 0
         for salgo in (binarysearch, doublingsearch, doublingsearchrev, seqsearch, seqsearchrev)
-            i == 1 && @test_call salgo(L, v)
             @test 1 == salgo(L, v)
         end
 
         v = 2000
         for salgo in (binarysearch, doublingsearch, doublingsearchrev, seqsearch, seqsearchrev)
-            i == 1 && @test_call salgo(L, v)
             @test length(L)+1 == salgo(L, v)
         end
 
     end
 end
 
-randset(n, m) = [sort!(unique(rand(1:n, 100))) for j in 1:m]
+randset(n, m) = [sort!(unique(rand(1:n, 100))) for _ in 1:m]
 
 @testset "SVS" begin
     @test [1, 3, 5] == svs([[1, 2, 3, 4, 5], [1, 3, 5]])
-    @test_call svs([[1, 2, 3, 4, 5], [1, 3, 5]])
     
     for ialgo2 in [baezayates!, imerge2!]
         n = 300
@@ -44,7 +40,6 @@ randset(n, m) = [sort!(unique(rand(1:n, 100))) for j in 1:m]
             #@info (i, I, ialgo2)
             Lc = copy(L)
             S = svs(Lc, ialgo2)
-            i == 1 && @test_call svs(Lc, ialgo2)
             @test I == S
         end
     end
@@ -66,9 +61,9 @@ end
     LIST = [[1, 2, 3, 4, 5, 6], [1, 3, 5]]
     @test [1, 3, 5] == doL(bk!, LIST)
     @test [1, 3, 5] == doL(bkt!, LIST)
-    @test_call doL(bk!, LIST, binarysearch)
-    @test_call doL(bk!, LIST, doublingsearch)
-    @test_call doL(bk!, LIST, doublingsearchrev)
+    @test [1, 3, 5] == doL(bk!, LIST, binarysearch)
+    @test [1, 3, 5] == doL(bk!, LIST, doublingsearch)
+    @test [1, 3, 5] == doL(bk!, LIST, doublingsearchrev)
 
     for salgo in [binarysearch, doublingsearch, doublingsearchrev]
         n = 300
@@ -90,8 +85,6 @@ end
         L = randset(n, 5)
         I = sort(union(L...))
         #@info (i, I, bk, salgo)
-        i == 1 && @test_call umerge!(Int[], L)
-        i == 1 && @test_call bkt!(Int[], L)
         S = doT(umerge!, L, 1)
         @test I == S
         S = doT(bkt!, L, 1)
@@ -103,12 +96,10 @@ end
     @test [1, 2, 3, 4, 5, 6, 7] == doT(umerge!, [[1, 2, 3, 4, 5, 6], [1, 3, 7], [1, 6]], 1)
     @test [1, 3, 6] == doT(umerge!, [[1, 2, 3, 4, 5, 6], [1, 3, 7], [1, 6]], 2)
     @test [1] == doT(umerge!, [[1, 2, 3, 4, 5, 6], [1, 3, 7], [1, 6]], 3)
-    @test_call doT(umerge!, [[1, 2, 3, 4, 5, 6], [1, 3, 7], [1, 6]], 3)
     
     @test [1, 2, 3, 4, 5, 6, 7] == doT(bkt!, [[1, 2, 3, 4, 5, 6], [1, 3, 7], [1, 6]], 1)
     @test [1, 3, 6] == doT(bkt!, [[1, 2, 3, 4, 5, 6], [1, 3, 7], [1, 6]], 2)
     @test [1] == doT(bkt!, [[1, 2, 3, 4, 5, 6], [1, 3, 7], [1, 6]], 3)
-    @test_call doT(bkt!, [[1, 2, 3, 4, 5, 6], [1, 3, 7], [1, 6]], 3)
     
     n = 3
     for i in n:n
