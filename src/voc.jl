@@ -254,7 +254,9 @@ function Vocabulary(textconfig::TextConfig, corpusgenerator; minbatch::Int=0, bu
     voc
 end
 
-function _locked_tokenize_and_push(voc, doc, buff, l)
+const BOW_CACHES = Channel{BOW}(Inf)
+
+function _locked_tokenize_and_push(voc, doc, bow::BOW, l)
     tokenizerbuffer() do tok
         tokenlist = tokenize(borrowtokenizedtext, voc.textconfig, doc, tok)
         for token in tokenlist
@@ -264,7 +266,7 @@ function _locked_tokenize_and_push(voc, doc, buff, l)
                 id = push_token!(voc, token, 1, 0)
             finally
                 unlock(l)
-                buff.bow[id] = 1
+                bow[id] = 1
             end
         end
     end
@@ -293,22 +295,22 @@ function tokenize_and_append!(voc::Vocabulary, corpus; minbatch=0)
  
     Threads.@threads for i in 1:n # @batch per=thread minbatch=minbatch for i in 1:n
         doc = corpus[i]
-        buff = take!(BOW_CACHES)
+        bow = take!(BOW_CACHES)
 
         try
-            empty!(buff)
+            empty!(bow)
             if doc isa AbstractVector
                 for text in doc
-                    _locked_tokenize_and_push(voc, text, buff, l)
+                    _locked_tokenize_and_push(voc, text, bow, l)
                 end
             else # if doc isa AbstractString
-                _locked_tokenize_and_push(voc, doc, buff, l)
+                _locked_tokenize_and_push(voc, doc, bow, l)
             end
 
             lock(l)
-            voc.numtokens[] += length(buff.bow)
+            voc.numtokens[] += length(bow)
             try
-                for id in keys(buff.bow)
+                for id in keys(bow)
                     voc.ndocs[id] += 1
                 end
             finally
@@ -316,7 +318,7 @@ function tokenize_and_append!(voc::Vocabulary, corpus; minbatch=0)
             end
 
         finally
-            put!(BOW_CACHES, buff)
+            put!(BOW_CACHES, bow)
         end
     end
 

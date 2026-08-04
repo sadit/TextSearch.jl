@@ -65,41 +65,10 @@ const SVEC = Dict{UInt32,Float32}
 
 export SVEC, BOW
 
-
-"""
-    BOWBuffer(n=128)
-
-Pooled per-thread scratch space accumulating a [`BOW`](@ref) while computing a bag of
-words. Tokenization scratch space is borrowed separately, on demand, from `Tokenizer`'s
-own pool (see [`tokenizerbuffer`](@ref)) rather than being held here.
-"""
-struct BOWBuffer
-    bow::BOW
-
-    function BOWBuffer(n=128)
-        bow = BOW()
-        sizehint!(bow, n)
-        new(bow)
-    end
-end
-
-const BOW_CACHES = Channel{BOWBuffer}(Inf)
-
-Base.empty!(buff::BOWBuffer) = (empty!(buff.bow); buff)
-
 function __init__()
     for _ in 1:2*Threads.nthreads()+4
-        put!(BOW_CACHES, BOWBuffer())
+        put!(BOW_CACHES, sizehint!(BOW(), 128))
         put!(VECTORIZE_CACHES, VectorizeBuffer())
-    end
-end
-
-@inline function bowbuffer(f)
-    buff = take!(BOW_CACHES)
-    try
-        f(buff)
-    finally
-        put!(BOW_CACHES, buff)
     end
 end
 

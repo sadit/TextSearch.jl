@@ -28,59 +28,53 @@ function bagofwords!(bow::BOW, voc::Vocabulary, tokenlist::TokenizedText)
     bow
 end
 
-function bagofwords_(copy_::Function, voc::Vocabulary, text)
-    buff = take!(BOW_CACHES)
-    empty!(buff)
-    try
-        copy_(bagofwords!(buff, voc, text).bow)
-    finally
-        put!(BOW_CACHES, buff)
-    end
-end
-
 """
-    bagofwords!(buff::BOWBuffer, voc::Vocabulary, messages)
+    bagofwords!(bow::BOW, voc::Vocabulary, messages)
 
-Computes a bag of words from a multi-field document (a list of texts), storing the
-result in `buff.bow`. See [`bagofwords`](@ref) for the non-mutating version.
+Computes a bag of words from a multi-field document (a list of texts), accumulating the
+result into `bow`. See [`bagofwords`](@ref) for the non-mutating version.
 
 # Example
 
 ```julia
 julia> voc = Vocabulary(TextConfig(), ["hello world"]; verbose=false);
 
-julia> buff = TextSearch.BOWBuffer();
+julia> bow = BOW();
 
-julia> TextSearch.bagofwords!(buff, voc, "hello hello world");
+julia> TextSearch.bagofwords!(bow, voc, "hello hello world");
 
-julia> buff.bow
+julia> bow
 Dict{UInt32, Int32}(0x00000002 => 1, 0x00000001 => 2)
 ```
 """
-function bagofwords!(buff::BOWBuffer, voc::Vocabulary, messages)
-    empty!(buff.bow)
+function bagofwords!(bow::BOW, voc::Vocabulary, messages)
     for text in messages
         tokenizerbuffer() do tok
             tokens = tokenize(borrowtokenizedtext, voc.textconfig, text, tok)
-            bagofwords!(buff.bow, voc, tokens)
+            bagofwords!(bow, voc, tokens)
         end
     end
 
-    buff
+    bow
 end
 
-function bagofwords!(buff::BOWBuffer, voc::Vocabulary, text::AbstractString)
+function bagofwords!(bow::BOW, voc::Vocabulary, text::AbstractString)
     tokenizerbuffer() do tok
         tokens = tokenize(borrowtokenizedtext, voc.textconfig, text, tok)
-        bagofwords!(buff.bow, voc, tokens)
+        bagofwords!(bow, voc, tokens)
     end
-    buff
+    bow
 end
 
-function bagofwords!(buff::BOWBuffer, voc::Vocabulary, tokens::TokenizedText)
-    bagofwords!(buff.bow, voc, tokens)
-    buff
-end
+"""
+    _bow_sizehint(voc::Vocabulary)
+
+Estimated final size (number of unique tokens) of a [`BOW`](@ref) computed under `voc`,
+used to `sizehint!` it up front and avoid rehashing while it's filled. Uses `voc`'s own
+[`avgdoclen`](@ref) (average tokens per document across its training corpus) as the
+estimate, falling back to a small default before `voc` has seen any training documents.
+"""
+_bow_sizehint(voc::Vocabulary) = trainsize(voc) > 0 ? ceil(Int, avgdoclen(voc)) : 16
 
 """
     bagofwords(voc::Vocabulary, messages)
@@ -98,7 +92,11 @@ julia> bagofwords(voc, "hello hello world")
 Dict{UInt32, Int32}(0x00000002 => 1, 0x00000001 => 2)
 ```
 """
-bagofwords(voc::Vocabulary, messages) = bagofwords_(copy, voc, messages)
+function bagofwords(voc::Vocabulary, messages)
+    bow = BOW()
+    sizehint!(bow, _bow_sizehint(voc))
+    bagofwords!(bow, voc, messages)
+end
 bagofwords(voc::Vocabulary, messages::BOW) = messages
 
 """
@@ -119,13 +117,20 @@ Dict{UInt32, Int32}(0x00000002 => 1, 0x00000001 => 1)
 bagofwords_corpus(voc::Vocabulary, corpus::AbstractVector{BOW}; minbatch=0, verbose=true) = corpus
 function bagofwords_corpus(voc::Vocabulary, corpus::AbstractVector; minbatch=0, verbose=true)
     n = length(corpus)
-    X = [bagofwords(voc, corpus[1])]
-    resize!(X, n)
+    bowsize = _bow_sizehint(voc)
+    X = Vector{BOW}(undef, n)
     minbatch = getminbatch(minbatch, n)
 
-    #@batch minbatch=minbatch per=thread 
-    @showprogress dt=1 enabled=verbose desc="Bag of words" Threads.@threads for i in 2:n
-        X[i] = bagofwords(voc, corpus[i])
+    #@batch minbatch=minbatch per=thread
+    @showprogress dt=1 enabled=verbose desc="Bag of words" Threads.@threads for i in 1:n
+        doc = corpus[i]
+        if doc isa BOW
+            X[i] = doc
+        else
+            bow = BOW()
+            sizehint!(bow, bowsize)
+            X[i] = bagofwords!(bow, voc, doc)
+        end
     end
 
     X
