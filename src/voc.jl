@@ -291,9 +291,13 @@ julia> vocsize(voc)
 function tokenize_and_append!(voc::Vocabulary, corpus; minbatch=0)
     l = Threads.SpinLock()
     n = length(corpus)
-    minbatch = getminbatch(minbatch, n)
- 
-    Threads.@threads for i in 1:n # @batch per=thread minbatch=minbatch for i in 1:n
+    minbatch = minbatch > 0 ? minbatch : getminbatch(n)
+
+    @BATCHES minbatch begin
+    @BEGINBATCH
+        batch_numtokens = 0
+        batch_ndocs = Dict{UInt32,Int}()
+    @LOOP for i in 1:n
         doc = corpus[i]
         bow = take!(BOW_CACHES)
 
@@ -307,18 +311,23 @@ function tokenize_and_append!(voc::Vocabulary, corpus; minbatch=0)
                 _locked_tokenize_and_push(voc, doc, bow, l)
             end
 
-            lock(l)
-            voc.numtokens[] += length(bow)
-            try
-                for id in keys(bow)
-                    voc.ndocs[id] += 1
-                end
-            finally
-                unlock(l)
+            batch_numtokens += length(bow)
+            for id in keys(bow)
+                batch_ndocs[id] = get(batch_ndocs, id, 0) + 1
             end
-
         finally
             put!(BOW_CACHES, bow)
+        end
+    end
+    @ENDBATCH
+        lock(l)
+        try
+            voc.numtokens[] += batch_numtokens
+            for (id, c) in batch_ndocs
+                voc.ndocs[id] += c
+            end
+        finally
+            unlock(l)
         end
     end
 

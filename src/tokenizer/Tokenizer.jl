@@ -2,7 +2,7 @@
 
 module Tokenizer
 
-using SimilaritySearch: getminbatch
+using SimilaritySearch: getminbatch, @BATCHES
 using ProgressMeter
 
 include("buffer.jl")

@@ -166,11 +166,12 @@ julia> collect(toks[1])
 function tokenize_corpus(copy_::Function, textconfig::TextConfig, arr; minbatch::Int=0, verbose::Bool=true)
     n = length(arr)
     L = Vector{TokenizedText}(undef, n)
-    minbatch = getminbatch(minbatch, n)
+    minbatch = minbatch > 0 ? minbatch : getminbatch(n)
+    prog = Progress(n; dt=1, enabled=verbose, desc="tokenizing")
 
-    # @batch minbatch=minbatch per=thread
-    @showprogress dt=1 enabled=verbose desc="tokenizing" Threads.@threads for i in 1:n
+    @BATCHES minbatch for i in 1:n
         L[i] = tokenize(copy_, textconfig, arr[i])
+        next!(prog)
     end
 
     L

@@ -119,10 +119,10 @@ function bagofwords_corpus(voc::Vocabulary, corpus::AbstractVector; minbatch=0, 
     n = length(corpus)
     bowsize = _bow_sizehint(voc)
     X = Vector{BOW}(undef, n)
-    minbatch = getminbatch(minbatch, n)
+    minbatch = minbatch > 0 ? minbatch : getminbatch(n)
+    prog = Progress(n; dt=1, enabled=verbose, desc="Bag of words")
 
-    #@batch minbatch=minbatch per=thread
-    @showprogress dt=1 enabled=verbose desc="Bag of words" Threads.@threads for i in 1:n
+    @BATCHES minbatch for i in 1:n
         doc = corpus[i]
         if doc isa BOW
             X[i] = doc
@@ -131,6 +131,7 @@ function bagofwords_corpus(voc::Vocabulary, corpus::AbstractVector; minbatch=0, 
             sizehint!(bow, bowsize)
             X[i] = bagofwords!(bow, voc, doc)
         end
+        next!(prog)
     end
 
     X
