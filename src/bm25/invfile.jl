@@ -93,7 +93,7 @@ function BM25InvertedFile(voc::Vocabulary;  k1=1.2f0, b=0.75f0, δ=1f0)
     BM25InvertedFile(
         voc,
         bm25,
-        AdjList(IdIntWeight, vocsize(voc)),
+        resize!(AdjList(IdIntWeight), vocsize(voc)),
         Vector{Int32}(undef, 0),
     )
 end

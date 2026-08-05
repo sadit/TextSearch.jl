@@ -54,7 +54,7 @@ Creates an `BinaryInvertedFile` with the given vocabulary size and for the given
 """
 function BinaryInvertedFile(vocsize::Integer, dist=Dist.Sets.Jaccard())
     vocsize > 0 || throw(ArgumentError("voc must not be empty"))
-    BinaryInvertedFile(dist, AdjList(UInt32, vocsize), UInt32[])
+    BinaryInvertedFile(dist, resize!(AdjList(UInt32), vocsize), UInt32[])
 end
 
 function internal_push!(idx::BinaryInvertedFile, ctx::InvertedFileContext, tokenID, objID, _)

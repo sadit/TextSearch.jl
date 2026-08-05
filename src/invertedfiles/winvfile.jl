@@ -36,7 +36,7 @@ Convenient function to create an empty `WeightedInvertedFile` with the given voc
 function WeightedInvertedFile(vocsize::Integer)
     vocsize > 0 || throw(ArgumentError("voc must not be empty"))
     WeightedInvertedFile(
-        AdjList(IdWeight, vocsize),
+        resize!(AdjList(IdWeight), vocsize),
         Vector{UInt32}(undef, 0)
     )
 end

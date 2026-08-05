@@ -70,7 +70,7 @@ function SimilaritySearch.search(accept_posting_list::Function, idx::BM25Inverte
   P = getpositions(length(Q), ctx)
 
   costevals = xmerge!(BM25InvFileOutput(idx, res), Q, P; t)
-  SimilaritySearch.add_distance_evaluations!(res, costevals)
+  SimilaritySearch.add_distance_evaluations!(ctx, costevals)
   res
 end
 

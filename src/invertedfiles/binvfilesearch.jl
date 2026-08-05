@@ -28,7 +28,7 @@ function search_invfile(idx::BinaryInvertedFile, ctx::InvertedFileContext, Q::Ve
     n = length(Q)
     P = getpositions(n, ctx)
     cost = xmerge!(BinInvFileOutput(idx, res, n), Q, P; t)
-    SimilaritySearch.add_block_evaluations!(res, length(Q))
-    SimilaritySearch.add_distance_evaluations!(res, cost)
+    SimilaritySearch.add_block_evaluations!(ctx, length(Q))
+    SimilaritySearch.add_distance_evaluations!(ctx, cost)
     res
 end
