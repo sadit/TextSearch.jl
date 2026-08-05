@@ -104,6 +104,30 @@ coverage to Codecov. `documentation.yml` builds and deploys docs on pushes/tags 
   directly, no `Dict` involved); and `TokenizerBuffer`/`TOKENIZER_CACHES` inside the
   `Tokenizer` module (use `tokenizerbuffer(f)`) backs tokenization scratch space, borrowed
   on demand by the others rather than duplicated.
+- **Parallelism uses SimilaritySearch's `@BATCHES`** (v1.0+; no `Polyester` dependency
+  anywhere in this package anymore). Simple per-item loops use the one-argument form
+  (`@BATCHES getminbatch(n) for i in 1:n ... end`); `voc.jl`'s `tokenize_and_append!` uses
+  the 5-section form (`@BEGINBATCH`/`@LOOP`/`@ENDBATCH`) to merge per-batch counters into
+  `Vocabulary` once per batch instead of once per document. Always call `getminbatch(n)`
+  with **one** argument — `getminbatch(n, nt)`'s second argument is a thread count, not a
+  second corpus-size-like quantity; passing anything corpus-derived there silently returns
+  a useless batch size (this was a real, previously-unnoticed bug in this codebase before
+  the v1.0 migration, since the loops using it were `Threads.@threads`, which doesn't even
+  take a `minbatch`).
+  - **Known residual risk**: `InvertedFileContext`'s search-time scratch buffers
+    (`positions`, `cont_u32`, `cont_iw`, `cont_iiw`, `knns`, sized by `Threads.maxthreadid()`)
+    are still indexed by `Threads.threadid()` (`getcontainer`/`getpositions` in
+    `invertedfiles/invfile.jl`). This is unchanged by the v1.0 migration (SimilaritySearch's
+    own internal state moved to `@batchid()`-indexing instead, precisely to avoid this class
+    of bug — see its `AGENTS.md`/`set_batch_scheduler!` docs), but TextSearch's version
+    wasn't ported because `InvertedFileContext` is a single global cached singleton
+    (`DEFAULT_CACHE_INVFILES[]`, returned by `getcontext`) shared across whatever
+    parallelizes concurrent `search`/`push_item!` calls *outside* TextSearch's control — a
+    clean `@batchid()` fix needs that caller to tag a per-batch context copy (`@set ctx.batchid
+    = @batchid()`) before calling in, which isn't a contract TextSearch can enforce today.
+    Only touch this if you're prepared to either add that per-call-site tagging contract, or
+    redesign away from one-shared-context-with-N-thread-slots entirely (e.g. one context per
+    concurrent caller, no internal arrays at all).
 - **Struct immutability**: most core types (`TextConfig`, `Vocabulary`, `BM25`, …) are
   immutable `struct`s with explicit copy-constructors (e.g. `TextConfig(c::TextConfig; kwargs...)`)
   for "update a field" patterns — follow that pattern instead of adding mutability.
