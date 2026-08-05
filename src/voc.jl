@@ -201,20 +201,19 @@ function Vocabulary(textconfig::TextConfig, trainsize::Int64, numtokens::Int64)
     voc
 end
 
-function vocab_from_small_collection(textconfig::TextConfig, corpus::AbstractVector; minbatch::Int=0)
+function vocab_from_small_collection(textconfig::TextConfig, corpus::AbstractVector)
     voc = Vocabulary(textconfig, length(corpus), 0)
-    tokenize_and_append!(voc, corpus; minbatch)
+    tokenize_and_append!(voc, corpus)
     voc
 end
 
 """
-    Vocabulary(textconfig::TextConfig, corpus; minbatch=0, buffsize=2^16, verbose=true)
+    Vocabulary(textconfig::TextConfig, corpus; buffsize=2^16, verbose=true)
 
 Tokenizes `corpus` under `textconfig` and builds the resulting [`Vocabulary`](@ref).
 `corpus` can be any vector of documents (each document a string or a list of strings)
 or an iterable/generator of documents (useful for corpora too large to fit in memory);
 in the generator case, documents are consumed and tokenized in batches of `buffsize`.
-`minbatch` controls the batch size used for multithreading (`0` picks an automatic value).
 
 # Example
 
@@ -225,9 +224,9 @@ julia> vocsize(voc), trainsize(voc)
 (3, 2)
 ```
 """
-function Vocabulary(textconfig::TextConfig, corpusgenerator; minbatch::Int=0, buffsize::Int=2^16, verbose::Bool=true)
+function Vocabulary(textconfig::TextConfig, corpusgenerator; buffsize::Int=2^16, verbose::Bool=true)
     if corpusgenerator isa AbstractVector && length(corpusgenerator) <= buffsize
-        return vocab_from_small_collection(textconfig, corpusgenerator; minbatch)
+        return vocab_from_small_collection(textconfig, corpusgenerator)
     end
 
     voc = Vocabulary(textconfig, 0, 0)
@@ -240,14 +239,14 @@ function Vocabulary(textconfig::TextConfig, corpusgenerator; minbatch::Int=0, bu
         if length(corpus) == buffsize
             # verbose && (@info "computing vocabulary -- advance: $len - buffsize: $buffsize")
             len += buffsize
-            tokenize_and_append!(voc, corpus; minbatch)
+            tokenize_and_append!(voc, corpus)
             empty!(corpus)
-        end 
+        end
     end
 
     if length(corpus) > 0
         len += length(corpus)
-        tokenize_and_append!(voc, corpus; minbatch)
+        tokenize_and_append!(voc, corpus)
     end
 
     voc.trainsize[] = len
@@ -273,7 +272,7 @@ function _locked_tokenize_and_push(voc, doc, bow::BOW, l)
 end
 
 """
-    tokenize_and_append!(voc::Vocabulary, corpus; minbatch=0)
+    tokenize_and_append!(voc::Vocabulary, corpus)
 
 Parse each document in the given corpus and appends each token to the vocabulary.
 
@@ -288,10 +287,10 @@ julia> vocsize(voc)
 3
 ```
 """
-function tokenize_and_append!(voc::Vocabulary, corpus; minbatch=0)
+function tokenize_and_append!(voc::Vocabulary, corpus)
     l = Threads.SpinLock()
     n = length(corpus)
-    minbatch = minbatch > 0 ? minbatch : getminbatch(n)
+    minbatch = getminbatch(n)
 
     @BATCHES minbatch begin
     @BEGINBATCH

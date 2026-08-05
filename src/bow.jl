@@ -100,7 +100,7 @@ end
 bagofwords(voc::Vocabulary, messages::BOW) = messages
 
 """
-    bagofwords_corpus(voc::Vocabulary, corpus::AbstractVector; minbatch=0, verbose=true)
+    bagofwords_corpus(voc::Vocabulary, corpus::AbstractVector; verbose=true)
 
 Computes a list of bag of words ([`BOW`](@ref)s) from a corpus, one per document,
 in parallel across threads.
@@ -114,12 +114,12 @@ julia> bagofwords_corpus(voc, ["hello world", "hello there"]; verbose=false)[1]
 Dict{UInt32, Int32}(0x00000002 => 1, 0x00000001 => 1)
 ```
 """
-bagofwords_corpus(voc::Vocabulary, corpus::AbstractVector{BOW}; minbatch=0, verbose=true) = corpus
-function bagofwords_corpus(voc::Vocabulary, corpus::AbstractVector; minbatch=0, verbose=true)
+bagofwords_corpus(voc::Vocabulary, corpus::AbstractVector{BOW}; verbose=true) = corpus
+function bagofwords_corpus(voc::Vocabulary, corpus::AbstractVector; verbose=true)
     n = length(corpus)
     bowsize = _bow_sizehint(voc)
     X = Vector{BOW}(undef, n)
-    minbatch = minbatch > 0 ? minbatch : getminbatch(n)
+    minbatch = getminbatch(n)
     prog = Progress(n; dt=1, enabled=verbose, desc="Bag of words")
 
     @BATCHES minbatch for i in 1:n

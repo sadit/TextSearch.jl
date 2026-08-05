@@ -13,9 +13,8 @@ end
     textconfig = TextConfig(nlist=[1])
     voc = Vocabulary(textconfig, corpus)
     B = bagofwords_corpus(voc, corpus)
-    C = bagofwords_corpus(voc, corpus; minbatch=10^6)
     @info "==================="
-    @test decode.(Ref(voc), B) == decode.(Ref(voc), C)
+    @test decode.(Ref(voc), B) == decode.(Ref(voc), bagofwords_corpus(voc, corpus))
 end
 
 #=

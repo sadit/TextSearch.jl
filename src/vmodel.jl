@@ -427,11 +427,11 @@ function vectorize(model::VectorModel, text; normalize=true, minweight=1e-6)
 end
 
 """
-    vectorize_corpus(model::VectorModel, corpus; normalize=true, minweight=1e-6, minbatch=0, verbose=true)
+    vectorize_corpus(model::VectorModel, corpus; normalize=true, minweight=1e-6, verbose=true)
 
 Computes the [`vectorize`](@ref) representation of every document in `corpus`,
-processed in parallel across threads (`minbatch` controls the batch size, `0` picks an
-automatic value).
+processed in parallel across threads (the batch size is picked automatically from the
+size of `corpus`, as in `SimilaritySearch.getminbatch`).
 
 # Example
 
@@ -448,11 +448,11 @@ julia> vectorize_corpus(model, corpus; verbose=false)[1]
   [2]  =  0.929399
 ```
 """
-function vectorize_corpus(model::VectorModel, corpus; normalize=true, minweight=1e-6, minbatch=0, verbose=true)
+function vectorize_corpus(model::VectorModel, corpus; normalize=true, minweight=1e-6, verbose=true)
     corpus = collect(corpus)
     n = length(corpus)
     V = Vector{SparseVector{Float32,Int32}}(undef, n)
-    minbatch = minbatch > 0 ? minbatch : getminbatch(n)
+    minbatch = getminbatch(n)
     prog = Progress(n; dt=1, enabled=verbose, desc="vectorizing corpus")
 
     @BATCHES minbatch for i in 1:n

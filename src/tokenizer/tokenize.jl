@@ -38,7 +38,7 @@ borrowtokenizedtext(s) = TokenizedText(s)
 tokenize(copy_::Function, textconfig::TextConfig, text::TokenizedText, buff::TokenizerBuffer) = text
 tokenize(copy_::Function, textconfig::TextConfig, text::TokenizedText) = text
 tokenize(copy_::Function, textconfig::TextConfig, arr::AbstractVector{T}, buff::TokenizerBuffer) where {T<:TokenizedText} = arr
-tokenize_corpus(copy_::Function, textconfig::TextConfig, arr::AbstractVector{T}; minbatch=0) where {T<:TokenizedText} = arr
+tokenize_corpus(copy_::Function, textconfig::TextConfig, arr::AbstractVector{T}) where {T<:TokenizedText} = arr
 
 const EXTRA_PUNCT = Set(['~', '+', '^', '$', '|', '<', '>'])
 
@@ -147,8 +147,8 @@ end
 
 
 """
-    tokenize_corpus(textconfig::TextConfig, arr; minbatch=0, verbose=true)
-    tokenize_corpus(copy_::Function, textconfig::TextConfig, arr; minbatch=0, verbose=true)
+    tokenize_corpus(textconfig::TextConfig, arr; verbose=true)
+    tokenize_corpus(copy_::Function, textconfig::TextConfig, arr; verbose=true)
 
 Tokenize a list of texts. The `copy_` function is passed to [`tokenize`](@ref) as first argument.
 
@@ -163,10 +163,10 @@ julia> collect(toks[1])
 ["hello", "world"]
 ```
 """
-function tokenize_corpus(copy_::Function, textconfig::TextConfig, arr; minbatch::Int=0, verbose::Bool=true)
+function tokenize_corpus(copy_::Function, textconfig::TextConfig, arr; verbose::Bool=true)
     n = length(arr)
     L = Vector{TokenizedText}(undef, n)
-    minbatch = minbatch > 0 ? minbatch : getminbatch(n)
+    minbatch = getminbatch(n)
     prog = Progress(n; dt=1, enabled=verbose, desc="tokenizing")
 
     @BATCHES minbatch for i in 1:n
@@ -177,7 +177,7 @@ function tokenize_corpus(copy_::Function, textconfig::TextConfig, arr; minbatch:
     L
 end
 
-tokenize_corpus(textconfig::TextConfig, arr; minbatch::Int=0, verbose::Bool=true) = tokenize_corpus(tokenizedtext, textconfig, arr; minbatch, verbose)
+tokenize_corpus(textconfig::TextConfig, arr; verbose::Bool=true) = tokenize_corpus(tokenizedtext, textconfig, arr; verbose)
 
 function tokenize_(config::TextConfig, buff::TokenizerBuffer)
     gens = alltokengenerators(config)

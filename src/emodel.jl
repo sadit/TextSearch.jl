@@ -123,7 +123,7 @@ end
         smooth=3,
         weights=:balance,
         comb::CombineWeighting=NormalizedEntropy(),
-        minbatch=0, verbose=true
+        verbose=true
     )
 
 Creates a [`VectorModel`](@ref) with [`EntropyWeighting`](@ref) as its global weighting
@@ -163,7 +163,7 @@ function VectorModel(ent::EntropyWeighting, lw::LocalWeighting, voc::Vocabulary,
             smooth=3,
             weights=:balance,
             comb::CombineWeighting=NormalizedEntropy(),
-            minbatch=0, verbose=true
+            verbose=true
         )
     @assert length(labels) == length(corpus)
     n = length(labels)
