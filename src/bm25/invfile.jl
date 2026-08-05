@@ -269,12 +269,12 @@ function InvertedFiles.parallel_append!(idx::BM25InvertedFile, ctx::InvertedFile
     resize!(idx.doclens, startID + n)
     minbatch = getminbatch(n)
 
-    @batch minbatch = minbatch per = thread for i in 1:n
+    @BATCHES minbatch for i in 1:n
         docID = i + startID
         idx.doclens[docID] = bm25_internal_push_object!(idx, ctx, docID, db[i], tol)
     end
 
-    @batch minbatch = minbatch per = thread for i in 1:length(idx.adj)
+    @BATCHES minbatch for i in 1:length(idx.adj)
         N = neighbors(idx.adj, i)
         N === nothing && continue
         sort!(N, by=p -> p.id)

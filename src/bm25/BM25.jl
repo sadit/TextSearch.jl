@@ -4,7 +4,6 @@ module BM25
 
 using SimilaritySearch
 using SimilaritySearch: getminbatch
-using Polyester
 using StatsBase
 
 using ..Intersections

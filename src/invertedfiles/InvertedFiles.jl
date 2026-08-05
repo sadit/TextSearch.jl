@@ -8,7 +8,6 @@ using SimilaritySearch
 using SimilaritySearch: Dist, AbstractContext, getminbatch
 
 using Base.Threads: SpinLock
-using Polyester
 
 export InvertedFileContext, getcontext
 include("idweight.jl")

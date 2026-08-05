@@ -9,7 +9,7 @@ using Accessors
 using SimilaritySearch, LinearAlgebra, SparseArrays
 using SimilaritySearch: getminbatch
 
-using Polyester, ProgressMeter
+using ProgressMeter
 
 include("intersections/Intersections.jl")
 using .Intersections
