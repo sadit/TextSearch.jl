@@ -41,9 +41,10 @@ end
 
 #include("intersections.jl")
 #include("invertedfiles.jl")
-#include("tok.jl")
-#include("voc.jl")
+include("tok.jl")
+include("voc.jl")
 include("vec.jl")
 include("svec.jl")
 include("search.jl")
+include("ext_snowball.jl")
 @info "FINISH"

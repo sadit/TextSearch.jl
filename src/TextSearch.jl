@@ -23,10 +23,10 @@ export WeightedInvertedFile, BinaryInvertedFile, AbstractInvertedFile, SortedInt
 include("tokenizer/Tokenizer.jl")
 using .Tokenizer
 using .Tokenizer: borrowtokenizedtext, tokenizerbuffer
-export TextConfig, Skipgram, TokenizedText, tokenize, tokenize_corpus, qgrams, unigrams,
+export TextConfig, NormalizationConfig, TokenizationConfig, TokenizedText, tokenize, tokenize_corpus, unigrams,
        normalize_text, isemoji,
-       AbstractTokenTransformation, IdentityTokenTransformation, IgnoreStopwords, ChainTransformation, transform,
-       AbstractTokenGenerator, QGramGenerator, UnigramGenerator, NWordGenerator, SkipgramGenerator, CollocationGenerator,
+       AbstractTokenTransformation, IdentityTokenTransformation, IgnoreStopwords, ChainTransformation, SnowballTokenTransformation, transform,
+       AbstractTokenGenerator, UnigramGenerator, NWordGenerator,
        needs_unigrams, tokentag, generate!, flush_token!, alltokengenerators
 
 include("dvec.jl")
@@ -84,7 +84,6 @@ include("bm25/BM25.jl")
 using .BM25
 export BM25Scorer, bm25score, tokenscore, BM25InvertedFile, filter_lists!, search, append_items!, push_item!
 
-include("approxvoc.jl")
 include("deprecated.jl")
 
 end

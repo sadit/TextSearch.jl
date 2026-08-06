@@ -1,6 +1,6 @@
 
 @testset "invindex" begin
-    textconfig = TextConfig(nlist=[1])
+    textconfig = TextConfig(tokenization=TokenizationConfig(nlist=[1]))
     model = VectorModel(IdfWeighting(), TfWeighting(), Vocabulary(textconfig, _corpus))
     db = vectorize_corpus(model, _corpus)
     invindex = WeightedInvertedFile(length(model.voc))
@@ -15,7 +15,7 @@ end
 
 
 @testset "centroid computing" begin
-    textconfig = TextConfig(nlist=[1])
+    textconfig = TextConfig(tokenization=TokenizationConfig(nlist=[1]))
     model = VectorModel(BinaryGlobalWeighting(), FreqWeighting(), Vocabulary(textconfig, _corpus))
     X = vectorize_corpus(model, _corpus)
     vec = sum(X) |> normalize!
@@ -29,7 +29,7 @@ end
     for (i, m) in enumerate(_corpus)
         @info i => m
     end
-    voc = Vocabulary(TextConfig(nlist=[1]), _corpus)
+    voc = Vocabulary(TextConfig(tokenization=TokenizationConfig(nlist=[1])), _corpus)
     voc = filter_tokens(voc) do t
         1 < t.ndocs < 5
     end
@@ -44,7 +44,7 @@ end
 end
 
 @testset "bm25 invindex" begin
-    invfile = BM25InvertedFile(Vocabulary(TextConfig(nlist=[1]), _corpus))
+    invfile = BM25InvertedFile(Vocabulary(TextConfig(tokenization=TokenizationConfig(nlist=[1])), _corpus))
     ctx = InvertedFileContext()
     append_items!(invfile, ctx, _corpus)
     filter_lists!(invfile;

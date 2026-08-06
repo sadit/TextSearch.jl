@@ -13,7 +13,7 @@ EncodedCorpus(C::EncodedCorpus; tc=C.tc, voc=C.voc, seq=C.seq, offset=C.offset) 
 function EncodedCorpus(
         corpus; kwargs...
     )
-    tc = TextConfig(nlist=[1], mark_token_type=false)
+    tc = TextConfig(tokenization=TokenizationConfig(nlist=[1], mark_token_type=false))
     voc = Vocabulary(tc, corpus)
     EncodedCorpus(tc, voc, corpus; kwargs...)
 end
@@ -25,7 +25,7 @@ function EncodedCorpus(
         bsize::Int=10^4
     )
     
-    #tc.nlist == [1] && length(tc.qlist) == 0 && length(tc.slist) == 0 || throw(ArgumentError("only unigrams are supported for EncodedCorpus"))
+    #tc.tokenization.nlist == [1] || throw(ArgumentError("only unigrams are supported for EncodedCorpus"))
     seq = UInt32[]
     offset = UInt64[]
 

@@ -3,25 +3,23 @@
 export normalize_text
 using Base.Unicode
 
-#, language!
-# using Languages
-# using SnowballStemmer
-
 function _preprocessing(config::TextConfig, text)
-    if config.lc
+    norm = config.normalization
+
+    if norm.lc
         text = lowercase(text)
     end
 
-    if config.group_url
-        text = replace(text, config.re_url => "_url ")
+    if norm.group_url
+        text = replace(text, norm.re_url => "_url ")
     end
 
-    if config.group_usr
-        text = replace(text, config.re_user => "_usr ")
+    if norm.group_usr
+        text = replace(text, norm.re_user => "_usr ")
     end
 
-    if config.group_num
-        text = replace(text, config.re_num => "0 ")
+    if norm.group_num
+        text = replace(text, norm.re_num => "0 ")
     end
 
     text
@@ -44,16 +42,17 @@ julia> String(buff)
 ```
 """
 function normalize_text(config::TextConfig, text::AbstractString, output::Vector{Char}; limits::Bool=true)
+    norm = config.normalization
     text = _preprocessing(config, text)
     limits && push!(output, BLANK)
     rep = 0
 
-    @inbounds for u in Unicode.normalize(text, casefold=config.lc, stripmark=config.del_diac, stripcc=true, compat=true)
+    @inbounds for u in Unicode.normalize(text, casefold=norm.lc, stripmark=norm.del_diac, stripcc=true, compat=true)
         isspace(u) && (u = BLANK)
-        config.del_punc && ispunct(u) && !(u in ('@', '#', '_')) && (u = BLANK)
-        config.group_emo && isemoji(u, config.emojis) && (u = '👾')
+        norm.del_punc && ispunct(u) && !(u in ('@', '#', '_')) && (u = BLANK)
+        norm.group_emo && isemoji(u, norm.emojis) && (u = '👾')
         rep = u === output[end] ? rep + 1 : 0
-        config.del_dup && rep > 1 && continue
+        norm.del_dup && rep > 1 && continue
         push!(output, u)
     end
 

@@ -391,8 +391,8 @@ vocsize(wt_voc)
 
 `TextConfig()` is still passed here — `Vocabulary` keeps it around for later use (e.g.
 tokenizing a raw-text query at search time) — but since every document already arrives
-as a `TokenizedText`, none of `TextConfig`'s own tokenization settings (`nlist`,
-`qlist`, `del_diac`, ...) have any effect on how these documents were split; that
+as a `TokenizedText`, none of `TextConfig`'s own tokenization settings (`tokenization.nlist`,
+`normalization.del_diac`, ...) have any effect on how these documents were split; that
 happened entirely inside `WordTokenizers.tokenize`.
 
 ## A small tweet-like corpus
@@ -421,7 +421,7 @@ tweets = [
     "Beautiful sunset over the bay tonight 🌅 #nofilter",
 ]
 
-cfg = TextConfig(group_usr=true, group_url=true, group_emo=true, del_punc=false)
+cfg = TextConfig(normalization=NormalizationConfig(group_usr=true, group_url=true, group_emo=true, del_punc=false))
 collect(TextSearch.tokenize(cfg, tweets[1]))
 ```
 

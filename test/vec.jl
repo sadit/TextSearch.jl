@@ -1,6 +1,6 @@
 
 @testset "Tokenizer, Dict-based vectors, and vectorize" begin
-    textconfig = TextConfig(group_usr=true, nlist=[1])
+    textconfig = TextConfig(normalization=NormalizationConfig(group_usr=true), tokenization=TokenizationConfig(nlist=[1]))
     voc = Vocabulary(textconfig, corpus)
     model = VectorModel(BinaryGlobalWeighting(), FreqWeighting(), voc)
     x = vectorize(model, text1)
@@ -15,14 +15,14 @@
 end
 
 @testset "tokenize list of strings as a single message" begin
-    textconfig = TextConfig(nlist=[1], mark_token_type=false)
+    textconfig = TextConfig(tokenization=TokenizationConfig(nlist=[1], mark_token_type=false))
     model = VectorModel(BinaryGlobalWeighting(), FreqWeighting(), Vocabulary(textconfig, corpus))
     @test vectorize(model, ["hello ;)", "#jello world."]) == vectorize(model, "hello ;) #jello world.")
 end
 
 
 @testset "Tokenizer, Dict-based vectors, and vectorize" begin
-    textconfig = TextConfig(group_usr=true, nlist=[1])
+    textconfig = TextConfig(normalization=NormalizationConfig(group_usr=true), tokenization=TokenizationConfig(nlist=[1]))
     voc = Vocabulary(textconfig, sentiment_corpus)
     corpus_bows = bagofwords_corpus(voc, sentiment_corpus)
     @show length(corpus), length(corpus_bows)
@@ -33,7 +33,7 @@ end
 end
 
 @testset "Weighting schemes" begin
-    textconfig = TextConfig(group_usr=true, nlist=[1])
+    textconfig = TextConfig(normalization=NormalizationConfig(group_usr=true), tokenization=TokenizationConfig(nlist=[1]))
     for (gw, lw, dot_) in [
             (BinaryGlobalWeighting(), FreqWeighting(), 0.3162),
             (BinaryGlobalWeighting(), TfWeighting(), 0.3162),

@@ -7,8 +7,9 @@ export TokenizerBuffer
 
 Self-contained scratch space reused across tokenization calls to avoid reallocating on
 every call: `normtext` holds the normalized text, `tokens` accumulates the produced
-tokens, `unigrams` holds the word-level basis used by n-word/skip-gram/collocation
-generators, and `io` is scratch space for building individual token strings.
+tokens, `unigrams` holds the word-level basis used by [`NWordGenerator`](@ref) (and any
+custom generator needing it), and `io` is scratch space for building individual token
+strings.
 
 `Tokenizer` pools these internally for its own buffer-less convenience API (see
 [`tokenize`](@ref)); callers that need to hold a buffer across several calls (e.g. to

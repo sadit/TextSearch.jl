@@ -57,3 +57,6 @@ false
 ```
 """
 isemoji(c::Char, emojis::Set{Char}=DEFAULT_EMOJIS) = c in emojis
+
+_show_field(io, f::Symbol, v::Set{Char}) = println(io, f, ": ", length(v), " emoji chars")
+_show_field(io, f::Symbol, v) = println(io, f, ": ", v)
