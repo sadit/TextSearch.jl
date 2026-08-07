@@ -127,3 +127,29 @@ end
     test_equals(tokenize(updated, "cat sat"), ["cat", "sat", "cat sat\tn"])
     @test base.tokenization.nlist == Int8[1]
 end
+
+@testset "paragraph and sentence tokenizers" begin
+    doc = "First paragraph line 1.\nFirst paragraph line 2.\n\nSecond paragraph here.\n\nThird paragraph."
+    paragraphs = tokenize_paragraphs(doc)
+    @test length(paragraphs) == 3
+    @test paragraphs[1] == "First paragraph line 1.\nFirst paragraph line 2."
+    @test paragraphs[2] == "Second paragraph here."
+    @test paragraphs[3] == "Third paragraph."
+
+    sentences = tokenize_sentences(doc)
+    @test length(sentences) == 4
+    @test sentences[1] == "First paragraph line 1."
+    @test sentences[2] == "First paragraph line 2."
+    @test sentences[3] == "Second paragraph here."
+    @test sentences[4] == "Third paragraph."
+
+    cfg = TextConfig(normalization=NormalizationConfig(lc=true, del_punc=true))
+    norm_paragraphs = tokenize_paragraphs(cfg, doc)
+    @test length(norm_paragraphs) == 3
+    @test norm_paragraphs[2] == "second paragraph here"
+
+    norm_sentences = tokenize_sentences(cfg, doc)
+    @test length(norm_sentences) == 4
+    @test norm_sentences[3] == "second paragraph here"
+end
+
