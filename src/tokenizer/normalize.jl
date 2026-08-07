@@ -26,9 +26,10 @@ function _preprocessing(config::TextConfig, text)
 end
 
 """
-    normalize_text(config::TextConfig, text::AbstractString, output::Vector{Char}; limits::Bool=true)
+    normalize_text(config::TextConfig, text::AbstractString, output::Vector{Char}; limits::Bool=true, isnormalized::Bool=false)
 
-Normalizes a given text using the specified transformations of `config`
+Normalizes a given text using the specified transformations of `config`. If `isnormalized=true`,
+skips preprocessing and normalization passes, writing `text` directly to `output`.
 
 # Example
 
@@ -41,19 +42,26 @@ julia> String(buff)
 " cafe "
 ```
 """
-function normalize_text(config::TextConfig, text::AbstractString, output::Vector{Char}; limits::Bool=true)
-    norm = config.normalization
-    text = _preprocessing(config, text)
+function normalize_text(config::TextConfig, text::AbstractString, output::Vector{Char}; limits::Bool=true, isnormalized::Bool=false)
     limits && push!(output, BLANK)
-    rep = 0
 
-    @inbounds for u in Unicode.normalize(text, casefold=norm.lc, stripmark=norm.del_diac, stripcc=true, compat=true)
-        isspace(u) && (u = BLANK)
-        norm.del_punc && ispunct(u) && !(u in ('@', '#', '_')) && (u = BLANK)
-        norm.group_emo && isemoji(u, norm.emojis) && (u = '👾')
-        rep = (!isempty(output) && u === output[end]) ? rep + 1 : 0
-        norm.del_dup && rep > 1 && continue
-        push!(output, u)
+    if isnormalized
+        for u in text
+            push!(output, u)
+        end
+    else
+        norm = config.normalization
+        text = _preprocessing(config, text)
+        rep = 0
+
+        @inbounds for u in Unicode.normalize(text, casefold=norm.lc, stripmark=norm.del_diac, stripcc=true, compat=true)
+            isspace(u) && (u = BLANK)
+            norm.del_punc && ispunct(u) && !(u in ('@', '#', '_')) && (u = BLANK)
+            norm.group_emo && isemoji(u, norm.emojis) && (u = '👾')
+            rep = (!isempty(output) && u === output[end]) ? rep + 1 : 0
+            norm.del_dup && rep > 1 && continue
+            push!(output, u)
+        end
     end
 
     limits && push!(output, BLANK)

@@ -62,32 +62,32 @@ julia> collect(tokenize(TextConfig(), "Hello world!!"))
 ["hello", "world", "!!"]
 ```
 """
-function tokenize(copy_::Function, textconfig::TextConfig, text::AbstractString, buff::TokenizerBuffer)
-    normalize_text(textconfig, text, buff.normtext)
+function tokenize(copy_::Function, textconfig::TextConfig, text::AbstractString, buff::TokenizerBuffer; isnormalized::Bool=false)
+    normalize_text(textconfig, text, buff.normtext; isnormalized)
     t = tokenize_(textconfig, buff)
     copy_(t)
 end
 
-function tokenize(copy_::Function, textconfig::TextConfig, arr, buff::TokenizerBuffer)
-    normalize_text(textconfig, arr[1], buff.normtext)
+function tokenize(copy_::Function, textconfig::TextConfig, arr, buff::TokenizerBuffer; isnormalized::Bool=false)
+    normalize_text(textconfig, arr[1], buff.normtext; isnormalized)
     tokenize_(textconfig, buff)
 
     for i in 2:length(arr)
         empty!(buff.normtext); empty!(buff.unigrams)
-        normalize_text(textconfig, arr[i], buff.normtext)
+        normalize_text(textconfig, arr[i], buff.normtext; isnormalized)
         tokenize_(textconfig, buff)
     end
 
     copy_(buff.tokens)
 end
 
-tokenize(textconfig::TextConfig, text) = tokenize(tokenizedtext, textconfig, text)
+tokenize(textconfig::TextConfig, text; isnormalized::Bool=false) = tokenize(tokenizedtext, textconfig, text; isnormalized)
 
-function tokenize(copy_::Function, textconfig::TextConfig, text)
+function tokenize(copy_::Function, textconfig::TextConfig, text; isnormalized::Bool=false)
     buff = take!(TOKENIZER_CACHES)
     empty!(buff)
     try
-        tokenize(copy_, textconfig, text, buff)
+        tokenize(copy_, textconfig, text, buff; isnormalized)
     finally
         put!(TOKENIZER_CACHES, buff)
     end
@@ -122,7 +122,7 @@ julia> TextSearch.Tokenizer.tokenizerbuffer() do buff
 end
 
 """
-    normalize_text(textconfig::TextConfig, text; limits::Bool=false)
+    normalize_text(textconfig::TextConfig, text; limits::Bool=false, isnormalized::Bool=false)
 
 Convenience method that normalizes `text` under `textconfig` (see
 [`normalize_text(config, text, output; limits)`](@ref normalize_text)) and returns the
@@ -135,11 +135,11 @@ julia> normalize_text(TextConfig(), "Café!!")
 "cafe!!"
 ```
 """
-function normalize_text(textconfig::TextConfig, text; limits::Bool=false)
+function normalize_text(textconfig::TextConfig, text; limits::Bool=false, isnormalized::Bool=false)
     buff = take!(TOKENIZER_CACHES)
     empty!(buff)
     try
-        String(normalize_text(textconfig, text, buff.normtext; limits))
+        String(normalize_text(textconfig, text, buff.normtext; limits, isnormalized))
     finally
         put!(TOKENIZER_CACHES, buff)
     end
@@ -147,8 +147,8 @@ end
 
 
 """
-    tokenize_corpus(textconfig::TextConfig, arr; verbose=true)
-    tokenize_corpus(copy_::Function, textconfig::TextConfig, arr; verbose=true)
+    tokenize_corpus(textconfig::TextConfig, arr; isnormalized::Bool=false, verbose=true)
+    tokenize_corpus(copy_::Function, textconfig::TextConfig, arr; isnormalized::Bool=false, verbose=true)
 
 Tokenize a list of texts. The `copy_` function is passed to [`tokenize`](@ref) as first argument.
 
@@ -163,21 +163,21 @@ julia> collect(toks[1])
 ["hello", "world"]
 ```
 """
-function tokenize_corpus(copy_::Function, textconfig::TextConfig, arr; verbose::Bool=true)
+function tokenize_corpus(copy_::Function, textconfig::TextConfig, arr; isnormalized::Bool=false, verbose::Bool=true)
     n = length(arr)
     L = Vector{TokenizedText}(undef, n)
     minbatch = getminbatch(n)
     prog = Progress(n; dt=1, enabled=verbose, desc="tokenizing")
 
     @BATCHES minbatch for i in 1:n
-        L[i] = tokenize(copy_, textconfig, arr[i])
+        L[i] = tokenize(copy_, textconfig, arr[i]; isnormalized)
         next!(prog)
     end
 
     L
 end
 
-tokenize_corpus(textconfig::TextConfig, arr; verbose::Bool=true) = tokenize_corpus(tokenizedtext, textconfig, arr; verbose)
+tokenize_corpus(textconfig::TextConfig, arr; isnormalized::Bool=false, verbose::Bool=true) = tokenize_corpus(tokenizedtext, textconfig, arr; isnormalized, verbose)
 
 function tokenize_(config::TextConfig, buff::TokenizerBuffer)
     gens = alltokengenerators(config.tokenization)
@@ -338,10 +338,10 @@ function tokenize_paragraphs(text::AbstractString)
     paragraphs
 end
 
-function tokenize_paragraphs(textconfig::TextConfig, text::AbstractString)
+function tokenize_paragraphs(textconfig::TextConfig, text::AbstractString; isnormalized::Bool=false)
     res = String[]
     for p in tokenize_paragraphs(text)
-        np = strip(normalize_text(textconfig, p))
+        np = strip(normalize_text(textconfig, p; isnormalized))
         !isempty(np) && push!(res, np)
     end
     res
@@ -355,18 +355,18 @@ function tokenize_paragraphs(arr::AbstractVector)
     paragraphs
 end
 
-function tokenize_paragraphs(textconfig::TextConfig, arr::AbstractVector)
+function tokenize_paragraphs(textconfig::TextConfig, arr::AbstractVector; isnormalized::Bool=false)
     paragraphs = String[]
     for item in arr
-        append!(paragraphs, tokenize_paragraphs(textconfig, item))
+        append!(paragraphs, tokenize_paragraphs(textconfig, item; isnormalized))
     end
     paragraphs
 end
 
 """
     tokenize_sentences(text::AbstractString)::Vector{String}
-    tokenize_sentences(textconfig::TextConfig, text::AbstractString)::Vector{String}
-    tokenize_sentences([textconfig::TextConfig,] arr::AbstractVector)::Vector{String}
+    tokenize_sentences(textconfig::TextConfig, text::AbstractString; isnormalized::Bool=false)::Vector{String}
+    tokenize_sentences([textconfig::TextConfig,] arr::AbstractVector; isnormalized::Bool=false)::Vector{String}
 
 Splits `text` into sentences using sentence-ending punctuation (`.`, `!`, `?`) followed by whitespace
 or newlines. Trims leading and trailing whitespace from each sentence and filters out empty sentences.
@@ -381,10 +381,10 @@ function tokenize_sentences(text::AbstractString)
     sentences
 end
 
-function tokenize_sentences(textconfig::TextConfig, text::AbstractString)
+function tokenize_sentences(textconfig::TextConfig, text::AbstractString; isnormalized::Bool=false)
     res = String[]
     for s in tokenize_sentences(text)
-        ns = strip(normalize_text(textconfig, s))
+        ns = strip(normalize_text(textconfig, s; isnormalized))
         !isempty(ns) && push!(res, ns)
     end
     res
@@ -398,11 +398,10 @@ function tokenize_sentences(arr::AbstractVector)
     sentences
 end
 
-function tokenize_sentences(textconfig::TextConfig, arr::AbstractVector)
+function tokenize_sentences(textconfig::TextConfig, arr::AbstractVector; isnormalized::Bool=false)
     sentences = String[]
     for item in arr
-        append!(sentences, tokenize_sentences(textconfig, item))
+        append!(sentences, tokenize_sentences(textconfig, item; isnormalized))
     end
     sentences
 end
-

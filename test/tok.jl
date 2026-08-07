@@ -151,5 +151,10 @@ end
     norm_sentences = tokenize_sentences(cfg, doc)
     @test length(norm_sentences) == 4
     @test norm_sentences[3] == "second paragraph here"
+
+    # tests for isnormalized=true skipping re-normalization
+    @test normalize_text(cfg, "Hello World!!", isnormalized=true) == "Hello World!!"
+    test_equals(tokenize(cfg, "hello world", isnormalized=true), ["hello", "world"])
 end
+
 
