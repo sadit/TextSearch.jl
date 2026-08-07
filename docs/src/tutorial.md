@@ -113,7 +113,7 @@ length(CASK_OF_AMONTILLADO), CASK_OF_AMONTILLADO[1]
 ([`TextConfig`](@ref)`()` defaults to word unigrams). A [`VectorModel`](@ref) then turns
 that vocabulary into a weighting scheme — here, classic TF-IDF — and
 [`vectorize_corpus`](@ref) applies it to every paragraph, producing one sparse
-[`SVEC`](@ref) per document.
+`SparseVector` per document.
 
 ```@example gutenberg
 voc = Vocabulary(TextConfig(), CASK_OF_AMONTILLADO; verbose=false)
@@ -198,14 +198,15 @@ see closer, more meaningful matches.
 
 ### Vector arithmetic: dot products, centroids, and normalization
 
-Since paragraph and query vectors are just [`SVEC`](@ref)s (sparse `Dict`s), ordinary
-`LinearAlgebra` operations work on them directly — `+`, `-`, [`dot`](@ref), `norm`,
-[`normalize!`](@ref) are all defined for `SVEC`/[`BOW`](@ref). Two things make this
-useful: comparing documents/queries directly via [`dot`](@ref), and building a query
-that represents *more than one* idea at once.
+Since paragraph and query vectors are `SparseVector`s (from `SparseArrays.jl`), ordinary
+`LinearAlgebra`/`SparseArrays` operations work on them directly — `+`, `-`, [`dot`](@ref),
+`norm`, [`normalize!`](@ref), and scalar `*`/`/` all work out of the box, with no extra
+glue code from TextSearch. Two things make this useful: comparing documents/queries
+directly via [`dot`](@ref), and building a query that represents *more than one* idea at
+once.
 
 ```@example gutenberg
-using LinearAlgebra
+using LinearAlgebra, SparseArrays
 
 q_wine = vectorize(model, "amontillado wine")
 q_damp = vectorize(model, "nitre damp catacombs")
@@ -257,9 +258,9 @@ the larger magnitude dominates the sum, and the final `normalize!` just rescales
 already-skewed direction to length 1. A minimal example makes this concrete:
 
 ```@example gutenberg
-a = SVEC(1 => 1.0f0)  # a unit vector, pointing along "axis 1"
-b = SVEC(2 => 1.0f0)  # a unit vector, pointing along "axis 2"
-centroid([a, b])       # evenly split between both directions, as expected
+a = sparsevec([1], [1.0f0], 2)  # a unit vector, pointing along "axis 1"
+b = sparsevec([2], [1.0f0], 2)  # a unit vector, pointing along "axis 2"
+centroid([a, b])                # evenly split between both directions, as expected
 ```
 
 ```@example gutenberg

@@ -49,10 +49,11 @@ const BOW = Dict{UInt32,Int32}
 """
     SVEC = Dict{UInt32,Float32}
 
-A weighted sparse vector: a `token id => weight` mapping, as produced by
-[`vectorize`](@ref)/[`vectorize!`](@ref). Arithmetic (`+`, `-`, `*`, `/`), norms, and
-distances for `SVEC`/`BOW`-like `Dict`s are defined in `dvec.jl` (see [`normalize!`](@ref),
-[`dot`](@ref), [`norm`](@ref), [`centroid`](@ref)).
+A lightweight `token id => weight` mapping. Note that [`vectorize`](@ref)/[`vectorize!`](@ref)
+actually return a `SparseVector{Float32,Int32}` (from `SparseArrays.jl`), not a `SVEC` —
+arithmetic (`+`, `-`, `*`, `/`), norms, and distances (see [`normalize!`](@ref),
+[`dot`](@ref), [`norm`](@ref), [`centroid`](@ref)) are defined for `SparseVector`, not for
+`SVEC`/[`BOW`](@ref).
 
 # Example
 
