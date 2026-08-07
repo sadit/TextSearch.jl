@@ -22,14 +22,13 @@ raw text/corpus
   → tokenize (tokenize.jl)             produces a TokenizedText (list of token strings)
   → Vocabulary (voc.jl, updatevoc.jl)  token ⇄ id mapping, occurrence/doc-frequency counters
   → BOW / bagofwords (bow.jl)          Dict{UInt32,Int32} bag-of-words per document
-  → VectorModel (vmodel.jl, emodel.jl) local/global weighting schemes → SVEC (sparse Dict vector)
+  → VectorModel (vmodel.jl, emodel.jl) local/global weighting schemes → SparseVector{Float32,Int32}
        or
   → BM25 (bm25.jl) + BM25InvertedFile (bm25invfile.jl, bm25invfilesearch.jl)  index + kNN search
 ```
 
-`sparseconversions.jl` / `dvec.jl` bridge between the package's `Dict`-based sparse
-vectors (`BOW = Dict{UInt32,Int32}`, `SVEC = Dict{UInt32,Float32}`) and
-`SparseArrays`/`SimilaritySearch` vector types (arithmetic, norms, distances).
+`sparseconversions.jl` / `dvec.jl` provide utilities and fast operations (`sparsedot`, `centroid`)
+on `SparseVector{Float32,Int32}` and conversions with `BOW`.
 
 ## Source file map
 
@@ -45,8 +44,8 @@ vectors (`BOW = Dict{UInt32,Int32}`, `SVEC = Dict{UInt32,Float32}`) and
 | `approxvoc.jl` | Approximate vocabulary lookup (`QgramsLookup`) for fuzzy/OOV matching |
 | `tokcorpus.jl` | `EncodedCorpus` — corpus encoded as token-id sequences |
 | `bow.jl` | Bag-of-words construction from tokenized text |
-| `sparseconversions.jl` | Conversions between `Dict` sparse vectors and `SparseArrays` |
-| `dvec.jl` | Arithmetic/distance operations (`+`, `-`, `dot`, `norm`, centroid, Cosine/Angle) on `SVEC` |
+| `sparseconversions.jl` | Conversions between `Dict` sparse vectors (`BOW`) and `SparseVector` |
+| `dvec.jl` | Optimized operations (`sparsedot`, `centroid`) on `SparseVector` |
 | `vmodel.jl` | `VectorModel`, local/global weighting schemes (TF, IDF, TP, binary), `vectorize` |
 | `emodel.jl` | Entropy-based weighting schemes (`EntropyWeighting`, `CombineWeighting`) |
 | `multi.jl` | Merging/joining `VectorModel`s (`update!`, `joinmodel`) — requires `KCenters` |
@@ -93,9 +92,7 @@ coverage to Codecov. `documentation.yml` builds and deploys docs on pushes/tags 
   extend `Base`/`LinearAlgebra`/`SparseArrays` functions on non-owned types, add them to
   the `treat_as_own` list in `runtests.jl` if they're intentional, otherwise avoid the
   piracy.
-- **Sparse vectors are plain `Dict`s**, not `SparseVector`: `BOW = Dict{UInt32,Int32}`,
-  `SVEC = Dict{UInt32,Float32}` (defined in `TextSearch.jl`). Arithmetic/distance
-  operators for them live in `dvec.jl` — extend there, not ad hoc elsewhere.
+- **Sparse vectors are `SparseVector{Float32,Int32}`** (from `SparseArrays.jl`). `vectorize`/`vectorize!` return `SparseVector`. `BOW = Dict{UInt32,Int32}` is a raw count dictionary. `SVEC = Dict{UInt32,Float32}` exists only as a legacy type alias. Fast operations like `sparsedot` and `centroid` live in `dvec.jl`.
 - **Indexing and Key Extraction**: `PostingList` and `SortedIntSet` implement standard `Base.getindex` (`plist[i]`) returning the primary key (`UInt32`), eliminating the legacy `getkey` abstraction. Search and intersection algorithms in `Intersections` (`binarysearch`, `doublingsearch`) operate directly on `A[i]` using semi-open ranges `[sp, ep)` and bitshift division `(sp + ep) >>> 1`. `_dot_gallop` in `dvec.jl` uses `doublingsearch`.
 - **Buffer pooling**: separate channel-based per-thread pools avoid allocations —
   `BOW_CACHES` (a `Channel{BOW}`) in `voc.jl` backs `Vocabulary` building only;
