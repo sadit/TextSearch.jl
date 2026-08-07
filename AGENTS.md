@@ -105,20 +105,7 @@ coverage to Codecov. `documentation.yml` builds and deploys docs on pushes/tags 
   a useless batch size (this was a real, previously-unnoticed bug in this codebase before
   the v1.0 migration, since the loops using it were `Threads.@threads`, which doesn't even
   take a `minbatch`).
-  - **Known residual risk**: `InvertedFileContext`'s search-time scratch buffers
-    (`positions`, `cont_u32`, `cont_iw`, `cont_iiw`, `knns`, sized by `Threads.maxthreadid()`)
-    are still indexed by `Threads.threadid()` (`getcontainer`/`getpositions` in
-    `invertedfiles/invfile.jl`). This is unchanged by the v1.0 migration (SimilaritySearch's
-    own internal state moved to `@batchid()`-indexing instead, precisely to avoid this class
-    of bug — see its `AGENTS.md`/`set_batch_scheduler!` docs), but TextSearch's version
-    wasn't ported because `InvertedFileContext` is a single global cached singleton
-    (`DEFAULT_CACHE_INVFILES[]`, returned by `getcontext`) shared across whatever
-    parallelizes concurrent `search`/`push_item!` calls *outside* TextSearch's control — a
-    clean `@batchid()` fix needs that caller to tag a per-batch context copy (`@set ctx.batchid
-    = @batchid()`) before calling in, which isn't a contract TextSearch can enforce today.
-    Only touch this if you're prepared to either add that per-call-site tagging contract, or
-    redesign away from one-shared-context-with-N-thread-slots entirely (e.g. one context per
-    concurrent caller, no internal arrays at all).
+  - **Contexts & Batching**: `InvertedFileContext` scratch buffers (`positions`, `cont_u32`, `cont_iw`, `cont_iiw`, `knns`) are sized to `maxbatches` and indexed by `ctx.batchid`. Contexts are created on demand for each operation (`getcontext(invfile)` returns a fresh `InvertedFileContext`), with no global cached singleton.
 - **Struct immutability**: most core types (`TextConfig`, `Vocabulary`, `BM25`, …) are
   immutable `struct`s with explicit copy-constructors (e.g. `TextConfig(c::TextConfig; kwargs...)`)
   for "update a field" patterns — follow that pattern instead of adding mutability.
