@@ -5,7 +5,7 @@ using ..Intersections
 import SimilaritySearch:
     search, index!, append_items!, push_item!
 using SimilaritySearch
-using SimilaritySearch: Dist, AbstractContext, getminbatch
+using SimilaritySearch: Dist, AbstractContext, getminbatch, @BATCHES
 
 using Base.Threads: SpinLock
 
