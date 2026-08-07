@@ -1,6 +1,0 @@
-[submodule "lib/InvertedFiles.jl"]
-	path = lib/InvertedFiles.jl
-	url = https://github.com/sadit/InvertedFiles.jl
-[submodule "lib/Intersections.jl"]
-	path = lib/Intersections.jl
-	url = https://github.com/sadit/Intersections.jl
