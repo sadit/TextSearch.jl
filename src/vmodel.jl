@@ -292,9 +292,9 @@ const VECTORIZE_CACHES = Channel{VectorizeBuffer}(Inf)
 
 Base.empty!(buff::VectorizeBuffer) = (empty!(buff.ids); buff)
 
-function _collect_token_ids!(ids::Vector{Int32}, voc::Vocabulary, text::AbstractString)
+function _collect_token_ids!(ids::Vector{Int32}, voc::Vocabulary, text::AbstractString; isnormalized::Bool=false)
     tokenizerbuffer() do tok
-        tokenlist = tokenize(borrowtokenizedtext, voc.textconfig, text, tok)
+        tokenlist = tokenize(borrowtokenizedtext, voc.textconfig, text, tok; isnormalized)
         for token in tokenlist
             tokenID = token2id(voc, token)
             zero(UInt32) != tokenID && push!(ids, tokenID)
@@ -303,7 +303,7 @@ function _collect_token_ids!(ids::Vector{Int32}, voc::Vocabulary, text::Abstract
     ids
 end
 
-function _collect_token_ids!(ids::Vector{Int32}, voc::Vocabulary, tokens::TokenizedText)
+function _collect_token_ids!(ids::Vector{Int32}, voc::Vocabulary, tokens::TokenizedText; isnormalized::Bool=false)
     for token in tokens
         tokenID = token2id(voc, token)
         zero(UInt32) != tokenID && push!(ids, tokenID)
@@ -311,15 +311,15 @@ function _collect_token_ids!(ids::Vector{Int32}, voc::Vocabulary, tokens::Tokeni
     ids
 end
 
-function _collect_token_ids!(ids::Vector{Int32}, voc::Vocabulary, messages)
+function _collect_token_ids!(ids::Vector{Int32}, voc::Vocabulary, messages; isnormalized::Bool=false)
     for text in messages
-        _collect_token_ids!(ids, voc, text)
+        _collect_token_ids!(ids, voc, text; isnormalized)
     end
     ids
 end
 
 """
-    vectorize!(buff::VectorizeBuffer, model::VectorModel, text; normalize=true, minweight=1e-6)
+    vectorize!(buff::VectorizeBuffer, model::VectorModel, text; normalize=true, minweight=1e-6, isnormalized::Bool=false)
 
 Tokenizes `text` and weights it using `model`'s local/global weighting scheme, returning
 the result as a `SparseVector{Float32,Int32}`; entries with a weight below `minweight`
@@ -345,10 +345,10 @@ julia> TextSearch.vectorize!(buff, model, "hello world")
   [2]  =  0.929399
 ```
 """
-function vectorize!(buff::VectorizeBuffer, model::VectorModel, text; normalize=true, minweight=1e-6)
+function vectorize!(buff::VectorizeBuffer, model::VectorModel, text; normalize=true, minweight=1e-6, isnormalized::Bool=false)
     ids = buff.ids
     empty!(ids)
-    _collect_token_ids!(ids, model.voc, text)
+    _collect_token_ids!(ids, model.voc, text; isnormalized)
     sort!(ids)
     n = length(ids)
     numtokens::Int = n  # total in-vocabulary token occurrences (TpWeighting)
@@ -397,7 +397,7 @@ function vectorize!(buff::VectorizeBuffer, model::VectorModel, text; normalize=t
 end
 
 """
-    vectorize(model::VectorModel, text; normalize=true, minweight=1e-6)
+    vectorize(model::VectorModel, text; normalize=true, minweight=1e-6, isnormalized::Bool=false)
 
 Computes the weighted sparse vector (a `SparseVector{Float32,Int32}`) representation of
 `text` under `model`. `text` can be a string or a list of strings (a multi-field document).
@@ -417,17 +417,17 @@ julia> vectorize(model, "hello world")
   [2]  =  0.929399
 ```
 """
-function vectorize(model::VectorModel, text; normalize=true, minweight=1e-6)
+function vectorize(model::VectorModel, text; normalize=true, minweight=1e-6, isnormalized::Bool=false)
     buff = take!(VECTORIZE_CACHES)
     try
-        vectorize!(buff, model, text; normalize, minweight)
+        vectorize!(buff, model, text; normalize, minweight, isnormalized)
     finally
         put!(VECTORIZE_CACHES, buff)
     end
 end
 
 """
-    vectorize_corpus(model::VectorModel, corpus; normalize=true, minweight=1e-6, verbose=true)
+    vectorize_corpus(model::VectorModel, corpus; normalize=true, minweight=1e-6, isnormalized::Bool=false, verbose=true)
 
 Computes the [`vectorize`](@ref) representation of every document in `corpus`,
 processed in parallel across threads (the batch size is picked automatically from the
@@ -448,7 +448,7 @@ julia> vectorize_corpus(model, corpus; verbose=false)[1]
   [2]  =  0.929399
 ```
 """
-function vectorize_corpus(model::VectorModel, corpus; normalize=true, minweight=1e-6, verbose=true)
+function vectorize_corpus(model::VectorModel, corpus; normalize=true, minweight=1e-6, isnormalized::Bool=false, verbose::Bool=true)
     corpus = collect(corpus)
     n = length(corpus)
     V = Vector{SparseVector{Float32,Int32}}(undef, n)
@@ -456,7 +456,7 @@ function vectorize_corpus(model::VectorModel, corpus; normalize=true, minweight=
     prog = Progress(n; dt=1, enabled=verbose, desc="vectorizing corpus")
 
     @BATCHES minbatch for i in 1:n
-        V[i] = vectorize(model, corpus[i]; normalize, minweight)
+        V[i] = vectorize(model, corpus[i]; normalize, minweight, isnormalized)
         next!(prog)
     end
 

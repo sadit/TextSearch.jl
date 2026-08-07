@@ -47,10 +47,10 @@ julia> bow
 Dict{UInt32, Int32}(0x00000002 => 1, 0x00000001 => 2)
 ```
 """
-function bagofwords!(bow::BOW, voc::Vocabulary, messages)
+function bagofwords!(bow::BOW, voc::Vocabulary, messages; isnormalized::Bool=false)
     for text in messages
         tokenizerbuffer() do tok
-            tokens = tokenize(borrowtokenizedtext, voc.textconfig, text, tok)
+            tokens = tokenize(borrowtokenizedtext, voc.textconfig, text, tok; isnormalized)
             bagofwords!(bow, voc, tokens)
         end
     end
@@ -58,9 +58,9 @@ function bagofwords!(bow::BOW, voc::Vocabulary, messages)
     bow
 end
 
-function bagofwords!(bow::BOW, voc::Vocabulary, text::AbstractString)
+function bagofwords!(bow::BOW, voc::Vocabulary, text::AbstractString; isnormalized::Bool=false)
     tokenizerbuffer() do tok
-        tokens = tokenize(borrowtokenizedtext, voc.textconfig, text, tok)
+        tokens = tokenize(borrowtokenizedtext, voc.textconfig, text, tok; isnormalized)
         bagofwords!(bow, voc, tokens)
     end
     bow
@@ -77,7 +77,7 @@ estimate, falling back to a small default before `voc` has seen any training doc
 _bow_sizehint(voc::Vocabulary) = trainsize(voc) > 0 ? ceil(Int, avgdoclen(voc)) : 16
 
 """
-    bagofwords(voc::Vocabulary, messages)
+    bagofwords(voc::Vocabulary, messages; isnormalized::Bool=false)
 
 Tokenizes `messages` (a string or a list of strings) under `voc`'s [`TextConfig`](@ref)
 and returns its bag of words ([`BOW`](@ref)): a `token id => occurrence count` mapping.
@@ -92,15 +92,15 @@ julia> bagofwords(voc, "hello hello world")
 Dict{UInt32, Int32}(0x00000002 => 1, 0x00000001 => 2)
 ```
 """
-function bagofwords(voc::Vocabulary, messages)
+function bagofwords(voc::Vocabulary, messages; isnormalized::Bool=false)
     bow = BOW()
     sizehint!(bow, _bow_sizehint(voc))
-    bagofwords!(bow, voc, messages)
+    bagofwords!(bow, voc, messages; isnormalized)
 end
-bagofwords(voc::Vocabulary, messages::BOW) = messages
+bagofwords(voc::Vocabulary, messages::BOW; isnormalized::Bool=false) = messages
 
 """
-    bagofwords_corpus(voc::Vocabulary, corpus::AbstractVector; verbose=true)
+    bagofwords_corpus(voc::Vocabulary, corpus::AbstractVector; isnormalized::Bool=false, verbose=true)
 
 Computes a list of bag of words ([`BOW`](@ref)s) from a corpus, one per document,
 in parallel across threads.
@@ -114,8 +114,8 @@ julia> bagofwords_corpus(voc, ["hello world", "hello there"]; verbose=false)[1]
 Dict{UInt32, Int32}(0x00000002 => 1, 0x00000001 => 1)
 ```
 """
-bagofwords_corpus(voc::Vocabulary, corpus::AbstractVector{BOW}; verbose=true) = corpus
-function bagofwords_corpus(voc::Vocabulary, corpus::AbstractVector; verbose=true)
+bagofwords_corpus(voc::Vocabulary, corpus::AbstractVector{BOW}; isnormalized::Bool=false, verbose=true) = corpus
+function bagofwords_corpus(voc::Vocabulary, corpus::AbstractVector; isnormalized::Bool=false, verbose::Bool=true)
     n = length(corpus)
     bowsize = _bow_sizehint(voc)
     X = Vector{BOW}(undef, n)
@@ -129,7 +129,7 @@ function bagofwords_corpus(voc::Vocabulary, corpus::AbstractVector; verbose=true
         else
             bow = BOW()
             sizehint!(bow, bowsize)
-            X[i] = bagofwords!(bow, voc, doc)
+            X[i] = bagofwords!(bow, voc, doc; isnormalized)
         end
         next!(prog)
     end

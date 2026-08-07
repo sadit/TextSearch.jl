@@ -201,14 +201,14 @@ function Vocabulary(textconfig::TextConfig, trainsize::Int64, numtokens::Int64)
     voc
 end
 
-function vocab_from_small_collection(textconfig::TextConfig, corpus::AbstractVector)
+function vocab_from_small_collection(textconfig::TextConfig, corpus::AbstractVector; isnormalized::Bool=false)
     voc = Vocabulary(textconfig, length(corpus), 0)
-    tokenize_and_append!(voc, corpus)
+    tokenize_and_append!(voc, corpus; isnormalized)
     voc
 end
 
 """
-    Vocabulary(textconfig::TextConfig, corpus; buffsize=2^16, verbose=true)
+    Vocabulary(textconfig::TextConfig, corpus; buffsize=2^16, isnormalized::Bool=false, verbose=true)
 
 Tokenizes `corpus` under `textconfig` and builds the resulting [`Vocabulary`](@ref).
 `corpus` can be any vector of documents (each document a string or a list of strings)
@@ -224,9 +224,9 @@ julia> vocsize(voc), trainsize(voc)
 (3, 2)
 ```
 """
-function Vocabulary(textconfig::TextConfig, corpusgenerator; buffsize::Int=2^16, verbose::Bool=true)
+function Vocabulary(textconfig::TextConfig, corpusgenerator; buffsize::Int=2^16, isnormalized::Bool=false, verbose::Bool=true)
     if corpusgenerator isa AbstractVector && length(corpusgenerator) <= buffsize
-        return vocab_from_small_collection(textconfig, corpusgenerator)
+        return vocab_from_small_collection(textconfig, corpusgenerator; isnormalized)
     end
 
     voc = Vocabulary(textconfig, 0, 0)
@@ -239,14 +239,14 @@ function Vocabulary(textconfig::TextConfig, corpusgenerator; buffsize::Int=2^16,
         if length(corpus) == buffsize
             # verbose && (@info "computing vocabulary -- advance: $len - buffsize: $buffsize")
             len += buffsize
-            tokenize_and_append!(voc, corpus)
+            tokenize_and_append!(voc, corpus; isnormalized)
             empty!(corpus)
         end
     end
 
     if length(corpus) > 0
         len += length(corpus)
-        tokenize_and_append!(voc, corpus)
+        tokenize_and_append!(voc, corpus; isnormalized)
     end
 
     voc.trainsize[] = len
@@ -255,9 +255,9 @@ end
 
 const BOW_CACHES = Channel{BOW}(Inf)
 
-function _locked_tokenize_and_push(voc, doc, bow::BOW, l)
+function _locked_tokenize_and_push(voc, doc, bow::BOW, l; isnormalized::Bool=false)
     tokenizerbuffer() do tok
-        tokenlist = tokenize(borrowtokenizedtext, voc.textconfig, doc, tok)
+        tokenlist = tokenize(borrowtokenizedtext, voc.textconfig, doc, tok; isnormalized)
         for token in tokenlist
             id = 0
             lock(l)
@@ -272,7 +272,7 @@ function _locked_tokenize_and_push(voc, doc, bow::BOW, l)
 end
 
 """
-    tokenize_and_append!(voc::Vocabulary, corpus)
+    tokenize_and_append!(voc::Vocabulary, corpus; isnormalized::Bool=false)
 
 Parse each document in the given corpus and appends each token to the vocabulary.
 
@@ -287,7 +287,7 @@ julia> vocsize(voc)
 3
 ```
 """
-function tokenize_and_append!(voc::Vocabulary, corpus)
+function tokenize_and_append!(voc::Vocabulary, corpus; isnormalized::Bool=false)
     l = Threads.SpinLock()
     n = length(corpus)
     minbatch = getminbatch(n)
@@ -304,10 +304,10 @@ function tokenize_and_append!(voc::Vocabulary, corpus)
             empty!(bow)
             if doc isa AbstractVector
                 for text in doc
-                    _locked_tokenize_and_push(voc, text, bow, l)
+                    _locked_tokenize_and_push(voc, text, bow, l; isnormalized)
                 end
             else # if doc isa AbstractString
-                _locked_tokenize_and_push(voc, doc, bow, l)
+                _locked_tokenize_and_push(voc, doc, bow, l; isnormalized)
             end
 
             batch_numtokens += length(bow)
