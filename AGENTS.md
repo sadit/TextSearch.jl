@@ -1,4 +1,4 @@
-# AGENTIC.md
+# AGENTS.md
 
 Guidance for AI coding agents (Claude Code and similar) working in this repository.
 
@@ -51,8 +51,8 @@ vectors (`BOW = Dict{UInt32,Int32}`, `SVEC = Dict{UInt32,Float32}`) and
 | `emodel.jl` | Entropy-based weighting schemes (`EntropyWeighting`, `CombineWeighting`) |
 | `multi.jl` | Merging/joining `VectorModel`s (`update!`, `joinmodel`) — requires `KCenters` |
 | `bm25.jl` | `BM25` scoring struct and `bm25score`/`tokenscore` |
-| `bm25invfile.jl` | `BM25InvertedFile` — the inverted-file index built on `InvertedFiles.jl` |
-| `bm25invfilesearch.jl` | kNN search over `BM25InvertedFile` (uses `Intersections.jl`) |
+| `intersections/` | Search and set intersection algorithms (`doublingsearch`, `binarysearch`, `bk!`, `bkt!`, `umerge!`, `imerge2!`, `svs`, `xmerge!`) |
+| `invertedfiles/` | `PostingList`, `SortedIntSet`, `IdWeight`, `WeightedInvertedFile`, `BinaryInvertedFile`, and search routines |
 | `deprecated.jl` | Backwards-compatible shims for renamed/removed APIs |
 
 ## Dev environment
@@ -72,7 +72,7 @@ julia -t 3 --project=. -e 'using Pkg; Pkg.test()'
 
 Individual test files live under `test/` and are included from `test/runtests.jl`:
 `tok.jl` (tokenization), `voc.jl` (vocabulary), `vec.jl` (vector models/weighting),
-`search.jl` (BM25 inverted file search).
+`intersections.jl` (intersection algorithms), `search.jl` (BM25 inverted file search).
 
 Build the docs (Documenter.jl):
 
@@ -87,6 +87,7 @@ coverage to Codecov. `documentation.yml` builds and deploys docs on pushes/tags 
 
 - **Julia version floor is 1.10** (`Project.toml` `[compat] julia = "^1.10"`). Don't use
   syntax/stdlib features newer than that.
+- **Always run Julia commands with `-t 3`** (e.g. `julia -t 3 --project=.`) for multithreaded evaluation and test runs.
 - **`Aqua.jl` runs in the test suite** (`test/runtests.jl`): ambiguity and type-piracy
   checks (`Aqua.test_ambiguities`, `Aqua.test_piracies`). If you add methods that
   extend `Base`/`LinearAlgebra`/`SparseArrays` functions on non-owned types, add them to
@@ -95,6 +96,7 @@ coverage to Codecov. `documentation.yml` builds and deploys docs on pushes/tags 
 - **Sparse vectors are plain `Dict`s**, not `SparseVector`: `BOW = Dict{UInt32,Int32}`,
   `SVEC = Dict{UInt32,Float32}` (defined in `TextSearch.jl`). Arithmetic/distance
   operators for them live in `dvec.jl` — extend there, not ad hoc elsewhere.
+- **Indexing and Key Extraction**: `PostingList` and `SortedIntSet` implement standard `Base.getindex` (`plist[i]`) returning the primary key (`UInt32`), eliminating the legacy `getkey` abstraction. Search and intersection algorithms in `Intersections` (`binarysearch`, `doublingsearch`) operate directly on `A[i]` using semi-open ranges `[sp, ep)` and bitshift division `(sp + ep) >>> 1`. `_dot_gallop` in `dvec.jl` uses `doublingsearch`.
 - **Buffer pooling**: separate channel-based per-thread pools avoid allocations —
   `BOW_CACHES` (a `Channel{BOW}`) in `voc.jl` backs `Vocabulary` building only;
   `bagofwords`/`bagofwords!`/`bagofwords_corpus` (`bow.jl`) take/create a plain
