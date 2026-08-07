@@ -59,13 +59,13 @@ vectors (`BOW = Dict{UInt32,Int32}`, `SVEC = Dict{UInt32,Float32}`) and
 
 ```julia
 # from repo root
-julia --project=. -e 'using Pkg; Pkg.instantiate()'
+julia -t 3 --project=. -e 'using Pkg; Pkg.instantiate()'
 ```
 
 Run the test suite:
 
 ```julia
-julia --project=. -e 'using Pkg; Pkg.test()'
+julia -t 3 --project=. -e 'using Pkg; Pkg.test()'
 # or, from a REPL with the project active:
 ] test
 ```
@@ -80,7 +80,7 @@ Build the docs (Documenter.jl):
 julia --project=docs docs/make.jl
 ```
 
-CI (`.github/workflows/ci.yml`) runs on Julia 1.10 for Ubuntu and Windows and uploads
+CI (`.github/workflows/ci.yml`) runs on Julia 1.12 for Ubuntu and Windows and uploads
 coverage to Codecov. `documentation.yml` builds and deploys docs on pushes/tags to `main`.
 
 ## Conventions and gotchas
