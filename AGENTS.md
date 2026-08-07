@@ -94,15 +94,7 @@ coverage to Codecov. `documentation.yml` builds and deploys docs on pushes/tags 
   piracy.
 - **Sparse vectors are `SparseVector{Float32,Int32}`** (from `SparseArrays.jl`). `vectorize`/`vectorize!` return `SparseVector`. `BOW = Dict{UInt32,Int32}` is a raw count dictionary. `SVEC = Dict{UInt32,Float32}` exists only as a legacy type alias. Fast operations like `sparsedot` and `centroid` live in `dvec.jl`.
 - **Indexing and Key Extraction**: `PostingList` and `SortedIntSet` implement standard `Base.getindex` (`plist[i]`) returning the primary key (`UInt32`), eliminating the legacy `getkey` abstraction. Search and intersection algorithms in `Intersections` (`binarysearch`, `doublingsearch`) operate directly on `A[i]` using semi-open ranges `[sp, ep)` and bitshift division `(sp + ep) >>> 1`. `_dot_gallop` in `dvec.jl` uses `doublingsearch`.
-- **Buffer pooling**: separate channel-based per-thread pools avoid allocations —
-  `BOW_CACHES` (a `Channel{BOW}`) in `voc.jl` backs `Vocabulary` building only;
-  `bagofwords`/`bagofwords!`/`bagofwords_corpus` (`bow.jl`) take/create a plain
-  [`BOW`](@ref) directly (no wrapper struct), `sizehint!`ed up front from
-  `voc`'s [`avgdoclen`](@ref) via `_bow_sizehint`; `VectorizeBuffer`/`VECTORIZE_CACHES`
-  in `vmodel.jl` backs the performance-sensitive `vectorize!` path (sorts/RLEs token ids
-  directly, no `Dict` involved); and `TokenizerBuffer`/`TOKENIZER_CACHES` inside the
-  `Tokenizer` module (use `tokenizerbuffer(f)`) backs tokenization scratch space, borrowed
-  on demand by the others rather than duplicated.
+- **Buffer pooling**: `bagofwords`/`bagofwords!`/`bagofwords_corpus` (`bow.jl`) do **not** use buffer pooling or global caches; they allocate/fill a plain `BOW` (`Dict{UInt32,Int32}`) per document, pre-sized up front from `voc`'s `avgdoclen` via `sizehint!(bow, _bow_sizehint(voc))`. Channel-based per-thread pools are restricted to `voc.jl` (`BOW_CACHES` for `Vocabulary` building), `vmodel.jl` (`VectorizeBuffer`/`VECTORIZE_CACHES` for `vectorize!`), and `Tokenizer` (`TokenizerBuffer`/`TOKENIZER_CACHES` for tokenization scratch space borrowed on demand).
 - **Parallelism uses SimilaritySearch's `@BATCHES`** (v1.0+; no `Polyester` dependency
   anywhere in this package anymore). Simple per-item loops use the one-argument form
   (`@BATCHES getminbatch(n) for i in 1:n ... end`); `voc.jl`'s `tokenize_and_append!` uses
