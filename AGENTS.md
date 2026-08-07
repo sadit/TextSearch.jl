@@ -27,7 +27,7 @@ raw text/corpus
   → BM25 (bm25.jl) + BM25InvertedFile (bm25invfile.jl, bm25invfilesearch.jl)  index + kNN search
 ```
 
-`sparseconversions.jl` / `dvec.jl` provide utilities and fast operations (`sparsedot`, `centroid`)
+`dvec.jl` provides utilities and fast operations (`sparsedot`, `centroid`)
 on `SparseVector{Float32,Int32}` and conversions with `BOW`.
 
 ## Source file map
@@ -44,11 +44,9 @@ on `SparseVector{Float32,Int32}` and conversions with `BOW`.
 | `approxvoc.jl` | Approximate vocabulary lookup (`QgramsLookup`) for fuzzy/OOV matching |
 | `tokcorpus.jl` | `EncodedCorpus` — corpus encoded as token-id sequences |
 | `bow.jl` | Bag-of-words construction from tokenized text |
-| `sparseconversions.jl` | Conversions between `Dict` sparse vectors (`BOW`) and `SparseVector` |
 | `dvec.jl` | Optimized operations (`sparsedot`, `centroid`) on `SparseVector` |
 | `vmodel.jl` | `VectorModel`, local/global weighting schemes (TF, IDF, TP, binary), `vectorize` |
 | `emodel.jl` | Entropy-based weighting schemes (`EntropyWeighting`, `CombineWeighting`) |
-| `multi.jl` | Merging/joining `VectorModel`s (`update!`, `joinmodel`) — requires `KCenters` |
 | `bm25.jl` | `BM25` scoring struct and `bm25score`/`tokenscore` |
 | `intersections/` | Search and set intersection algorithms (`doublingsearch`, `binarysearch`, `bk!`, `bkt!`, `umerge!`, `imerge2!`, `svs`, `xmerge!`) |
 | `invertedfiles/` | `PostingList`, `SortedIntSet`, `IdWeight`, `WeightedInvertedFile`, `BinaryInvertedFile`, and search routines |

@@ -6,7 +6,7 @@ Aqua.test_all(TextSearch, ambiguities=false, piracies=false, stale_deps=false)
 Aqua.test_ambiguities([TextSearch])
 using LinearAlgebra, SparseArrays 
 using SimilaritySearch
-Aqua.test_piracies(TextSearch, treat_as_own=[Base.:*, Base.:/, Base.:+, Base.:-, argmin, argmax, findmin, findmax, sum, Dist.evaluate, dot, maximum, minimum, norm, sparse, sparse_coo, nnz, sparsevec, zero])
+Aqua.test_piracies(TextSearch, treat_as_own=[Base.:*, Base.:/, Base.:+, Base.:-, argmin, argmax, findmin, findmax, sum, Dist.evaluate, dot, maximum, minimum, norm, nnz, zero])
 
 const fit = TextSearch.fit
 

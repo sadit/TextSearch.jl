@@ -77,7 +77,6 @@ include("voc.jl")
 include("updatevoc.jl")
 include("tokcorpus.jl")
 include("bow.jl")
-include("sparseconversions.jl")
 include("vmodel.jl")
 include("emodel.jl")
 
