@@ -25,9 +25,9 @@ function getcontainer(idx::AbstractInvertedFile, ctx::InvertedFileContext)
     Q
 end
 
-getcontainer(adj::AdjList{UInt32}, ctx) = ctx.cont_u32[Threads.threadid()]
-getcontainer(adj::AdjList{IdWeight}, ctx) = ctx.cont_iw[Threads.threadid()]
-getcontainer(adj::AdjList{IdIntWeight}, ctx) = ctx.cont_iiw[Threads.threadid()]
+getcontainer(adj::AdjList{UInt32}, ctx) = ctx.cont_u32[ctx.batchid]
+getcontainer(adj::AdjList{IdWeight}, ctx) = ctx.cont_iw[ctx.batchid]
+getcontainer(adj::AdjList{IdIntWeight}, ctx) = ctx.cont_iiw[ctx.batchid]
 
 function getcontainer(adj::StaticAdjList, ctx)
     Q = [PostingList(neighbors(adj, 1), zero(UInt32), 0.0f0)]
@@ -37,7 +37,7 @@ function getcontainer(adj::StaticAdjList, ctx)
 end
 
 function getpositions(k::Integer, ctx::InvertedFileContext)
-    P = ctx.positions[Threads.threadid()]
+    P = ctx.positions[ctx.batchid]
     resize!(P, k)
     fill!(P, 1)
     P

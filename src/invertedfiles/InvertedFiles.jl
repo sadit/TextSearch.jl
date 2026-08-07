@@ -16,7 +16,6 @@ include("plists.jl")
 
 struct InvertedFileContext{A,B,C,D} <: AbstractContext
     logger::AbstractLog
-    minbatch::Int
     parallel_block::Int
     maxbatches::Int32
     batchid::Int32
@@ -29,36 +28,21 @@ struct InvertedFileContext{A,B,C,D} <: AbstractContext
     knns::Matrix{IdWeight}
 end
 
-#=function InvertedFileContext(
-        ctx::InvertedFileContext{KnnType};
-        logger = ctx.loggger,                 
-        minbatch = ctx.minbatch,
-        parallel_block = ctx.parallel_block,
-        positions=ctx.positions,
-        cont_u32=ctx.cont_u32,
-        cont_iw=ctx.cont_iw,
-        cont_iiw=ctx.cont_iiw,
-        knns=ctx.knns
-    ) where KnnType
-    InvertedFileContext{KnnType}(ctx, logger, minbatch, parallel_block, positions, cont_u32, cont_iw, cont_iiw, knns) 
-end=#
-
 function InvertedFileContext(;
         logger = InformativeLog(dt=1.0),
-        minbatch = 0,
         parallel_block = 256,
         maxbatches::Integer = 8Threads.nthreads(),
         batchid::Integer = 1,
         costdist::Vector{Int} = zeros(Int, maxbatches),
         costblk::Vector{Int} = zeros(Int, maxbatches),
-        positions = [Vector{UInt32}(undef, 32) for _ in 1:Threads.maxthreadid()],
-        cont_u32 = [Vector{PostingList{Vector{UInt32}}}(undef, 32) for _ in 1:Threads.maxthreadid()],
-        cont_iw = [Vector{PostingList{Vector{IdWeight}}}(undef, 32) for _ in 1:Threads.maxthreadid()],
-        cont_iiw = [Vector{PostingList{Vector{IdIntWeight}}}(undef, 32) for _ in 1:Threads.maxthreadid()],
-        knns = zeros(IdWeight, 64, Threads.maxthreadid())
+        positions = [Vector{UInt32}(undef, 32) for _ in 1:maxbatches],
+        cont_u32 = [Vector{PostingList{Vector{UInt32}}}(undef, 32) for _ in 1:maxbatches],
+        cont_iw = [Vector{PostingList{Vector{IdWeight}}}(undef, 32) for _ in 1:maxbatches],
+        cont_iiw = [Vector{PostingList{Vector{IdIntWeight}}}(undef, 32) for _ in 1:maxbatches],
+        knns = zeros(IdWeight, 64, maxbatches)
     )
 
-    InvertedFileContext(logger, minbatch, parallel_block, convert(Int32, maxbatches), convert(Int32, batchid),
+    InvertedFileContext(logger, parallel_block, convert(Int32, maxbatches), convert(Int32, batchid),
                          costdist, costblk, positions, cont_u32, cont_iw, cont_iiw, knns)
 end
 
@@ -71,13 +55,7 @@ include("invfilesearch.jl")
 include("winvfilesearch.jl")
 include("binvfilesearch.jl")
 
-DEFAULT_CACHE_INVFILES = Ref(InvertedFileContext())
-
-function __init__()
-    n = Threads.nthreads()
-    DEFAULT_CACHE_INVFILES[] = InvertedFileContext()
-end
-
-getcontext(invfile::AbstractInvertedFile) = DEFAULT_CACHE_INVFILES[]
+getcontext(invfile::AbstractInvertedFile; kwargs...) = InvertedFileContext(; kwargs...)
+getcontext(; kwargs...) = InvertedFileContext(; kwargs...)
 
 end
