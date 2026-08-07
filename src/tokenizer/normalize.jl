@@ -51,7 +51,7 @@ function normalize_text(config::TextConfig, text::AbstractString, output::Vector
         isspace(u) && (u = BLANK)
         norm.del_punc && ispunct(u) && !(u in ('@', '#', '_')) && (u = BLANK)
         norm.group_emo && isemoji(u, norm.emojis) && (u = '👾')
-        rep = u === output[end] ? rep + 1 : 0
+        rep = (!isempty(output) && u === output[end]) ? rep + 1 : 0
         norm.del_dup && rep > 1 && continue
         push!(output, u)
     end

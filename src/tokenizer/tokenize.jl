@@ -319,3 +319,90 @@ function nwords(gen::NWordGenerator, buff::TokenizerBuffer, tt::AbstractTokenTra
 
     buff.tokens
 end
+
+"""
+    tokenize_paragraphs(text::AbstractString)::Vector{String}
+    tokenize_paragraphs(textconfig::TextConfig, text::AbstractString)::Vector{String}
+    tokenize_paragraphs([textconfig::TextConfig,] arr::AbstractVector)::Vector{String}
+
+Splits `text` into paragraphs separated by two or more newlines (`\\n\\n+` or `\\r\\n\\r\\n+`).
+Trims leading and trailing whitespace from each paragraph and filters out empty paragraphs.
+When `textconfig` is provided, normalizes the text before paragraph splitting.
+"""
+function tokenize_paragraphs(text::AbstractString)
+    paragraphs = String[]
+    for p in split(text, r"(\r?\n){2,}")
+        tp = strip(p)
+        !isempty(tp) && push!(paragraphs, tp)
+    end
+    paragraphs
+end
+
+function tokenize_paragraphs(textconfig::TextConfig, text::AbstractString)
+    res = String[]
+    for p in tokenize_paragraphs(text)
+        np = strip(normalize_text(textconfig, p))
+        !isempty(np) && push!(res, np)
+    end
+    res
+end
+
+function tokenize_paragraphs(arr::AbstractVector)
+    paragraphs = String[]
+    for item in arr
+        append!(paragraphs, tokenize_paragraphs(item))
+    end
+    paragraphs
+end
+
+function tokenize_paragraphs(textconfig::TextConfig, arr::AbstractVector)
+    paragraphs = String[]
+    for item in arr
+        append!(paragraphs, tokenize_paragraphs(textconfig, item))
+    end
+    paragraphs
+end
+
+"""
+    tokenize_sentences(text::AbstractString)::Vector{String}
+    tokenize_sentences(textconfig::TextConfig, text::AbstractString)::Vector{String}
+    tokenize_sentences([textconfig::TextConfig,] arr::AbstractVector)::Vector{String}
+
+Splits `text` into sentences using sentence-ending punctuation (`.`, `!`, `?`) followed by whitespace
+or newlines. Trims leading and trailing whitespace from each sentence and filters out empty sentences.
+When `textconfig` is provided, normalizes each sentence after splitting.
+"""
+function tokenize_sentences(text::AbstractString)
+    sentences = String[]
+    for s in split(text, r"(?<=[.!?])\s+|[\r\n]+")
+        ts = strip(s)
+        !isempty(ts) && push!(sentences, ts)
+    end
+    sentences
+end
+
+function tokenize_sentences(textconfig::TextConfig, text::AbstractString)
+    res = String[]
+    for s in tokenize_sentences(text)
+        ns = strip(normalize_text(textconfig, s))
+        !isempty(ns) && push!(res, ns)
+    end
+    res
+end
+
+function tokenize_sentences(arr::AbstractVector)
+    sentences = String[]
+    for item in arr
+        append!(sentences, tokenize_sentences(item))
+    end
+    sentences
+end
+
+function tokenize_sentences(textconfig::TextConfig, arr::AbstractVector)
+    sentences = String[]
+    for item in arr
+        append!(sentences, tokenize_sentences(textconfig, item))
+    end
+    sentences
+end
+

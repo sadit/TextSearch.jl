@@ -22,9 +22,9 @@ export WeightedInvertedFile, BinaryInvertedFile, AbstractInvertedFile, SortedInt
 
 include("tokenizer/Tokenizer.jl")
 using .Tokenizer
-using .Tokenizer: borrowtokenizedtext, tokenizerbuffer
+using .Tokenizer: borrowtokenizedtext, tokenizerbuffer, tokenize_paragraphs, tokenize_sentences
 export TextConfig, NormalizationConfig, TokenizationConfig, TokenizedText, tokenize, tokenize_corpus, unigrams,
-       normalize_text, isemoji,
+       normalize_text, isemoji, tokenize_paragraphs, tokenize_sentences,
        AbstractTokenTransformation, IdentityTokenTransformation, IgnoreStopwords, ChainTransformation, SnowballTokenTransformation, transform,
        AbstractTokenGenerator, UnigramGenerator, NWordGenerator,
        needs_unigrams, tokentag, generate!, flush_token!, alltokengenerators
