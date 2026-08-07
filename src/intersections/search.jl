@@ -7,17 +7,19 @@ export binarysearch, doublingsearch, doublingsearchrev, seqsearch, seqsearchrev
 
 Finds the insertion position of `x` in `A` in the range `sp:ep`
 """
-function binarysearch(A, x, sp = 1, ep = length(A))::Int
-    while sp < ep
-        mid = div(sp + ep, 2)
-        if x <= getkey(A, mid)
-            ep = mid
+@inline function binarysearch(A, x, sp::Integer = 1, ep::Integer = length(A))::Int
+    sp_i = Int(sp)
+    hi = Int(ep) + 1
+    @inbounds while sp_i < hi
+        mid = (sp_i + hi) >>> 1
+        if A[mid] < x
+            sp_i = mid + 1
         else
-            sp = mid + 1
+            hi = mid
         end
     end
 
-    x <= getkey(A, sp) ? sp : sp + 1
+    sp_i
 end
 
 """
@@ -25,16 +27,20 @@ end
 
 Finds the insertion position of `x` in `A`, starting at `sp`
 """
-function doublingsearch(A, x, sp = 1, ep = length(A))::Int
-    p = 0
-    i = 1
+@inline function doublingsearch(A, x, sp::Integer = 1, ep::Integer = length(A))::Int
+    sp_i = Int(sp)
+    ep_i = Int(ep)
+    (sp_i > ep_i || @inbounds A[sp_i] >= x) && return sp_i
 
-    while sp + i <= ep && getkey(A, sp + i) < x
-        p = i
-        i += i
+    step = 1
+    hi = sp_i + step
+    @inbounds while hi <= ep_i && A[hi] < x
+        sp_i = hi
+        step += step
+        hi = sp_i + step
     end
 
-    binarysearch(A, x, sp + p, min(ep, sp + i))
+    binarysearch(A, x, sp_i + 1, min(ep_i, hi))
 end
 
 
@@ -43,18 +49,20 @@ end
 
 Finds the insertion position of `x` in `A`, starting at the end
 """
-function doublingsearchrev(A, x, sp = 1, ep = length(A))::Int
-    x > getkey(A, ep) && return ep + 1
+@inline function doublingsearchrev(A, x, sp::Integer = 1, ep::Integer = length(A))::Int
+    sp_i = Int(sp)
+    ep_i = Int(ep)
+    (sp_i > ep_i || @inbounds x > A[ep_i]) && return ep_i + 1
 
-    i = 1
-    p = ep
-    while p >= sp && x <= getkey(A, p)
-        ep = p
-        p -= i
-        i += i
+    step = 1
+    lo = ep_i - step
+    @inbounds while lo >= sp_i && x <= A[lo]
+        ep_i = lo
+        step += step
+        lo = ep_i - step
     end
 
-    binarysearch(A, x, max(p, sp), ep)
+    binarysearch(A, x, max(sp_i, lo + 1), ep_i)
 end
 
 """
@@ -62,9 +70,11 @@ end
 
 Reverse sequential search, i.e., it starts from `ep` to `sp`
 """
-function seqsearchrev(A, x, sp = 1, ep = length(A))::Int
-    pos = ep + 1
-    while pos > sp && x <= getkey(A, pos - 1)
+@inline function seqsearchrev(A, x, sp::Integer = 1, ep::Integer = length(A))::Int
+    sp_i = Int(sp)
+    ep_i = Int(ep)
+    pos = ep_i + 1
+    @inbounds while pos > sp_i && x <= A[pos - 1]
         pos -= 1
     end
 
@@ -72,16 +82,17 @@ function seqsearchrev(A, x, sp = 1, ep = length(A))::Int
 end
 
 """
- 	searchrev(A, x, sp=1, ep=length(A))
+ 	seqsearch(A, x, sp=1, ep=length(A))
 
 Sequential search, i.e., it starts from `sp` to `ep`
 """
-function seqsearch(A, x, sp = 1, ep = length(A))::Int
-    x > getkey(A, ep) && return ep + 1
-    while sp <= ep && getkey(A, sp) < x
-        sp += 1
+@inline function seqsearch(A, x, sp::Integer = 1, ep::Integer = length(A))::Int
+    sp_i = Int(sp)
+    ep_i = Int(ep)
+    @inbounds while sp_i <= ep_i && A[sp_i] < x
+        sp_i += 1
     end
 
-    sp > ep ? ep : sp
+    sp_i
 end
 

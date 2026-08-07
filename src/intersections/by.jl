@@ -19,9 +19,9 @@ end
 function baezayates!(output, A, a_sp::Int, a_ep::Int, B, b_sp::Int, b_ep::Int, findpos::Function)
     (a_ep < a_sp || b_ep < b_sp) && return 0
     imedian = ceil(Int, (a_ep + a_sp) / 2)
-    median = getkey(A, imedian)
+    median = A[imedian]
     medpos = min(findpos(B, median, b_sp), b_ep) ## our findpos returns n + 1 when median is larger than B[end]
-    matches = median === getkey(B, medpos)
+    matches = median === B[medpos]
 
     count = baezayates!(output, A, a_sp, imedian - 1, B, b_sp, medpos - matches, findpos)
     if matches

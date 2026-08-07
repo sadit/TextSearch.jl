@@ -1,7 +1,6 @@
 # This file is part of Intersections.jl
 
 module Intersections
-@inline Base.@propagate_inbounds getkey(arr, i::Integer) = @inbounds arr[i]
 @inline Base.@propagate_inbounds function swapitems!(arr, i::Integer, j::Integer)
     @inbounds tmp = arr[i]
     @inbounds arr[i] = arr[j]
@@ -9,11 +8,11 @@ module Intersections
 end
 
 @inline Base.@propagate_inbounds function onmatch2!(output::Vector, A, i::Integer, B, j::Integer)
-    push!(output, getkey(A, i))
+    push!(output, A[i])
 end
 
 @inline Base.@propagate_inbounds function onmatch!(output::Vector, L, P, m::Integer)
-    push!(output, getkey(L[1], P[1]))
+    push!(output, L[1][P[1]])
 end
 
 include("search.jl")

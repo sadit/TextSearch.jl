@@ -17,7 +17,7 @@ end
  
 function bk!(output, L, P, findpos::Function=doublingsearch)
     n = length(L)
-    _max = getkey(L[1], 1)
+    _max = L[1][1]
     c = 0
     isize = 0  # number of onmatch calls
 
@@ -25,7 +25,7 @@ function bk!(output, L, P, findpos::Function=doublingsearch)
         for i in eachindex(P)
             P[i] = findpos(L[i], _max, P[i])
             P[i] > length(L[i]) && return isize
-            pval = getkey(L[i], P[i])
+            pval = L[i][P[i]]
             if pval == _max
                 c += 1
                 if c == n
@@ -34,7 +34,7 @@ function bk!(output, L, P, findpos::Function=doublingsearch)
                     c = 0
                     P[i] += 1
                     P[i] > length(L[i]) && return isize
-                    _max = getkey(L[i], P[i])
+                    _max = L[i][P[i]]
                 end
             else
                 c = 0

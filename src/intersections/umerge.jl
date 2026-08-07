@@ -51,7 +51,7 @@ function _sort!(L, P::Vector)
     while s > 0
         s = 0
         for i in 1:n-1
-            @inbounds if getkey(L[i], P[i]) > getkey(L[i+1], P[i+1])
+            @inbounds if L[i][P[i]] > L[i+1][P[i+1]]
                 swapitems!(P, i, i+1)
                 swapitems!(L, i, i+1)
                 s += 1
@@ -88,10 +88,10 @@ function umerge!(output, L, P = ones(Int32, length(L)); t::Int=1)
         n = length(L)
         (n == 0 || t > n) && break
         _sort!(L, P)
-        s = getkey(L[1], P[1])
+        s = L[1][P[1]]
 
         if t > 1
-            e = getkey(L[t], P[t])
+            e = L[t][P[t]]
 
             if s != e
                 for i in 1:t-1
@@ -104,7 +104,7 @@ function umerge!(output, L, P = ones(Int32, length(L)); t::Int=1)
 
         m = t
         while m < n
-            s == getkey(L[m+1], P[m+1]) || break
+            s == L[m+1][P[m+1]] || break
             m += 1
         end
 

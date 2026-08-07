@@ -23,9 +23,9 @@ function bkt!(output, L::AbstractVector, P::AbstractVector, findpos::Function=do
         n = length(L)
         (n == 0 || t > n) && break
         _sort!(L, P)
-        s = getkey(L[1], P[1])
+        s = L[1][P[1]]
         if t > 1
-            e = getkey(L[t], P[t])
+            e = L[t][P[t]]
             if s != e
                 for i in 1:t-1
                     P[i] = findpos(L[i], e, P[i])
@@ -37,7 +37,7 @@ function bkt!(output, L::AbstractVector, P::AbstractVector, findpos::Function=do
 
         m = t
         while m < n 
-            s == getkey(L[m+1], P[m+1]) || break
+            s == L[m+1][P[m+1]] || break
             m += 1
         end
        

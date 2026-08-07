@@ -12,8 +12,8 @@ function imerge2!(output, A, B)
     n, m = length(A), length(B)
     count = 0
     @inbounds while i <= n && j <= m
-        a = getkey(A, i)
-        b = getkey(B, j)
+        a = A[i]
+        b = B[j]
         c = cmp(a, b)
         if c == 0
             onmatch2!(output, A, i, B, j)

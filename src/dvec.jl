@@ -24,29 +24,6 @@ export centroid, sparsedot
 ##
 #####
 
-@inline function _gallop_lower_bound(B::Vector{Ti}, start::Int, n::Int, x::Ti) where Ti
-    (start > n || B[start] >= x) && return start
-    lo = start
-    step = 1
-    hi = start + step
-    @inbounds while hi <= n && B[hi] < x
-        lo = hi
-        step += step
-        hi = lo + step
-    end
-    hi = min(hi, n + 1)
-    lo += 1
-    @inbounds while lo < hi
-        mid = (lo + hi) >>> 1
-        if B[mid] < x
-            lo = mid + 1
-        else
-            hi = mid
-        end
-    end
-    lo
-end
-
 function _dot_linear(ai::AbstractVector{Ti}, av::AbstractVector{Tv}, bi::AbstractVector{Ti}, bv::AbstractVector{Tv}) where {Ti,Tv}
     na, nb = length(ai), length(bi)
     s = zero(Tv)
@@ -74,7 +51,7 @@ function _dot_gallop(ai::AbstractVector{Ti}, av::AbstractVector{Tv}, bi::Vector{
     @inbounds for i in 1:na
         pos > nb && break
         x = ai[i]
-        pos = _gallop_lower_bound(bi, pos, nb, x)
+        pos = doublingsearch(bi, x, pos, nb)
         if pos <= nb && bi[pos] == x
             s += av[i] * bv[pos]
         end
