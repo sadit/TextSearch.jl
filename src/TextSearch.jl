@@ -11,14 +11,9 @@ using SimilaritySearch: getminbatch
 
 using ProgressMeter
 
-include("intersections/Intersections.jl")
-using .Intersections
-
-include("invertedfiles/InvertedFiles.jl")
-using .InvertedFiles
-using .InvertedFiles: getcontext, getpositions, InvertedFileContext, IdWeight, IdIntWeight
-export WeightedInvertedFile, BinaryInvertedFile, AbstractInvertedFile, SortedIntSet,
-       InvertedFileContext, getcontext, set_distance_evaluate, search_invfile, select_posting_lists
+using SimilaritySearch: Intersections, InvertedFiles
+using SimilaritySearch.InvertedFiles: getcontext, getpositions, InvertedFileContext, IdWeight, IdIntWeight
+export Intersections, InvertedFiles
 
 include("tokenizer/Tokenizer.jl")
 using .Tokenizer

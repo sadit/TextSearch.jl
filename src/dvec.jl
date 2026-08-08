@@ -51,7 +51,7 @@ function _dot_gallop(ai::AbstractVector{Ti}, av::AbstractVector{Tv}, bi::Vector{
     @inbounds for i in 1:na
         pos > nb && break
         x = ai[i]
-        pos = doublingsearch(bi, x, pos, nb)
+        pos = Intersections.doublingsearch(bi, x, pos, nb)
         if pos <= nb && bi[pos] == x
             s += av[i] * bv[pos]
         end

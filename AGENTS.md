@@ -47,8 +47,8 @@ on `SparseVector{Float32,Int32}` and conversions with `BOW`.
 | `vmodel.jl` | `VectorModel`, local/global weighting schemes (TF, IDF, TP, binary), `vectorize` |
 | `emodel.jl` | Entropy-based weighting schemes (`EntropyWeighting`, `CombineWeighting`) |
 | `bm25.jl` | `BM25` scoring struct and `bm25score`/`tokenscore` |
-| `intersections/` | Search and set intersection algorithms (`doublingsearch`, `binarysearch`, `bk!`, `bkt!`, `umerge!`, `imerge2!`, `svs`, `xmerge!`) |
-| `invertedfiles/` | `PostingList`, `SortedIntSet`, `IdWeight`, `WeightedInvertedFile`, `BinaryInvertedFile`, and search routines |
+| `intersections/` | Re-exported from `SimilaritySearch.Intersections` (set intersection algorithms `doublingsearch`, `bk!`, `bkt!`, `umerge!`, `svs`, etc.) |
+| `invertedfiles/` | Re-exported from `SimilaritySearch.InvertedFiles` (`WeightedInvertedFile`, `BinaryInvertedFile`, `InvertedFileContext`, etc.) |
 | `deprecated.jl` | Backwards-compatible shims for renamed/removed APIs |
 
 ## Dev environment

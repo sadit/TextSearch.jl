@@ -1,4 +1,5 @@
 using SimilaritySearch, TextSearch
+using SimilaritySearch.InvertedFiles, SimilaritySearch.Intersections
 using Test, SparseArrays, LinearAlgebra, StatsBase, Random
 
 using Aqua
@@ -39,8 +40,6 @@ function are_posting_lists_sorted(invindex)
 end
 
 
-#include("intersections.jl")
-#include("invertedfiles.jl")
 include("tok.jl")
 include("voc.jl")
 include("vec.jl")

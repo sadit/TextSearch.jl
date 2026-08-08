@@ -6,9 +6,9 @@ using SimilaritySearch
 using SimilaritySearch: getminbatch
 using StatsBase
 
-using ..Intersections
-using ..InvertedFiles
-using ..InvertedFiles: getcontext, getpositions, InvertedFileContext, IdWeight, IdIntWeight
+using SimilaritySearch.Intersections
+using SimilaritySearch.InvertedFiles
+using SimilaritySearch.InvertedFiles: getcontext, getpositions, InvertedFileContext, IdWeight, IdIntWeight
 using ..TextSearch: Vocabulary, trainsize, avgdoclen, ndocs, vocsize, bagofwords, bagofwords_corpus, TokenizedText, BOW
 
 include("scorer.jl")
