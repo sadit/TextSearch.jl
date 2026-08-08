@@ -43,7 +43,6 @@ vectors (`BOW = Dict{UInt32,Int32}`, `SVEC = Dict{UInt32,Float32}`) and
 | `voc.jl` | `Vocabulary` type: token↔id table, occurrence/ndocs counters |
 | `updatevoc.jl` | Merging/updating `Vocabulary` instances |
 | `approxvoc.jl` | Approximate vocabulary lookup (`QgramsLookup`) for fuzzy/OOV matching |
-| `tokcorpus.jl` | `EncodedCorpus` — corpus encoded as token-id sequences |
 | `bow.jl` | Bag-of-words construction from tokenized text |
 | `sparseconversions.jl` | Conversions between `Dict` sparse vectors and `SparseArrays` |
 | `dvec.jl` | Arithmetic/distance operations (`+`, `-`, `dot`, `norm`, centroid, Cosine/Angle) on `SVEC` |
