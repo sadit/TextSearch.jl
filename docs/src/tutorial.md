@@ -38,7 +38,7 @@ sitting, and long enough to make search results meaningful. The text comes from
 "document".
 
 ```@setup gutenberg
-using TextSearch, SimilaritySearch
+using TextSearch, SimilaritySearch, SimilaritySearch.InvertedFiles
 
 # a quiet InvertedFileContext: SimilaritySearch's default logger prints a
 # timestamped progress line to stderr on every `append_items!`, which is noisy
@@ -411,7 +411,7 @@ written to exercise these options (not scraped from a live feed, so the example 
 no network access and no data-license considerations).
 
 ```@example tweets
-using TextSearch, SimilaritySearch
+using TextSearch, SimilaritySearch, SimilaritySearch.InvertedFiles
 
 quietctx() = InvertedFileContext(logger=SimilaritySearch.LogList(SimilaritySearch.AbstractLog[]))
 
@@ -456,5 +456,5 @@ are across the small corpus.
 ## Next steps
 
 See the [TextSearch API](@ref) page for the full reference — every function and type used above
-(and many more, including the lower-level building blocks in `TextSearch.Intersections`
-and `TextSearch.InvertedFiles`) is documented there with its own runnable example.
+(and many more, including general inverted index structures and posting list intersection building blocks in `SimilaritySearch.InvertedFiles`
+and `SimilaritySearch.Intersections`, re-exported via `TextSearch.InvertedFiles` and `TextSearch.Intersections`) is documented there with its own runnable example.
