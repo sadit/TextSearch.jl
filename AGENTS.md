@@ -42,7 +42,6 @@ on `SparseVector{Float32,Int32}` and conversions with `BOW`.
 | `voc.jl` | `Vocabulary` type: token↔id table, occurrence/ndocs counters |
 | `updatevoc.jl` | Merging/updating `Vocabulary` instances |
 | `approxvoc.jl` | Approximate vocabulary lookup (`QgramsLookup`) for fuzzy/OOV matching |
-| `tokcorpus.jl` | `EncodedCorpus` — corpus encoded as token-id sequences |
 | `bow.jl` | Bag-of-words construction from tokenized text |
 | `dvec.jl` | Optimized operations (`sparsedot`, `centroid`) on `SparseVector` |
 | `vmodel.jl` | `VectorModel`, local/global weighting schemes (TF, IDF, TP, binary), `vectorize` |
