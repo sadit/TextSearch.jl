@@ -5,16 +5,36 @@ export TokenizedText, tokenize, tokenize_corpus, unigrams, generate!, flush_toke
 """
     TokenizedText(tokens::AbstractVector{String})
 
-Wraps the token list produced by [`tokenize`](@ref) for a single document. Behaves like
-an `AbstractVector{String}` (it supports indexing, iteration, `push!`, `append!`, etc.)
-and is the type consumed by `bagofwords`/`bagofwords!` and by `Vocabulary`-building
-functions.
+Wraps a list of string tokens for a single document. `TokenizedText` is TextSearch's
+universal contract for pre-tokenized text. It behaves like an `AbstractVector{String}`
+(supporting indexing, iteration, `push!`, `append!`, etc.) and is recognized by
+[`tokenize`](@ref), [`Vocabulary`](@ref), [`bagofwords`](@ref), [`vectorize`](@ref), and
+[`append_items!`](@ref) to bypass TextSearch's internal normalization and tokenization pipeline.
+
+Use `TokenizedText` when integrating **external tokenizers** (e.g., `WordTokenizers.jl`,
+HuggingFace/subword tokenizers, spaCy, or custom tokenization functions).
 
 # Example
 
 ```julia
+julia> using TextSearch
+
+# Standard tokenization output:
 julia> collect(tokenize(TextConfig(), "Hello world!!"))
-["hello", "world", "!!"]
+3-element Vector{String}:
+ "hello"
+ "world"
+ "!!"
+
+# Integrating an external tokenizer:
+julia> external_tokens = ["custom", "tokenization", "output"];
+
+julia> tok_doc = TokenizedText(external_tokens);
+
+julia> voc = Vocabulary(TextConfig(), [tok_doc]; verbose=false);
+
+julia> vocsize(voc)
+3
 ```
 """
 struct TokenizedText{StringVector<:AbstractVector{String}}
