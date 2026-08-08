@@ -334,22 +334,26 @@ collect(IdView(res))
 The reloaded `BM25InvertedFile` answers the same query with the same ranking as the
 original — nothing needs to be rebuilt or refit.
 
-## Working with WordTokenizers.jl
+## Working with Paragraphs, Sentences, and External Tokenizers
 
-`TextSearch`'s own tokenizer ([`TextConfig`](@ref)/[`tokenize`](@ref)) is tuned for
-short, noisy, informal text (tweets, chat messages) and is deliberately
-dependency-free. For general-purpose English text you may prefer a more
-linguistically-aware tokenizer — [`WordTokenizers.jl`](https://github.com/JuliaText/WordTokenizers.jl)
-is a common choice. There are two ways to bring it in: *compose* it with TextSearch's
-pipeline, or *replace* TextSearch's tokenizer entirely.
+`TextSearch`'s own tokenizer ([`TextConfig`](@ref)/[`tokenize`](@ref)) is fast, thread-safe, and tuned for domain-agnostic and informal text. For long documents or specialised NLP tasks, you may want to segment text into paragraphs or sentences, skip redundant text normalization, or replace TextSearch's tokenizer entirely with an **external tokenizer**.
 
-### Composing: sentence splitting as a preprocessing step
+### Paragraph and Sentence Tokenization
 
-`TextSearch` has no sentence segmenter of its own — it tokenizes whatever "documents"
-you give it. Nothing stops you from making the documents finer-grained first. Here we
-split each paragraph into sentences with `WordTokenizers.split_sentences`, then hand the
-resulting sentence list to [`Vocabulary`](@ref)/[`vectorize_corpus`](@ref) exactly as
-before — `TextConfig`'s own tokenizer still does the actual word-level tokenization.
+TextSearch provides built-in helper functions [`tokenize_paragraphs`](@ref) and [`tokenize_sentences`](@ref) to split long documents or text corpora into finer-grained chunks prior to vocabulary building or indexing:
+
+```@example gutenberg
+# Splitting long text into sentences using TextSearch's built-in sentence tokenizer:
+all_sentences = tokenize_sentences(CASK_OF_AMONTILLADO)
+length(all_sentences), all_sentences[1]
+```
+
+```@example gutenberg
+sentence_voc = Vocabulary(TextConfig(), all_sentences; verbose=false)
+vocsize(sentence_voc), trainsize(sentence_voc)
+```
+
+You can also use external sentence segmenters like `WordTokenizers.split_sentences` as a preprocessing step:
 
 ```@example gutenberg
 using WordTokenizers
@@ -364,37 +368,39 @@ end
 length(sentences), sentences[1]
 ```
 
+### Avoiding Redundant Normalization with `isnormalized`
+
+When text has already been normalized (for example, during paragraph or sentence extraction), you can pass `isnormalized=true` to [`tokenize`](@ref), [`Vocabulary`](@ref), [`bagofwords`](@ref), or [`vectorize`](@ref) to skip character-level case-folding, diacritics removal, and regex preprocessing:
+
 ```@example gutenberg
-sentence_voc = Vocabulary(TextConfig(), sentences; verbose=false)
-vocsize(sentence_voc), trainsize(sentence_voc)
+cfg = TextConfig(normalization=NormalizationConfig(lc=true, del_punc=true))
+norm_sentences = tokenize_sentences(cfg, CASK_OF_AMONTILLADO)
+
+# Pass isnormalized=true to skip repeating the normalization step:
+norm_voc = Vocabulary(cfg, norm_sentences; isnormalized=true, verbose=false)
+vocsize(norm_voc)
 ```
 
-195 sentences from 54 paragraphs — a finer search granularity, built with one extra
-preprocessing step and no changes to `TextSearch` itself.
+### Integrating External Tokenizers with `TokenizedText`
 
-### Replacing: bypassing TextSearch's tokenizer entirely
+If you want to use an **external tokenizer** (such as `WordTokenizers.jl`, HuggingFace / BPE / WordPiece subword tokenizers, spaCy, or custom regex tokenizers), wrap your token list in a [`TokenizedText`](@ref).
 
-If you'd rather use WordTokenizers' own word splitting instead of `TextSearch`'s, wrap
-its output in a [`TokenizedText`](@ref) — the same type [`tokenize`](@ref) itself
-returns. `TokenizedText` is TextSearch's universal "already tokenized" contract:
-[`Vocabulary`](@ref)/[`bagofwords`](@ref)/etc. all recognize it and skip their own
-normalization and tokenization step entirely, using your tokens as-is.
+`TokenizedText` is TextSearch's universal contract for pre-tokenized documents:
+[`Vocabulary`](@ref), [`bagofwords`](@ref), [`vectorize`](@ref), and [`append_items!`](@ref) all recognize `TokenizedText` and skip TextSearch's internal normalization and tokenization steps entirely, consuming your external tokens as-is.
 
 ```@example gutenberg
+# Tokenize using WordTokenizers.jl (or any external tokenizer):
 wt_docs = [TokenizedText(String.(WordTokenizers.tokenize(lowercase(p)))) for p in CASK_OF_AMONTILLADO]
 collect(wt_docs[1])[1:8]
 ```
 
 ```@example gutenberg
+# Build Vocabulary directly from external TokenizedText documents:
 wt_voc = Vocabulary(TextConfig(), wt_docs; verbose=false)
 vocsize(wt_voc)
 ```
 
-`TextConfig()` is still passed here — `Vocabulary` keeps it around for later use (e.g.
-tokenizing a raw-text query at search time) — but since every document already arrives
-as a `TokenizedText`, none of `TextConfig`'s own tokenization settings (`tokenization.nlist`,
-`normalization.del_diac`, ...) have any effect on how these documents were split; that
-happened entirely inside `WordTokenizers.tokenize`.
+`TextConfig()` is still passed when constructing `Vocabulary` — TextSearch retains it for later query processing — but because every document arrives as a `TokenizedText`, none of `TextConfig`'s tokenization rules alter how your documents were split; the tokenization was performed entirely by your external tokenizer.
 
 ## A small tweet-like corpus
 
