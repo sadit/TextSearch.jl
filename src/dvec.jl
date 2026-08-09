@@ -5,7 +5,7 @@ using LinearAlgebra, SparseArrays
 import LinearAlgebra: dot, norm, normalize!
 #import SparseArrays: nnz
 using SimilaritySearch
-using SimilaritySearch.Dist: NormAngle, NormCosine, Angle, Cosine
+using SimilaritySearch.Dist: NormAngle, NormCosine, Angle, Cosine, fastacos
 import SimilaritySearch.Dist: evaluate
 export centroid, sparsedot
 
@@ -61,7 +61,7 @@ function _dot_gallop(ai::AbstractVector{Ti}, av::AbstractVector{Tv}, bi::Vector{
 end
 
 """
-    sparsedot(a::SparseVector, b::SparseVector; small_threshold::Int=30, ratio_threshold::Float64=3.0)
+    sparsedot(a::SparseVector, b::SparseVector; small_threshold::Int=30, ratio_threshold::Float32=3.0f0)
 
 Adaptive dot product between two `SparseVector`s:
 - both sides have fewer than `small_threshold` stored entries, or their sizes are
@@ -89,12 +89,13 @@ julia> sparsedot(sparsevec(UInt32[1, 2], Float32[0.6, 0.8], 10), sparsevec(UInt3
 ```
 """
 function sparsedot(a::SparseVector{Tv,Ti}, b::SparseVector{Tv,Ti};
-        small_threshold::Int=30, ratio_threshold::Float64=3.0) where {Tv,Ti}
+        small_threshold::Int=30, ratio_threshold::Real=3.0f0) where {Tv,Ti}
     ai, av, bi, bv = a.nzind, a.nzval, b.nzind, b.nzval
     na, nb = length(ai), length(bi)
     (na == 0 || nb == 0) && return zero(Tv)
     lo, hi = na <= nb ? (na, nb) : (nb, na)
-    if hi < small_threshold || hi / lo <= ratio_threshold
+    rt = Float32(ratio_threshold)
+    if hi < small_threshold || hi / lo <= rt
         return _dot_linear(ai, av, bi, bv)
     end
 
@@ -102,10 +103,10 @@ function sparsedot(a::SparseVector{Tv,Ti}, b::SparseVector{Tv,Ti};
 end
 
 """
-    evaluate(::NormCosine, a::SparseVector, b::SparseVector)::Float64
-    evaluate(::Cosine, a::SparseVector, b::SparseVector)::Float64
-    evaluate(::NormAngle, a::SparseVector, b::SparseVector)::Float64
-    evaluate(::Angle, a::SparseVector, b::SparseVector)::Float64
+    evaluate(::NormCosine, a::SparseVector, b::SparseVector)::Float32
+    evaluate(::Cosine, a::SparseVector, b::SparseVector)::Float32
+    evaluate(::NormAngle, a::SparseVector, b::SparseVector)::Float32
+    evaluate(::Angle, a::SparseVector, b::SparseVector)::Float32
 
 `SparseVector` counterparts of the `Dict`-based distance functions above, using
 [`sparsedot`](@ref) instead of the plain-merge `dot` for the underlying inner
@@ -118,43 +119,23 @@ product. `NormCosine`/`NormAngle` assume `a`/`b` are already normalized;
 julia> using SparseArrays
 
 julia> evaluate(NormCosine(), sparsevec(UInt32[1, 2], Float32[0.6, 0.8], 10), sparsevec(UInt32[2], Float32[1.0], 10))
-0.19999998807907104
+0.2f0
 ```
 """
-function evaluate(::NormCosine, a::SparseVector, b::SparseVector)::Float64
-    1.0 - sparsedot(a, b)
+function evaluate(::NormCosine, a::SparseVector, b::SparseVector)::Float32
+    1.0f0 - sparsedot(a, b)
 end
 
-function evaluate(::Cosine, a::SparseVector, b::SparseVector)::Float64
-    1.0 - sparsedot(a, b) / (norm(a) * norm(b))
+function evaluate(::Cosine, a::SparseVector, b::SparseVector)::Float32
+    1.0f0 - sparsedot(a, b) / (norm(a) * norm(b))
 end
 
-function evaluate(::NormAngle, a::SparseVector, b::SparseVector)::Float64
-    d = sparsedot(a, b)
-
-    if d <= -1.0
-        π
-    elseif d >= 1.0
-        0.0
-    elseif d == 0
-        π_2
-    else
-        acos(d)
-    end
+function evaluate(::NormAngle, a::SparseVector, b::SparseVector)::Float32
+    fastacos(sparsedot(a, b))
 end
 
-function evaluate(::Angle, a::SparseVector, b::SparseVector)::Float64
-    d = sparsedot(a, b) / (norm(a) * norm(b))
-
-    if d <= -1.0
-        π
-    elseif d >= 1.0
-        0.0
-    elseif d == 0
-        π_2
-    else
-        acos(d)
-    end
+function evaluate(::Angle, a::SparseVector, b::SparseVector)::Float32
+    fastacos(sparsedot(a, b) / (norm(a) * norm(b)))
 end
 
 """
