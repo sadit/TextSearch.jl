@@ -24,7 +24,6 @@ export TextConfig, NormalizationConfig, TokenizationConfig, TokenizedText, token
        AbstractTokenGenerator, UnigramGenerator, NWordGenerator,
        needs_unigrams, tokentag, generate!, flush_token!, alltokengenerators
 
-include("dvec.jl")
 
 """
     BOW = Dict{UInt32,Int32}
