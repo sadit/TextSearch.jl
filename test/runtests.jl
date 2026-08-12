@@ -39,8 +39,7 @@ function are_posting_lists_sorted(invindex)
 end
 
 
-#include("intersections.jl")
-#include("invertedfiles.jl")
+include("intersections.jl")
 include("tok.jl")
 include("voc.jl")
 include("vec.jl")

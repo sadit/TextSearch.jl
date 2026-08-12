@@ -8,20 +8,29 @@ using StatsBase
 
 
 """
-    BM25InvertedFile{AdjType<:AbstractAdjList} <: AbstractInvertedFile
+    BM25InvertedFile{AdjType<:AbstractAdjList,DbType<:AbstractDatabase} <: AbstractInvertedFile
 
-An inverted-file index (built on top of `InvertedFiles.jl`) that answers approximate/exact
-top-k queries ranked by BM25 relevance. Build it with [`BM25InvertedFile(voc)`](@ref
-BM25InvertedFile), populate it with [`append_items!`](@ref)/[`push_item!`](@ref), and
-query it with `search` (from `SimilaritySearch.jl`).
+An inverted-file index (built on top of `SimilaritySearch.InvertedFiles`) that answers
+approximate/exact top-k queries ranked by BM25 relevance. Build it with
+[`BM25InvertedFile(voc)`](@ref BM25InvertedFile), populate it with
+[`append_items!`](@ref)/[`push_item!`](@ref), and query it with `search` (from
+`SimilaritySearch.jl`).
+
+Follows the same design as `SimilaritySearch.InvertedFiles.InvertedFile`: `adj` only ever
+stores plain document ids (`AdjType`'s element type is `UInt32`, exactly like the generic
+`InvertedFile`); every other per-document detail needed to score a match -- term
+frequencies -- is fetched from `db` instead of being duplicated into the posting lists.
 
 # Fields
 - `voc`: the [`Vocabulary`](@ref) shared by every indexed document (also used to
   tokenize/encode query text).
 - `bm25`: the [`BM25Scorer`](@ref) used to rank matches.
 - `adj`: the adjacency list of posting lists (one per token id), mapping each token to
-  the documents containing it and their term frequency.
+  the ids of the documents containing it.
 - `doclens`: number of tokens per indexed document.
+- `db`: each indexed document's term-frequency vector, one `SparseVecView` (token id =>
+  `UInt32` frequency) per document, always populated by [`push_item!`](@ref)/
+  [`append_items!`](@ref).
 
 # Example
 
@@ -49,11 +58,12 @@ julia> collect(IdView(res))
 UInt32[0x00000001, 0x00000002]
 ```
 """
-struct BM25InvertedFile{AdjType<:AbstractAdjList} <: AbstractInvertedFile
+struct BM25InvertedFile{AdjType<:AbstractAdjList,DbType<:AbstractDatabase} <: AbstractInvertedFile
     voc::Vocabulary
     bm25::BM25Scorer
     adj::AdjType
     doclens::Vector{Int32}  ## number of tokens per document
+    db::DbType              ## per-document term-frequency vectors
 end
 
 function Base.show(io::IO, invfile::BM25InvertedFile; prefix="", indent="  ")
@@ -66,8 +76,44 @@ function Base.show(io::IO, invfile::BM25InvertedFile; prefix="", indent="  ")
 end
 
 Base.length(invfile::BM25InvertedFile) = length(invfile.doclens)
-database(invfile::BM25InvertedFile) = error("database() is not accesible in BM25InvertedFile")
+database(invfile::BM25InvertedFile) = invfile.db
 distance(::BM25InvertedFile) = error("BM25InvertedFile is not a metric index")
+
+"""
+    findfreq(docvec::SparseVecView, tokenID)::UInt32
+
+Looks up `tokenID`'s frequency in `docvec` (a document's term-frequency vector, as stored
+in [`BM25InvertedFile`](@ref)'s `db`), `0` if `tokenID` is not present. `docvec.nzind` is
+assumed sorted (always true for entries built by [`BM25InvertedFile`](@ref)'s own
+`push_item!`/`append_items!`), so this is a binary search, not a linear scan.
+"""
+function findfreq(docvec::SparseVecView, tokenID)::UInt32
+    nzind = docvec.nzind
+    pos = binarysearch(nzind, convert(eltype(nzind), tokenID))
+    (pos <= length(nzind) && @inbounds nzind[pos] == tokenID) ? (@inbounds docvec.nzval[pos]) : zero(UInt32)
+end
+
+# `BM25InvertedFile`'s posting lists only ever store plain document ids (`AdjList{UInt32}`,
+# like the generic `InvertedFile`), so `getcontainer` and its `PostingList{Vector{UInt32}}`
+# come straight from `SimilaritySearch.InvertedFiles` with no local overrides. `dist` is the
+# one thing `select_posting_lists`'s generic implementation needs that `BM25InvertedFile`
+# doesn't have (BM25 isn't a metric index, see `distance` above), so it gets this small
+# override instead.
+function select_posting_lists(accept::Function, idx::BM25InvertedFile, ctx::InvertedFileContext, q)
+    Q = getcontainer(idx, ctx)
+    @inbounds for (tokenID, weight) in sparseiterator(q)
+        accept((; idx, q, tokenID, weight)) || continue
+        tokenID == 0 && continue
+        N = neighbors(idx.adj, tokenID)
+        N === nothing && continue
+        if length(N) > 0
+            L = PostingList(N, convert(UInt32, tokenID), convert(Float32, weight))
+            push!(Q, L)
+        end
+    end
+
+    Q
+end
 
 """
     BM25InvertedFile(voc::Vocabulary; k1=1.2f0, b=0.75f0, δ=1f0)
@@ -93,8 +139,9 @@ function BM25InvertedFile(voc::Vocabulary;  k1=1.2f0, b=0.75f0, δ=1f0)
     BM25InvertedFile(
         voc,
         bm25,
-        resize!(AdjList(IdIntWeight), vocsize(voc)),
+        resize!(AdjList(UInt32), vocsize(voc)),
         Vector{Int32}(undef, 0),
+        VectorDatabase(SparseVecView{Vector{Int32},Vector{UInt32}}[]),
     )
 end
 
@@ -110,10 +157,11 @@ end
 
 Prunes each posting list of `idx` in place, once it is already populated. Lists shorter
 than `list_min_length_for_checking` are left untouched (optionally sorted by document id
-when `always_sort=true`). Longer lists are filtered to entries whose term frequency lies
-in `[doc_min_freq, doc_max_freq]`, then truncated to the `list_max_allowed_length`
-highest-frequency entries — this both discards overly rare/common (likely noisy) postings
-and bounds the cost of scanning very long lists at query time. Returns `idx`.
+when `always_sort=true`). Longer lists are filtered to entries whose term frequency (looked
+up from `idx.db`, see [`findfreq`](@ref)) lies in `[doc_min_freq, doc_max_freq]`, then
+truncated to the `list_max_allowed_length` highest-frequency entries — this both discards
+overly rare/common (likely noisy) postings and bounds the cost of scanning very long lists
+at query time. Returns `idx`.
 
 # Example
 
@@ -142,32 +190,33 @@ function filter_lists!(
     )
     adj = idx.adj
     @assert adj isa AdjList
-    buff = IdIntWeight[]
+    buff = Tuple{UInt32,UInt32}[]  # (docID, freq)
     sizehint!(buff, list_max_allowed_length)
 
-    for i in eachindex(adj)
-        L = neighbors(adj, i)
+    for tokenID in eachindex(adj)
+        L = neighbors(adj, tokenID)
         n = length(L)
         n == 0 && continue
         if n < list_min_length_for_checking
-            always_sort && sort!(L, by=p->p.id)
+            always_sort && sort!(L)
             continue
         end
         empty!(buff)
-        for item in L
-            if doc_min_freq <= item.weight <= doc_max_freq
-                push!(buff, item)
+        for docID in L
+            freq = findfreq(idx.db[docID], tokenID)
+            if doc_min_freq <= freq <= doc_max_freq
+                push!(buff, (docID, freq))
             end
         end
 
-        sort!(buff, by=p->p.weight, rev=true)
+        sort!(buff, by=last, rev=true)
         if length(buff) > list_max_allowed_length
             resize!(buff, list_max_allowed_length)
         end
 
-        sort!(buff, by=p->p.id)
+        sort!(buff, by=first)
         resize!(L, length(buff))
-        L .= buff
+        L .= first.(buff)
     end
 
     idx
@@ -242,42 +291,64 @@ function push_item!(idx::BM25InvertedFile, ctx::InvertedFileContext, doc::T) whe
 end
 
 function SimilaritySearch.push_item!(idx::BM25InvertedFile, ctx::InvertedFileContext, obj; docID::UInt32=UInt32(length(idx) + 1), tol::Float64=1e-6)
-    len = bm25_internal_push_object!(idx, ctx, docID, obj, tol)
-    for (tokenID, _) in InvertedFiles.sparseiterator(obj)
+    len, docvec = bm25_internal_push_object!(idx, docID, obj, tol)
+    for (tokenID, _) in sparseiterator(obj)
         N = neighbors(idx.adj, tokenID)
         N === nothing && continue
-        sort!(N, by=p -> p.id)
+        sort!(N)
     end
 
     push!(idx.doclens, len)
+    push_item!(idx.db, docvec)
     LOG(ctx.logger, :push_item!, idx, ctx, docID, docID)
     idx
 end
 
-function bm25_internal_push_object!(idx::BM25InvertedFile, ctx::InvertedFileContext, docID::Integer, obj, tol::Float64)
+"""
+    bm25_internal_push_object!(idx, docID, obj, tol) -> (doclen, docvec)
+
+Registers `obj` (a BOW-like `(tokenID, freq)` iterable) into `idx.adj` under `docID` and
+builds its `SparseVecView` term-frequency representation (`docvec`, to be stored at `docID`
+in `idx.db` by the caller). Returns `obj`'s total token count (`doclen`) and `docvec`.
+"""
+function bm25_internal_push_object!(idx::BM25InvertedFile, docID::Integer, obj, tol::Float64)
+    tokenids = Int32[]
+    freqs = UInt32[]
     len = 0
-    @inbounds for (tokenID, freq) in InvertedFiles.sparseiterator(obj)  # obj is a BOW-like struct
+
+    @inbounds for (tokenID, freq) in sparseiterator(obj)  # obj is a BOW-like struct
         freq < tol && continue
         len += freq
-        SimilaritySearch.add!(idx.adj, tokenID, (IdIntWeight(docID, freq),))
+        push!(tokenids, convert(Int32, tokenID))
+        push!(freqs, convert(UInt32, freq))
+        SimilaritySearch.add!(idx.adj, tokenID, (convert(UInt32, docID),))
     end
 
-    len
+    if !issorted(tokenids)
+        perm = sortperm(tokenids)
+        permute!(tokenids, perm)
+        permute!(freqs, perm)
+    end
+
+    len, SparseVecView(vocsize(idx.voc), tokenids, freqs)
 end
 
-function InvertedFiles.parallel_append!(idx::BM25InvertedFile, ctx::InvertedFileContext, db::AbstractDatabase, startID::Int, n::Int, tol::Float64)
+function parallel_append!(idx::BM25InvertedFile, ctx::InvertedFileContext, db::AbstractDatabase, startID::Int, n::Int, tol::Float64)
     resize!(idx.doclens, startID + n)
+    resize!(idx.db.vecs, startID + n)
     minbatch = getminbatch(n)
 
     @BATCHES minbatch for i in 1:n
         docID = i + startID
-        idx.doclens[docID] = bm25_internal_push_object!(idx, ctx, docID, db[i], tol)
+        len, docvec = bm25_internal_push_object!(idx, docID, db[i], tol)
+        idx.doclens[docID] = len
+        idx.db[docID] = docvec
     end
 
     @BATCHES minbatch for i in 1:length(idx.adj)
         N = neighbors(idx.adj, i)
         N === nothing && continue
-        sort!(N, by=p -> p.id)
+        sort!(N)
     end
 
     idx

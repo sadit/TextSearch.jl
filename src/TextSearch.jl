@@ -11,13 +11,29 @@ using SimilaritySearch: getminbatch
 
 using ProgressMeter
 
-include("intersections/Intersections.jl")
-using .Intersections
+include("idweight.jl")
 
-include("invertedfiles/InvertedFiles.jl")
-using .InvertedFiles
-using .InvertedFiles: getcontext, getpositions, InvertedFileContext, IdWeight, IdIntWeight
-export WeightedInvertedFile, BinaryInvertedFile, AbstractInvertedFile, SortedIntSet,
+using SimilaritySearch.Intersections
+using SimilaritySearch.InvertedFiles
+
+"""
+    WeightedInvertedFile(vocsize::Integer)
+
+Creates an empty [`InvertedFile`](@ref) indexed by cosine dissimilarity (`Dist.NormCosine()`),
+suitable for weighted sparse vectors (e.g. `SparseVector`s produced by [`vectorize`](@ref)).
+"""
+WeightedInvertedFile(vocsize::Integer) = InvertedFile(vocsize, Dist.NormCosine())
+
+"""
+    BinaryInvertedFile(vocsize::Integer, dist=Dist.Sets.Jaccard())
+
+Creates an empty [`InvertedFile`](@ref) indexed by a set distance (e.g. `Dist.Sets.Jaccard()`,
+`Dist.Sets.Dice()`, `Dist.Sets.Intersection()`, `Dist.Sets.CosineSet()`), suitable for
+set/token-membership objects (sets or sorted vectors of integer ids).
+"""
+BinaryInvertedFile(vocsize::Integer, dist=Dist.Sets.Jaccard()) = InvertedFile(vocsize, dist)
+
+export WeightedInvertedFile, BinaryInvertedFile, AbstractInvertedFile, InvertedFile, SortedIntSet,
        InvertedFileContext, getcontext, set_distance_evaluate, search_invfile, select_posting_lists
 
 include("tokenizer/Tokenizer.jl")

@@ -1,4 +1,4 @@
-using TextSearch.Intersections
+using SimilaritySearch.Intersections
 using Test, Random
 
 Random.seed!(0)

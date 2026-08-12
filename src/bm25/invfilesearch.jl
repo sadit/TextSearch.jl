@@ -5,18 +5,20 @@ struct BM25InvFileOutput{InvFileType<:BM25InvertedFile}
     res::KnnSorted
 end
 
-function Intersections.onmatch!(output::BM25InvFileOutput, L::T, P, m::Int) where T
-		@inbounds docID = L[1].list[P[1]].id
+function onmatch!(output::BM25InvFileOutput, L::T, P, m::Int) where T
+    @inbounds docID = L[1][P[1]]
     idx = output.idx
-		doclen = idx.doclens[docID]
-		S = 0f0
-		@inbounds @simd for i in 1:m
-			freq = L[i].list[P[i]].weight
-			tokndocs = ndocs(idx.voc, L[i].tokenID)
-			s = tokenscore(idx.bm25, tokndocs, doclen, freq)
-			# @show i, docID, idx.voc[L[i].tokenID], s, tokndocs, doclen, freq
-			S -= s
-		end
+    doclen = idx.doclens[docID]
+    docvec = idx.db[docID]
+    S = 0f0
+    @inbounds for i in 1:m
+        tokenID = L[i].tokenID
+        freq = findfreq(docvec, tokenID)
+        tokndocs = ndocs(idx.voc, tokenID)
+        s = tokenscore(idx.bm25, tokndocs, doclen, freq)
+        # @show i, docID, idx.voc[tokenID], s, tokndocs, doclen, freq
+        S -= s
+    end
 
     push_item!(output.res, IdDist(docID, S))
 end
