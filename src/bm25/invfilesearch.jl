@@ -1,26 +1,40 @@
 # This file is part of TextSearch.jl
 
-struct BM25InvFileOutput{InvFileType<:BM25InvertedFile}
+struct BM25InvFileOutput{InvFileType<:BM25InvertedFile,QType<:SparseVectorLike}
     idx::InvFileType
+    query::QType
     res::KnnSorted
 end
 
+# `m`/`L[2:m]` aren't needed anymore: `bm25score` recomputes the query-doc intersection
+# itself (see src/bm25/scorer.jl) instead of scoring just the `m` posting lists the outer
+# merge already matched. Simpler, at the cost of redoing that intersection per candidate
+# instead of reusing the merge's own -- see the discussion that led to this trade-off.
 function onmatch!(output::BM25InvFileOutput, L::T, P, m::Int) where T
     @inbounds docID = L[1][P[1]]
     idx = output.idx
-    doclen = idx.doclens[docID]
-    docvec = idx.db[docID]
-    S = 0f0
-    @inbounds for i in 1:m
-        tokenID = L[i].tokenID
-        freq = findfreq(docvec, tokenID)
-        tokndocs = ndocs(idx.voc, tokenID)
-        s = tokenscore(idx.bm25, tokndocs, doclen, freq)
-        # @show i, docID, idx.voc[tokenID], s, tokndocs, doclen, freq
-        S -= s
+    S = -bm25score(idx.bm25, idx.voc, output.query, idx.db[docID])
+    push_item!(output.res, IdDist(docID, S))
+end
+
+"""
+    bm25_query_vector(idx::BM25InvertedFile, q)
+
+Converts `q` (a bag of words -- `BOW`/`Dict`, or anything else [`sparseiterator`](@ref)
+accepts) into a `SparseVector`, for [`bm25score`](@ref) to use in [`onmatch!`](@ref).
+Passes `q` through unchanged if it's already a `SparseVectorLike`.
+"""
+bm25_query_vector(idx::BM25InvertedFile, q::SparseVectorLike) = q
+
+function bm25_query_vector(idx::BM25InvertedFile, q)
+    I = Int32[]
+    F = Int32[]
+    for (tokenID, freq) in sparseiterator(q)
+        push!(I, convert(Int32, tokenID))
+        push!(F, convert(Int32, freq))
     end
 
-    push_item!(output.res, IdDist(docID, S))
+    sparsevec(I, F, vocsize(idx.voc))
 end
 
 """
@@ -70,8 +84,9 @@ function SimilaritySearch.search(accept_posting_list::Function, idx::BM25Inverte
   Q = select_posting_lists(accept_posting_list, idx, ctx, q)
   length(Q) == 0 && return res
   P = getpositions(length(Q), ctx)
+  query_vec = bm25_query_vector(idx, q)
 
-  costevals = xmerge!(BM25InvFileOutput(idx, res), Q, P; t)
+  costevals = xmerge!(BM25InvFileOutput(idx, query_vec, res), Q, P; t)
   SimilaritySearch.add_distance_evaluations!(ctx, costevals)
   res
 end

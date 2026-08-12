@@ -102,10 +102,23 @@ julia> BM25Scorer(voc).trainsize
 BM25Scorer(voc::Vocabulary; k1=1.2f0, b=0.75f0, δ=1f0) = BM25Scorer(trainsize(voc), avgdoclen(voc); k1, b, δ)
 
 """
-    bm25score(bm25::BM25Scorer, voc::Vocabulary, query::Dict, doc::Dict)::Float32
+    bm25doclen(doc::SparseVectorLike)
 
-Computes the BM25 relevance score of `doc` (a bag of words) for `query` (a bag of words),
-summing [`tokenscore`](@ref) over every query token present in `doc`. Higher is more relevant.
+Total token count of `doc` (a document's term-frequency sparse vector -- a `SparseVecView`,
+as stored in [`BM25InvertedFile`](@ref)'s `db`, or a `SparseVector`). Used by
+[`bm25score`](@ref).
+"""
+bm25doclen(doc::SparseVectorLike) = sum(doc.nzval; init=0)
+
+"""
+    bm25score(bm25::BM25Scorer, voc::Vocabulary, query::SparseVectorLike, doc::SparseVectorLike)::Float32
+
+Computes the BM25 relevance score of `doc` for `query` -- each a term-frequency sparse
+vector (a `SparseVecView`, e.g. one of [`BM25InvertedFile`](@ref)'s own `db` entries via
+[`database`](@ref), or a `SparseVector`) -- by merging their nonzero indices (`nzind`,
+assumed sorted ascending) in a single linear pass and summing [`tokenscore`](@ref) at every
+token id present in both. Higher is more relevant. `query`'s own frequencies are not used
+(BM25 doesn't weight by query-side term frequency), only which tokens it contains.
 
 # Example
 
@@ -116,18 +129,36 @@ julia> voc = Vocabulary(TextConfig(), corpus; verbose=false);
 
 julia> bm25 = BM25Scorer(voc);
 
-julia> bm25score(bm25, voc, bagofwords(voc, "hello"), bagofwords(voc, "hello world"))
+julia> invfile = BM25InvertedFile(voc);
+
+julia> ctx = InvertedFileContext();
+
+julia> append_items!(invfile, ctx, corpus);
+
+julia> bm25score(bm25, voc, database(invfile)[1], database(invfile)[1])  # "hello world" scored against itself
+2.9917173f0
+
+julia> bm25score(bm25, voc, database(invfile)[1], database(invfile)[2])  # "hello world" scored against "hello there"
 0.96917987f0
 ```
 """
-function bm25score(bm25::BM25Scorer, voc::Vocabulary, query::Dict, doc::Dict)::Float32
+function bm25score(bm25::BM25Scorer, voc::Vocabulary, query::SparseVectorLike, doc::SparseVectorLike)::Float32
+    doclen = bm25doclen(doc)
+    qi = query.nzind
+    di, dv = doc.nzind, doc.nzval
+    nq, nd = length(qi), length(di)
     s = 0f0
-
-    doclen = sum(f for f in values(doc))
-    for tokenID in keys(query)
-        w = get(doc, tokenID, 0f0)
-        if w > 0f0
-            s += tokenscore(bm25, ndocs(voc, tokenID), doclen, w)
+    i = j = 1
+    @inbounds while i <= nq && j <= nd
+        a, b = qi[i], di[j]
+        if a == b
+            s += tokenscore(bm25, ndocs(voc, a), doclen, dv[j])
+            i += 1
+            j += 1
+        elseif a < b
+            i += 1
+        else
+            j += 1
         end
     end
 

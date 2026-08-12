@@ -43,32 +43,30 @@ end
     @show invfile.bm25
 end
 
-@testset "bm25 invindex" begin
-    invfile = BM25InvertedFile(Vocabulary(TextConfig(tokenization=TokenizationConfig(nlist=[1])), _corpus))
+@testset "bm25score matches BM25InvertedFile search, both for SparseVecView and SparseVector" begin
+    voc = Vocabulary(TextConfig(tokenization=TokenizationConfig(nlist=[1])), _corpus)
+    invfile = BM25InvertedFile(voc)
     ctx = InvertedFileContext()
     append_items!(invfile, ctx, _corpus)
-    filter_lists!(invfile;
-        list_min_length_for_checking=2,
-        list_max_allowed_length=3,
-        doc_min_freq=1,
-        doc_max_freq=3)
-    R = search(invfile, ctx, "la casa de la manzana verde", knnqueue(KnnSorted, 3))
-    @test collect(IdView(R)) == UInt32[0x00000006, 0x00000002, 0x00000004]
-    @show collect(DistView(R))
-    @show invfile.voc
-    @show invfile.bm25
 
-    #=@testset "saveindex and loadindex BM25InvertedFile" begin
-        tmpfile = tempname()
-        @info "--- load and save!!!"
-        saveindex(tmpfile, invfile; meta=[1, 2, 4, 8], store_db=false)
+    qtext = "la casa de la manzana verde"
+    qvec = sparsevec(bagofwords(voc, qtext), vocsize(voc))
+    R = search(invfile, ctx, qtext, knnqueue(KnnSorted, length(invfile)))
+    ids = collect(IdView(R))
+    dists = collect(DistView(R))
+    @test length(ids) > 0
 
-            G, meta = loadindex(tmpfile, database(invfile); staticgraph=true)
-            @test meta == [1, 2, 4, 8]
-            @test G.adj isa StaticAdjList
-            R = search(G, ctx, "la casa de la manzana verde", knnqueue(KnnSorted, 3))
-            @test collect(IdView(R)) == UInt32[0x00000006, 0x00000002, 0x00000004]
-    end=#
+    for (docid, dist) in zip(ids, dists)
+        expected = -dist  # `search` stores -bm25score as "distance"
 
+        # doc as the SparseVecView `BM25InvertedFile` itself stores in `db`
+        got_sparseview = bm25score(invfile.bm25, voc, qvec, database(invfile)[docid])
+        @test got_sparseview ≈ expected atol=1f-4
+
+        # doc rebuilt from scratch as a plain SparseVector, e.g. via bagofwords + sparsevec
+        docvec = sparsevec(bagofwords(voc, _corpus[docid]), vocsize(voc))
+        got_sparsevector = bm25score(invfile.bm25, voc, qvec, docvec)
+        @test got_sparsevector ≈ expected atol=1f-4
+    end
 end
 

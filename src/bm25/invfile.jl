@@ -1,6 +1,6 @@
 # This file is part of TextSearch.jl
 
-export BM25InvertedFile, search, filter_lists!, append_items!, push_item!, InvertedFileContext
+export BM25InvertedFile, search, append_items!, push_item!, InvertedFileContext
 
 import SimilaritySearch: search, append_items!, push_item!, database, distance
 
@@ -79,20 +79,6 @@ Base.length(invfile::BM25InvertedFile) = length(invfile.doclens)
 database(invfile::BM25InvertedFile) = invfile.db
 distance(::BM25InvertedFile) = error("BM25InvertedFile is not a metric index")
 
-"""
-    findfreq(docvec::SparseVecView, tokenID)::UInt32
-
-Looks up `tokenID`'s frequency in `docvec` (a document's term-frequency vector, as stored
-in [`BM25InvertedFile`](@ref)'s `db`), `0` if `tokenID` is not present. `docvec.nzind` is
-assumed sorted (always true for entries built by [`BM25InvertedFile`](@ref)'s own
-`push_item!`/`append_items!`), so this is a binary search, not a linear scan.
-"""
-function findfreq(docvec::SparseVecView, tokenID)::UInt32
-    nzind = docvec.nzind
-    pos = binarysearch(nzind, convert(eltype(nzind), tokenID))
-    (pos <= length(nzind) && @inbounds nzind[pos] == tokenID) ? (@inbounds docvec.nzval[pos]) : zero(UInt32)
-end
-
 # `BM25InvertedFile`'s posting lists only ever store plain document ids (`AdjList{UInt32}`,
 # like the generic `InvertedFile`), so `getcontainer` and its `PostingList{Vector{UInt32}}`
 # come straight from `SimilaritySearch.InvertedFiles` with no local overrides. `dist` is the
@@ -143,83 +129,6 @@ function BM25InvertedFile(voc::Vocabulary;  k1=1.2f0, b=0.75f0, δ=1f0)
         Vector{Int32}(undef, 0),
         VectorDatabase(SparseVecView{Vector{Int32},Vector{UInt32}}[]),
     )
-end
-
-"""
-    filter_lists!(
-        idx::BM25InvertedFile;
-        list_min_length_for_checking::Int=96,
-        list_max_allowed_length::Int=1024,
-        doc_min_freq::Int=1,
-        doc_max_freq::Int=128,
-        always_sort::Bool=false
-    )
-
-Prunes each posting list of `idx` in place, once it is already populated. Lists shorter
-than `list_min_length_for_checking` are left untouched (optionally sorted by document id
-when `always_sort=true`). Longer lists are filtered to entries whose term frequency (looked
-up from `idx.db`, see [`findfreq`](@ref)) lies in `[doc_min_freq, doc_max_freq]`, then
-truncated to the `list_max_allowed_length` highest-frequency entries — this both discards
-overly rare/common (likely noisy) postings and bounds the cost of scanning very long lists
-at query time. Returns `idx`.
-
-# Example
-
-```julia
-julia> corpus = ["hello world", "hello there", "the cat sat"];
-
-julia> voc = Vocabulary(TextConfig(), corpus; verbose=false);
-
-julia> invfile = BM25InvertedFile(voc);
-
-julia> ctx = InvertedFileContext();
-
-julia> append_items!(invfile, ctx, corpus);
-
-julia> filter_lists!(invfile) === invfile
-true
-```
-"""
-function filter_lists!(
-        idx::BM25InvertedFile;
-        list_min_length_for_checking::Int=96,
-        list_max_allowed_length::Int=1024,
-        doc_min_freq::Int=1,
-        doc_max_freq::Int=128,
-        always_sort::Bool=false
-    )
-    adj = idx.adj
-    @assert adj isa AdjList
-    buff = Tuple{UInt32,UInt32}[]  # (docID, freq)
-    sizehint!(buff, list_max_allowed_length)
-
-    for tokenID in eachindex(adj)
-        L = neighbors(adj, tokenID)
-        n = length(L)
-        n == 0 && continue
-        if n < list_min_length_for_checking
-            always_sort && sort!(L)
-            continue
-        end
-        empty!(buff)
-        for docID in L
-            freq = findfreq(idx.db[docID], tokenID)
-            if doc_min_freq <= freq <= doc_max_freq
-                push!(buff, (docID, freq))
-            end
-        end
-
-        sort!(buff, by=last, rev=true)
-        if length(buff) > list_max_allowed_length
-            resize!(buff, list_max_allowed_length)
-        end
-
-        sort!(buff, by=first)
-        resize!(L, length(buff))
-        L .= first.(buff)
-    end
-
-    idx
 end
 
 """

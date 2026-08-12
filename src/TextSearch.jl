@@ -99,7 +99,7 @@ include("emodel.jl")
 
 include("bm25/BM25.jl")
 using .BM25
-export BM25Scorer, bm25score, tokenscore, BM25InvertedFile, filter_lists!, search, append_items!, push_item!
+export BM25Scorer, bm25score, tokenscore, BM25InvertedFile, search, append_items!, push_item!
 
 include("deprecated.jl")
 
