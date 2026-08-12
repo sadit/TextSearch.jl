@@ -9,7 +9,7 @@ using StatsBase
 using SimilaritySearch.Intersections
 import SimilaritySearch.Intersections: onmatch!
 using SimilaritySearch.InvertedFiles
-import SimilaritySearch.InvertedFiles: getpositions, getcontainer, sparseiterator, PostingList, parallel_append!
+import SimilaritySearch.InvertedFiles: getpositions, getcontainer, identiterator, pairiterator, PostingList, _parallel_append!
 using SimilaritySearch.Special.Sparse: SparseVecView, SparseVectorLike
 using SparseArrays: sparsevec
 using ..TextSearch: Vocabulary, trainsize, avgdoclen, ndocs, vocsize, bagofwords, bagofwords_corpus, TokenizedText, BOW

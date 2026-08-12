@@ -84,16 +84,16 @@ distance(::BM25InvertedFile) = error("BM25InvertedFile is not a metric index")
 # come straight from `SimilaritySearch.InvertedFiles` with no local overrides. `dist` is the
 # one thing `select_posting_lists`'s generic implementation needs that `BM25InvertedFile`
 # doesn't have (BM25 isn't a metric index, see `distance` above), so it gets this small
-# override instead.
-function select_posting_lists(accept::Function, idx::BM25InvertedFile, ctx::InvertedFileContext, q)
+# override instead -- otherwise identical to the generic one, just `identiterator(q)` instead
+# of `identiterator(idx.dist, q)`.
+function select_posting_lists(idx::BM25InvertedFile, ctx::InvertedFileContext, q)
     Q = getcontainer(idx, ctx)
-    @inbounds for (tokenID, weight) in sparseiterator(q)
-        accept((; idx, q, tokenID, weight)) || continue
+    @inbounds for tokenID in identiterator(q)
         tokenID == 0 && continue
         N = neighbors(idx.adj, tokenID)
         N === nothing && continue
         if length(N) > 0
-            L = PostingList(N, convert(UInt32, tokenID), convert(Float32, weight))
+            L = PostingList(N, convert(UInt32, tokenID))
             push!(Q, L)
         end
     end
@@ -201,7 +201,7 @@ end
 
 function SimilaritySearch.push_item!(idx::BM25InvertedFile, ctx::InvertedFileContext, obj; docID::UInt32=UInt32(length(idx) + 1), tol::Float64=1e-6)
     len, docvec = bm25_internal_push_object!(idx, docID, obj, tol)
-    for (tokenID, _) in sparseiterator(obj)
+    for tokenID in identiterator(obj)
         N = neighbors(idx.adj, tokenID)
         N === nothing && continue
         sort!(N)
@@ -216,7 +216,7 @@ end
 """
     bm25_internal_push_object!(idx, docID, obj, tol) -> (doclen, docvec)
 
-Registers `obj` (a BOW-like `(tokenID, freq)` iterable) into `idx.adj` under `docID` and
+Registers `obj` (a pair `(tokenID, freq)` iterable) into `idx.adj` under `docID` and
 builds its `SparseVecView` term-frequency representation (`docvec`, to be stored at `docID`
 in `idx.db` by the caller). Returns `obj`'s total token count (`doclen`) and `docvec`.
 """
@@ -225,7 +225,7 @@ function bm25_internal_push_object!(idx::BM25InvertedFile, docID::Integer, obj, 
     freqs = UInt32[]
     len = 0
 
-    @inbounds for (tokenID, freq) in sparseiterator(obj)  # obj is a BOW-like struct
+    @inbounds for (tokenID, freq) in pairiterator(obj)  # obj is a BOW-like struct
         freq < tol && continue
         len += freq
         push!(tokenids, convert(Int32, tokenID))
@@ -242,7 +242,7 @@ function bm25_internal_push_object!(idx::BM25InvertedFile, docID::Integer, obj, 
     len, SparseVecView(vocsize(idx.voc), tokenids, freqs)
 end
 
-function parallel_append!(idx::BM25InvertedFile, ctx::InvertedFileContext, db::AbstractDatabase, startID::Int, n::Int, tol::Float64)
+function _parallel_append!(idx::BM25InvertedFile, ctx::InvertedFileContext, db::AbstractDatabase, startID::Int, n::Int, tol::Float64)
     resize!(idx.doclens, startID + n)
     resize!(idx.db.vecs, startID + n)
     minbatch = getminbatch(n)
