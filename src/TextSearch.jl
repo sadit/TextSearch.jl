@@ -100,6 +100,10 @@ include("bm25/BM25.jl")
 using .BM25
 export BM25Scorer, bm25score, tokenscore, BM25InvertedFile, search, append_items!, push_item!
 
+include("fulltext/FullText.jl")
+using .FullText
+export FullText, TextInvertedFile
+
 include("deprecated.jl")
 
 end

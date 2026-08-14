@@ -242,19 +242,23 @@ function bm25_internal_push_object!(idx::BM25InvertedFile, docID::Integer, obj, 
     len, SparseVecView(vocsize(idx.voc), tokenids, freqs)
 end
 
-function _parallel_append!(idx::BM25InvertedFile, ctx::InvertedFileContext, db::AbstractDatabase, startID::Int, n::Int, tol::Float64)
-    resize!(idx.doclens, startID + n)
-    resize!(idx.db.vecs, startID + n)
+function internal_parallel_prepare_append!(idx::BM25InvertedFile, new_size::Integer)
+    resize!(idx.doclens, new_size)
+    resize!(idx.db.vecs, new_size)
+end
+
+function _parallel_append!(idx::BM25InvertedFile, ctx::InvertedFileContext, db::AbstractDatabase, startID::Int, n::Int, tol::Float64=1e-6)
+    internal_parallel_prepare_append!(idx, startID + n)
     minbatch = getminbatch(n)
 
-    @BATCHES minbatch for i in 1:n
+    @BATCHES minbatch scheduler=ctx.scheduler for i in 1:n
         docID = i + startID
         len, docvec = bm25_internal_push_object!(idx, docID, db[i], tol)
         idx.doclens[docID] = len
         idx.db[docID] = docvec
     end
 
-    @BATCHES minbatch for i in 1:length(idx.adj)
+    @BATCHES minbatch scheduler=ctx.scheduler for i in 1:length(idx.adj)
         N = neighbors(idx.adj, i)
         N === nothing && continue
         sort!(N)

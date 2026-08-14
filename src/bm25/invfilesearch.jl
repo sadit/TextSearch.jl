@@ -1,9 +1,9 @@
 # This file is part of TextSearch.jl
 
-struct BM25InvFileOutput{InvFileType<:BM25InvertedFile,QType<:SparseVectorLike}
+struct BM25InvFileOutput{InvFileType<:BM25InvertedFile,QType<:SparseVectorLike,Knn<:AbstractKnnQueue}
     idx::InvFileType
     query::QType
-    res::KnnSorted
+    res::Knn
 end
 
 # `m`/`L[2:m]` aren't needed anymore: `bm25score` recomputes the query-doc intersection
@@ -38,11 +38,11 @@ function bm25_query_vector(idx::BM25InvertedFile, q)
 end
 
 """
-    search(idx::BM25InvertedFile, ctx::InvertedFileContext, qtext, res::AbstractKnn; t::Int=1)
+    search(idx::BM25InvertedFile, ctx::InvertedFileContext, qtext, res::AbstractKnnQueue; t::Int=1)
 
 Solves a top-k query over `idx` for `qtext` (raw text, [`TokenizedText`](@ref), or an
-already-computed bag of words), accumulating matches into `res` (an `AbstractKnn`, e.g.
-`KnnResult`/`KnnSorted`). Documents are ranked by BM25 score (stored internally as a
+already-computed bag of words), accumulating matches into `res` (an `AbstractKnnQueue`, e.g.
+`KnnSorted` or `KnnHeap`). Documents are ranked by BM25 score (stored internally as a
 negative value in `res`, so lower "distance" still means better match, consistent with
 `SimilaritySearch.jl`'s convention). Returns `res`.
 
@@ -67,12 +67,12 @@ julia> collect(IdView(res))
 UInt32[0x00000001, 0x00000002]
 ```
 """
-function SimilaritySearch.search(idx::BM25InvertedFile, ctx::InvertedFileContext, qtext::T, res::AbstractKnn; t::Int=1) where {T<:Union{AbstractString,TokenizedText}}
+function SimilaritySearch.search(idx::BM25InvertedFile, ctx::InvertedFileContext, qtext::T, res::AbstractKnnQueue; t::Int=1) where {T<:Union{AbstractString,TokenizedText}}
     q = bagofwords(idx.voc, qtext)
     search(idx, ctx, q, res; t)
 end
 
-function SimilaritySearch.search(idx::BM25InvertedFile, ctx::InvertedFileContext, q, res::AbstractKnn; t::Int=1)
+function SimilaritySearch.search(idx::BM25InvertedFile, ctx::InvertedFileContext, q, res::AbstractKnnQueue; t::Int=1)
   Q = select_posting_lists(idx, ctx, q)
   length(Q) == 0 && return res
   P = getpositions(length(Q), ctx)

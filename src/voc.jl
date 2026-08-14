@@ -470,7 +470,7 @@ itertokenid(idlist::AbstractVector{IdWeight}) = (p.id for p in idlist)
 itertokenid(idlist::AbstractVector{IdIntWeight}) = (p.id for p in idlist) 
 itertokenid(idlist::AbstractVector{<:NamedTuple}) = (p.id for p in idlist) 
 itertokenid(idlist::Dict) = keys(idlist) 
-itertokenid(idlist::AbstractKnn) = IdView(idlist)
+itertokenid(idlist::AbstractMetricQueue) = IdView(idlist)
 
 Base.getindex(voc::Vocabulary, idlist) = [voc[i] for i in itertokenid(idlist)]
 Base.getindex(voc::Vocabulary, token::AbstractString) = voc[get(voc.token2id, token, 0)]
