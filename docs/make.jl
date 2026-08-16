@@ -9,6 +9,8 @@ makedocs(;
         prettyurls=get(ENV, "CI", nothing) == "true",
         canonical="https://sadit.github.io/TextSearch.jl",
         assets=String[],
+        size_threshold=500_000,
+        size_threshold_warn=300_000,
     ),
     pages=[
         "Home" => "index.md",

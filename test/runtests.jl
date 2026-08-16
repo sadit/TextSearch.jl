@@ -47,4 +47,6 @@ include("svec.jl")
 include("search.jl")
 include("ext_snowball.jl")
 include("fulltext.jl")
+include("testlsi.jl")
+include("testri.jl")
 @info "FINISH"

@@ -402,6 +402,127 @@ vocsize(wt_voc)
 
 `TextConfig()` is still passed when constructing `Vocabulary` — TextSearch retains it for later query processing — but because every document arrives as a `TokenizedText`, none of `TextConfig`'s tokenization rules alter how your documents were split; the tokenization was performed entirely by your external tokenizer.
 
+## Dense Semantic Representations & Dimensionality Reduction
+
+While inverted files (like `InvertedFile` and `BM25InvertedFile`) excel at sparse keyword-based retrieval, many natural language processing workflows benefit from **dense semantic embeddings** or **compact binary sketches**.
+
+`TextSearch.jl` provides two complementary techniques for dimensionality reduction and dense indexing:
+1. **Latent Semantic Indexing (LSI)**: Low-rank matrix factorization via truncated SVD.
+2. **Random Indexing (RI)**: Fast projection via random matrices, with direct pipelines for 8-bit scalar quantization (`SQu8`, `SQgu8`) and binary bit sketches (`BitSketch`).
+
+---
+
+### Latent Semantic Indexing (LSI)
+
+#### Where is LSI useful?
+- **Synonymy and polysemy resolution**: By projecting the term-document matrix onto its principal singular vectors, LSI groups words that frequently co-occur into shared latent semantic dimensions. Documents using different words for the same concept (e.g., *"wine"* and *"amontillado"*) are mapped close together in the dense space.
+- **Noise reduction and compact representations**: Reduces large vocabularies (e.g., tens of thousands of terms) into a dense, low-dimensional space (typically 64 to 300 dimensions, default `maxoutdim=128`).
+- **Dense index compatibility**: Creates dense `MatrixDatabase{Matrix{Float32}}` collections that can be indexed with approximate nearest-neighbor graph structures like [`SearchGraph`](https://github.com/sadit/SimilaritySearch.jl).
+
+#### Building and Querying an LSI Model
+
+You can construct a [`LatentSemanticIndexing`](@ref) model directly from a [`VectorModel`](@ref) and a training corpus, or via convenience constructors:
+
+```@example gutenberg
+# Train an LSI model with 16 latent dimensions on our Gutenberg corpus
+lsi = LatentSemanticIndexing(CASK_OF_AMONTILLADO; maxoutdim=16, verbose=false)
+lsi
+```
+
+```@example gutenberg
+# Project a single query document into a dense Float32 vector:
+q_vec = vectorize(lsi, "wine vaults and connoisseur")
+(length(q_vec), typeof(q_vec))
+```
+
+```@example gutenberg
+# Vectorize the entire corpus into a dense MatrixDatabase in parallel:
+lsi_db = vectorize_corpus(lsi, CASK_OF_AMONTILLADO; verbose=false)
+size(lsi_db.matrix)
+```
+
+Now we can build a graph index (`SearchGraph`) or exact search (`ExhaustiveSearch`) from `SimilaritySearch.jl` using cosine distance:
+
+```@example gutenberg
+# Index and search the dense LSI space:
+sctx = SearchGraphContext()
+lsi_index = SearchGraph(Dist.NormCosine(), lsi_db)
+index!(lsi_index, sctx)
+
+res = knnqueue(KnnSorted, 3)
+search(lsi_index, sctx, q_vec, res)
+[(id, first(CASK_OF_AMONTILLADO[id], 60) * "...") for id in collect(IdView(res))]
+```
+
+---
+
+### Random Indexing (RI) & Quantization Pipelines
+
+#### Where is Random Indexing useful?
+- **Streaming / incremental scenarios without global matrix factorization**: Unlike LSI (which computes SVD across an entire static corpus), Random Indexing assigns fixed, pseudo-orthogonal random projection vectors to each vocabulary term. New documents can be projected immediately on the fly without re-training or re-factoring any matrix.
+- **Fast computation with Johnson-Lindenstrauss guarantees**: Preserves pairwise cosine distances with high probability while being computationally lightweight (`:gaussian`, `:qr`, or sparse ternary `:sparse_random`).
+- **Extreme memory compression and hardware acceleration**:
+  - **`SQu8` / `SQgu8` Scalar Quantization**: Compresses embeddings from 32-bit `Float32` down to 8-bit `UInt8` (a 4× memory reduction) while retaining search accuracy.
+  - **`BitSketch` (SimHash)**: Compresses projections into 64-bit packed bit words (`UInt64`), turning similarity search into lightning-fast **Hamming distance** evaluations using CPU `POPCNT` and `XOR` instructions (`Dist.Bits.Hamming()`).
+
+#### 1. Dense Random Indexing (`Float32`)
+
+```@example gutenberg
+# Build a Random Indexing model from the corpus (default maxoutdim=1024; using 64 here for illustration)
+ri = RandomIndexing(CASK_OF_AMONTILLADO; maxoutdim=64, method=:gaussian, verbose=false)
+ri
+```
+
+```@example gutenberg
+# Vectorize corpus into dense Float32 MatrixDatabase
+ri_db = vectorize_corpus(ri, CASK_OF_AMONTILLADO; verbose=false)
+size(ri_db.matrix)
+```
+
+#### 2. 8-Bit Scalar Quantization (`SQu8` & `SQgu8`)
+
+For memory-constrained environments, `vectorize_corpus` can directly produce quantized databases:
+
+```@example gutenberg
+using SimilaritySearch.ScalarQuant: SQu8, SQgu8
+
+# Per-column 8-bit quantization (SQu8):
+squ8_db = vectorize_corpus(SQu8, ri, CASK_OF_AMONTILLADO; verbose=false)
+
+# Single query quantized to SQu8:
+q_squ8 = vectorize(SQu8, ri, "damp vaults and catacombs")
+
+# Search using SQu8.NormCosine():
+squ8_index = ExhaustiveSearch(SQu8.NormCosine(), squ8_db)
+res_squ8 = knnqueue(KnnSorted, 2)
+search(squ8_index, GenericContext(), q_squ8, res_squ8)
+[(id, first(CASK_OF_AMONTILLADO[id], 60) * "...") for id in collect(IdView(res_squ8))]
+```
+
+#### 3. Binary BitSketches & Hamming Search (`BitSketch`)
+
+`BitSketch` uses SimHash-style sign-packing to generate compact binary fingerprints:
+
+```@example gutenberg
+# Create a 64-dimension RI model (packed into 1 UInt64 word per document)
+ri_bits = RandomIndexing(CASK_OF_AMONTILLADO; maxoutdim=64, verbose=false)
+
+# Vectorize entire corpus into packed bit words (MatrixDatabase{Matrix{UInt64}}):
+bits_db = bitsketch(ri_bits, CASK_OF_AMONTILLADO; verbose=false)
+(typeof(bits_db), size(bits_db.matrix))
+```
+
+```@example gutenberg
+# Query bit sketch:
+q_bits = bitsketch(ri_bits, "damp vaults and catacombs")
+
+# Ultra-fast Hamming distance search:
+bit_index = ExhaustiveSearch(Dist.Bits.Hamming(), bits_db)
+res_bits = knnqueue(KnnSorted, 2)
+search(bit_index, GenericContext(), q_bits, res_bits)
+[(id, first(CASK_OF_AMONTILLADO[id], 60) * "...") for id in collect(IdView(res_bits))]
+```
+
 ## A small tweet-like corpus
 
 `TextConfig` has several options aimed specifically at short, informal, social-media

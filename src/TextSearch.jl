@@ -104,6 +104,14 @@ include("fulltext/FullText.jl")
 using .FullText
 export FullText, TextInvertedFile
 
+include("lsi.jl")
+using .LSI: LatentSemanticIndexing, LSIModel, indim, outdim
+export LSI, LatentSemanticIndexing, LSIModel, indim, outdim
+
+include("randomindexing.jl")
+using .RI: RandomIndexing, RIModel, BitSketch, bitsketch, bitsketch_corpus
+export RI, RandomIndexing, RIModel, BitSketch, bitsketch, bitsketch_corpus
+
 include("deprecated.jl")
 
 end
