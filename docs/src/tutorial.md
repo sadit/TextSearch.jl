@@ -504,8 +504,8 @@ search(squ8_index, GenericContext(), q_squ8, res_squ8)
 `BitSketch` uses SimHash-style sign-packing to generate compact binary fingerprints:
 
 ```@example gutenberg
-# Create a 64-dimension RI model (packed into 1 UInt64 word per document)
-ri_bits = RandomIndexing(CASK_OF_AMONTILLADO; maxoutdim=64, verbose=false)
+# Create a 512-dimension RI model (packed into 8 UInt64 words (512 bits) per document)
+ri_bits = RandomIndexing(CASK_OF_AMONTILLADO; maxoutdim=512, verbose=false)
 
 # Vectorize entire corpus into packed bit words (MatrixDatabase{Matrix{UInt64}}):
 bits_db = bitsketch(ri_bits, CASK_OF_AMONTILLADO; verbose=false)
