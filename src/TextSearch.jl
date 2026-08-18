@@ -62,25 +62,7 @@ Dict{UInt32, Int32}(0x00000002 => 1, 0x00000001 => 2)
 """
 const BOW = Dict{UInt32,Int32}
 
-"""
-    SVEC = Dict{UInt32,Float32}
-
-A lightweight `token id => weight` mapping. Note that [`vectorize`](@ref)/[`vectorize!`](@ref)
-actually return a `SparseVector{Float32,Int32}` (from `SparseArrays.jl`), not a `SVEC` —
-arithmetic (`+`, `-`, `*`, `/`), norms, and distances (see [`normalize!`](@ref),
-[`dot`](@ref), [`norm`](@ref), [`centroid`](@ref)) are defined for `SparseVector`, not for
-`SVEC`/[`BOW`](@ref).
-
-# Example
-
-```julia
-julia> SVEC(0x00000001 => 0.5f0)
-Dict{UInt32, Float32}(0x00000001 => 0.5)
-```
-"""
-const SVEC = Dict{UInt32,Float32}
-
-export SVEC, BOW
+export BOW
 
 function __init__()
     for _ in 1:2*Threads.nthreads()+4

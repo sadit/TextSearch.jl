@@ -16,42 +16,52 @@ Understanding the data flow makes it much easier to find where a change belongs:
 
 ```
 raw text/corpus
-  → TextConfig (textconfig.jl)         preprocessing options (lowercase, diacritics, url/user/number
-                                        grouping, q-grams, n-grams, skip-grams, token transforms)
-  → normalize_text (normalize.jl)      character-level normalization
-  → tokenize (tokenize.jl)             produces a TokenizedText (list of token strings)
-  → Vocabulary (voc.jl, updatevoc.jl)  token ⇄ id mapping, occurrence/doc-frequency counters
-  → BOW / bagofwords (bow.jl)          Dict{UInt32,Int32} bag-of-words per document
-  → VectorModel (vmodel.jl, emodel.jl) local/global weighting schemes → SVEC (sparse Dict vector)
+  → TextConfig (tokenizer/textconfig.jl)   preprocessing options (lowercase, diacritics, url/user/number
+                                            grouping, q-grams, n-grams, skip-grams, token transforms)
+  → normalize_text (tokenizer/normalize.jl) character-level normalization
+  → tokenize (tokenizer/tokenize.jl)       produces a TokenizedText (list of token strings)
+  → Vocabulary (voc.jl, updatevoc.jl)      token ⇄ id mapping, occurrence/doc-frequency counters
+  → BOW / bagofwords (bow.jl)              Dict{UInt32,Int32} bag-of-words per document
+  → VectorModel (vmodel.jl, emodel.jl)     local/global weighting schemes → SparseVector{Float32,Int32}
        or
-  → BM25 (bm25.jl) + BM25InvertedFile (bm25invfile.jl, bm25invfilesearch.jl)  index + kNN search
+  → BM25 (bm25/BM25.jl) + BM25InvertedFile (bm25/invfile.jl, bm25/invfilesearch.jl)  index + kNN search
 ```
 
-`sparseconversions.jl` / `dvec.jl` bridge between the package's `Dict`-based sparse
-vectors (`BOW = Dict{UInt32,Int32}`, `SVEC = Dict{UInt32,Float32}`) and
-`SparseArrays`/`SimilaritySearch` vector types (arithmetic, norms, distances).
+Tokenization (`textconfig.jl`, `tokentrans.jl`, `normalize.jl`, `tokenize.jl`) lives under
+`tokenizer/` as the internalized `TextSearch.Tokenizer` submodule; BM25 (`bm25.jl`,
+`bm25invfile.jl`, `bm25invfilesearch.jl`) lives under `bm25/` as `TextSearch.BM25` (the scorer
+struct is `BM25Scorer`, since a module can't share its name with a binding inside it);
+`InvertedFiles`/`Intersections` are internalized the same way (`SimilaritySearch.InvertedFiles`/
+`SimilaritySearch.Intersections`, no longer external deps).
+
+`sparseconversions.jl` / `dvec.jl` bridge between the package's `Dict`-based `BOW`
+(`Dict{UInt32,Int32}`) and `SparseArrays`/`SimilaritySearch` vector types (arithmetic, norms,
+distances). The final weighted vectors produced by `vectorize`/`vectorize!` are
+`SparseVector{Float32,Int32}`, not a `Dict` — the old `SVEC = Dict{UInt32,Float32}` alias was
+removed as dead code once nothing in `src/` still produced or consumed it.
 
 ## Source file map
 
 | File | Responsibility |
 |---|---|
-| `TextSearch.jl` | Module entry point, includes, `BOW`/`SVEC` type aliases |
-| `textconfig.jl` | `TextConfig`, `Skipgram` — tokenization/preprocessing configuration |
-| `tokentrans.jl` | `AbstractTokenTransformation` hooks (stemming, stopwords, chaining) |
-| `normalize.jl` | Character-level text normalization, emoji detection |
-| `tokenize.jl` | `TokenizedText`, `tokenize`/`tokenize_corpus`, q-grams/n-grams/skip-grams |
+| `TextSearch.jl` | Module entry point, includes, `BOW` type alias |
+| `tokenizer/textconfig.jl` | `TextConfig`, `Skipgram` — tokenization/preprocessing configuration |
+| `tokenizer/tokentrans.jl` | `AbstractTokenTransformation` hooks (stemming, stopwords, chaining) |
+| `tokenizer/normalize.jl` | Character-level text normalization, emoji detection |
+| `tokenizer/tokenize.jl` | `TokenizedText`, `tokenize`/`tokenize_corpus`, q-grams/n-grams/skip-grams |
+| `tokenizer/generators.jl` | `AbstractTokenGenerator` and built-in generators (qgram/unigram/nword/skipgram/collocation) |
 | `voc.jl` | `Vocabulary` type: token↔id table, occurrence/ndocs counters |
 | `updatevoc.jl` | Merging/updating `Vocabulary` instances |
 | `approxvoc.jl` | Approximate vocabulary lookup (`QgramsLookup`) for fuzzy/OOV matching |
 | `bow.jl` | Bag-of-words construction from tokenized text |
 | `sparseconversions.jl` | Conversions between `Dict` sparse vectors and `SparseArrays` |
-| `dvec.jl` | Arithmetic/distance operations (`+`, `-`, `dot`, `norm`, centroid, Cosine/Angle) on `SVEC` |
+| `dvec.jl` | Arithmetic/distance operations (`+`, `-`, `dot`, `norm`, centroid, Cosine/Angle) on `SparseVector` (and generic `Dict{Ti,Tv}` arithmetic) |
 | `vmodel.jl` | `VectorModel`, local/global weighting schemes (TF, IDF, TP, binary), `vectorize` |
 | `emodel.jl` | Entropy-based weighting schemes (`EntropyWeighting`, `CombineWeighting`) |
 | `multi.jl` | Merging/joining `VectorModel`s (`update!`, `joinmodel`) — requires `KCenters` |
-| `bm25.jl` | `BM25` scoring struct and `bm25score`/`tokenscore` |
-| `bm25invfile.jl` | `BM25InvertedFile` — the inverted-file index built on `InvertedFiles.jl` |
-| `bm25invfilesearch.jl` | kNN search over `BM25InvertedFile` (uses `Intersections.jl`) |
+| `bm25/BM25.jl` | `BM25Scorer` scoring struct and `bm25score`/`tokenscore` |
+| `bm25/invfile.jl` | `BM25InvertedFile` — the inverted-file index built on `InvertedFiles.jl` |
+| `bm25/invfilesearch.jl` | kNN search over `BM25InvertedFile` (uses `Intersections.jl`) |
 | `deprecated.jl` | Backwards-compatible shims for renamed/removed APIs |
 
 ## Dev environment
@@ -91,9 +101,10 @@ coverage to Codecov. `documentation.yml` builds and deploys docs on pushes/tags 
   extend `Base`/`LinearAlgebra`/`SparseArrays` functions on non-owned types, add them to
   the `treat_as_own` list in `runtests.jl` if they're intentional, otherwise avoid the
   piracy.
-- **Sparse vectors are plain `Dict`s**, not `SparseVector`: `BOW = Dict{UInt32,Int32}`,
-  `SVEC = Dict{UInt32,Float32}` (defined in `TextSearch.jl`). Arithmetic/distance
-  operators for them live in `dvec.jl` — extend there, not ad hoc elsewhere.
+- **`BOW` is a plain `Dict`** (`Dict{UInt32,Int32}`, defined in `TextSearch.jl`) — a
+  short-lived, incrementally-built intermediate. The final weighted vectors
+  (`vectorize`/`vectorize!`) are `SparseVector{Float32,Int32}`, not a `Dict` — arithmetic/
+  distance operators for both live in `dvec.jl` — extend there, not ad hoc elsewhere.
 - **Buffer pooling**: separate channel-based per-thread pools avoid allocations —
   `BOW_CACHES` (a `Channel{BOW}`) in `voc.jl` backs `Vocabulary` building only;
   `bagofwords`/`bagofwords!`/`bagofwords_corpus` (`bow.jl`) take/create a plain
