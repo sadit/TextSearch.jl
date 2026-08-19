@@ -6,5 +6,6 @@
 .git*
 .ipynb*
 emotions.csv
+*.json.gz
 Manifest.toml
 docs/build/*
