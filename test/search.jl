@@ -36,11 +36,89 @@ end
     invfile = BM25InvertedFile(voc)
     ctx = InvertedFileContext()
     append_items!(invfile, ctx, _corpus)
+    @test length(invfile) == length(_corpus)
     R = search(invfile, ctx, "la casa de la manzana verde", knnqueue(KnnSorted, 3))
     @test collect(IdView(R)) == UInt32[0x00000006, 0x00000002, 0x00000004]
     @test Dist.evaluate(Dist.SqL2(), collect(Float32, DistView(R)), Float32[-3.3956785, -3.1118512, -2.5816276]) <= 1e-4
     @show invfile.voc
     @show invfile.bm25
+end
+
+struct RecorderLog <: AbstractLog
+    events::Vector{Tuple{Symbol,Int,Int}}
+end
+RecorderLog() = RecorderLog(Tuple{Symbol,Int,Int}[])
+
+function SimilaritySearch.LOG(log::RecorderLog, event::Symbol, index::AbstractSearchIndex, ctx::AbstractContext, sp::Integer, ep::Integer)
+    push!(log.events, (event, Int(sp), Int(ep)))
+end
+
+@testset "BM25InvertedFile LOG events: exactly-once :add!" begin
+    voc = Vocabulary(TextConfig(tokenization=TokenizationConfig(nlist=[1])), _corpus)
+    voc = filter_tokens(voc) do t
+        1 < t.ndocs < 5
+    end
+    n = length(_corpus)
+
+    # fused append_items! (raw text): exactly one :add! covering the whole freshly-built index
+    rec = RecorderLog()
+    invfile = BM25InvertedFile(voc)
+    ctx = InvertedFileContext(logger=rec)
+    append_items!(invfile, ctx, _corpus)
+    @test rec.events == [(:add!, 1, n)]
+
+    # single push_item!: exactly one :add! for just the new document
+    empty!(rec.events)
+    push_item!(invfile, ctx, "la casa verde")
+    @test rec.events == [(:add!, n + 1, n + 1)]
+
+    # decoupled path (db grown directly, then index!): exactly one :add! for the new block
+    empty!(rec.events)
+    invfile2 = BM25InvertedFile(voc)
+    ctx2 = InvertedFileContext(logger=rec)
+    append_items!(database(invfile2), database(invfile))
+    index!(invfile2, ctx2)
+    @test rec.events == [(:add!, 1, n + 1)]
+end
+
+@testset "BM25InvertedFile decoupled index!" begin
+    voc = Vocabulary(TextConfig(tokenization=TokenizationConfig(nlist=[1])), _corpus)
+    voc = filter_tokens(voc) do t
+        1 < t.ndocs < 5
+    end
+    ctx = InvertedFileContext()
+
+    invfile_fused = BM25InvertedFile(voc)
+    append_items!(invfile_fused, ctx, _corpus)
+    @test length(invfile_fused) == length(_corpus)
+
+    # decoupled path: grow db directly with the already-encoded SparseVecViews from the fused
+    # index, bypassing the raw-text encode+register+store fusion, then catch up with index!
+    invfile_deferred = BM25InvertedFile(voc)
+    append_items!(database(invfile_deferred), database(invfile_fused))
+    @test length(invfile_deferred) == 0
+    @test length(database(invfile_deferred)) == length(_corpus)
+    index!(invfile_deferred, ctx)
+    @test length(invfile_deferred) == length(_corpus) == length(database(invfile_deferred))
+
+    q = "la casa de la manzana verde"
+    R_fused = search(invfile_fused, ctx, q, knnqueue(KnnSorted, 3))
+    R_deferred = search(invfile_deferred, ctx, q, knnqueue(KnnSorted, 3))
+    @test collect(IdView(R_fused)) == collect(IdView(R_deferred))
+    @test collect(DistView(R_fused)) ≈ collect(DistView(R_deferred))
+
+    # no-op index!: nothing new appended, must not error or change state
+    index!(invfile_deferred, ctx)
+    @test length(invfile_deferred) == length(_corpus)
+    R_deferred2 = search(invfile_deferred, ctx, q, knnqueue(KnnSorted, 3))
+    @test collect(IdView(R_deferred)) == collect(IdView(R_deferred2))
+
+    # push_item! directly on db also outgrows the index until index! catches up
+    push_item!(database(invfile_deferred), database(invfile_fused)[1])
+    @test length(invfile_deferred) == length(_corpus)
+    @test length(database(invfile_deferred)) == length(_corpus) + 1
+    index!(invfile_deferred, ctx)
+    @test length(invfile_deferred) == length(_corpus) + 1
 end
 
 @testset "bm25score matches BM25InvertedFile search, both for SparseVecView and SparseVector" begin

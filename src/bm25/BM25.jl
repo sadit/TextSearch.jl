@@ -9,13 +9,13 @@ using StatsBase
 using SimilaritySearch.Intersections
 import SimilaritySearch.Intersections: onmatch!
 using SimilaritySearch.InvertedFiles
-import SimilaritySearch.InvertedFiles: getpositions, getcontainer, identiterator, PostingList, _parallel_append!, internal_parallel_prepare_append!
+import SimilaritySearch.InvertedFiles: getpositions, getcontainer, identiterator, PostingList, _index_block!
 using SimilaritySearch.Special.Sparse: SparseVecView, SparseVectorLike
 using SparseArrays: sparsevec, SparseVector
 using ..TextSearch: Vocabulary, trainsize, avgdoclen, ndocs, vocsize, bagofwords, bagofwords_corpus, TokenizedText, BOW
 
 pairiterator(d::Dict) = d
-pairiterator(d::SparseVecView) = zip(d.I, d.F)
+pairiterator(d::SparseVecView) = zip(d.nzind, d.nzval)
 pairiterator(d::SparseVector) = zip(SparseArrays.nonzeroinds(d), SparseArrays.nonzeros(d))
 pairiterator(d) = d
 

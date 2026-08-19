@@ -30,7 +30,13 @@ frequencies -- is fetched from `db` instead of being duplicated into the posting
 - `doclens`: number of tokens per indexed document.
 - `db`: each indexed document's term-frequency vector, one `SparseVecView` (token id =>
   `UInt32` frequency) per document, always populated by [`push_item!`](@ref)/
-  [`append_items!`](@ref).
+  [`append_items!`](@ref); may hold more documents than have actually been indexed -- see `len`.
+- `len`: number of documents already indexed (postings built); may be less than
+  `length(database(idx))` if `db` was grown directly (e.g. `push_item!(database(idx), docvec)`)
+  without a following `index!` call to catch up. Growing `db` directly with pre-computed
+  `SparseVecView`s and then calling `index!(invfile, ctx)` is supported and builds postings from
+  the already-stored vectors; the raw-text/BOW-taking `append_items!`/`push_item!` methods remain
+  fused (encode+store+register in one pass) for efficiency.
 
 # Example
 
@@ -64,6 +70,7 @@ struct BM25InvertedFile{AdjType<:AbstractAdjList,DbType<:AbstractDatabase} <: Ab
     adj::AdjType
     doclens::Vector{Int32}  ## number of tokens per document
     db::DbType              ## per-document term-frequency vectors
+    len::Ref{Int64}         ## number of documents already indexed (postings built)
 end
 
 function Base.show(io::IO, invfile::BM25InvertedFile; prefix="", indent="  ")
@@ -75,7 +82,6 @@ function Base.show(io::IO, invfile::BM25InvertedFile; prefix="", indent="  ")
     show(io, invfile.bm25; prefix, indent)
 end
 
-Base.length(invfile::BM25InvertedFile) = length(invfile.doclens)
 database(invfile::BM25InvertedFile) = invfile.db
 distance(::BM25InvertedFile) = error("BM25InvertedFile is not a metric index")
 
@@ -128,6 +134,7 @@ function BM25InvertedFile(voc::Vocabulary;  k1=1.2f0, b=0.75f0, δ=1f0)
         resize!(AdjList(UInt32), vocsize(voc)),
         Vector{Int32}(undef, 0),
         VectorDatabase(SparseVecView{Vector{Int32},Vector{UInt32}}[]),
+        Ref(Int64(0)),
     )
 end
 
@@ -209,7 +216,8 @@ function SimilaritySearch.push_item!(idx::BM25InvertedFile, ctx::InvertedFileCon
 
     push!(idx.doclens, len)
     push_item!(idx.db, docvec)
-    LOG(ctx.logger, :push_item!, idx, ctx, docID, docID)
+    idx.len[] += 1
+    LOG(ctx.logger, :add!, idx, ctx, docID, docID)
     idx
 end
 
@@ -242,20 +250,82 @@ function bm25_internal_push_object!(idx::BM25InvertedFile, docID::Integer, obj, 
     len, SparseVecView(vocsize(idx.voc), tokenids, freqs)
 end
 
-function internal_parallel_prepare_append!(idx::BM25InvertedFile, new_size::Integer)
+function _bm25_prepare_grow!(idx::BM25InvertedFile, new_size::Integer)
     resize!(idx.doclens, new_size)
     resize!(idx.db.vecs, new_size)
 end
 
-function _parallel_append!(idx::BM25InvertedFile, ctx::InvertedFileContext, db::AbstractDatabase, startID::Int, n::Int, tol::Float64=1e-6)
-    internal_parallel_prepare_append!(idx, startID + n)
+"""
+    _bm25_fused_index_and_grow!(idx, ctx, items, startID, n, tol=1e-6)
+
+Encodes each raw/BOW document in `items[1:n]` into its `SparseVecView` term-frequency
+representation, registers its postings into `idx.adj`, and stores the vector into `idx.db` --
+all in a single pass (this is the "fused" behavior `append_items!`/`push_item!` use for raw-text/
+BOW input, kept for efficiency: unlike the generic `InvertedFile`, `BM25InvertedFile`'s `db`
+element type is *derived* from its input, so there is no cheap way to grow `db` ahead of
+indexing for this path -- see [`_index_block!`](@ref) for the decoupled path instead, used when
+`db` is grown directly with already-encoded `SparseVecView`s).
+"""
+function _bm25_fused_index_and_grow!(idx::BM25InvertedFile, ctx::InvertedFileContext, items::AbstractDatabase, startID::Int, n::Int, tol::Float64=1e-6)
+    _bm25_prepare_grow!(idx, startID + n)
     minbatch = getminbatch(n)
 
     @BATCHES minbatch scheduler=ctx.scheduler for i in 1:n
         docID = i + startID
-        len, docvec = bm25_internal_push_object!(idx, docID, db[i], tol)
+        len, docvec = bm25_internal_push_object!(idx, docID, items[i], tol)
         idx.doclens[docID] = len
         idx.db[docID] = docvec
+    end
+
+    @BATCHES minbatch scheduler=ctx.scheduler for i in 1:length(idx.adj)
+        N = neighbors(idx.adj, i)
+        N === nothing && continue
+        sort!(N)
+    end
+
+    idx
+end
+
+function append_items!(idx::BM25InvertedFile, ctx::InvertedFileContext, items::AbstractDatabase, n=length(items); tol::Float64=1e-6)
+    startID = length(idx)
+    _bm25_fused_index_and_grow!(idx, ctx, items, startID, n, tol)
+    idx.len[] = startID + n
+    n > 0 && LOG(ctx.logger, :add!, idx, ctx, startID + 1, length(idx))
+    idx
+end
+
+"""
+    bm25_register_postings!(idx::BM25InvertedFile, docID::Integer, docvec) -> doclen
+
+Registers an already-encoded document vector `docvec` (anything `pairiterator`-compatible,
+typically the `SparseVecView` already stored at `idx.db[docID]`) into `idx.adj` under `docID`,
+and returns its token count (doclen). This is the postings-only half of
+[`bm25_internal_push_object!`](@ref) -- it does not parse/build a `SparseVecView`, since `docvec`
+is assumed to already be one (e.g. read back from `idx.db` by [`_index_block!`](@ref)).
+"""
+function bm25_register_postings!(idx::BM25InvertedFile, docID::Integer, docvec)
+    len = 0
+    @inbounds for (tokenID, freq) in pairiterator(docvec)
+        len += freq
+        SimilaritySearch.add!(idx.adj, tokenID, (convert(UInt32, docID),))
+    end
+    len
+end
+
+"""
+    _index_block!(idx::BM25InvertedFile, ctx::InvertedFileContext, sp::Int, n::Int)
+
+Decoupled indexing path: builds postings and `doclens` for `idx.db[sp:n]`, reading the
+already-encoded `SparseVecView`s directly out of `db` (no re-tokenization). Used by
+[`index!`](@ref) when `db` was grown directly (e.g. `push_item!(database(idx), docvec)`) rather
+than through the fused `append_items!`/`push_item!` entry points.
+"""
+function _index_block!(idx::BM25InvertedFile, ctx::InvertedFileContext, sp::Int, n::Int)
+    resize!(idx.doclens, n)
+    minbatch = getminbatch(n - sp + 1)
+
+    @BATCHES minbatch scheduler=ctx.scheduler for docID in sp:n
+        idx.doclens[docID] = bm25_register_postings!(idx, docID, idx.db[docID])
     end
 
     @BATCHES minbatch scheduler=ctx.scheduler for i in 1:length(idx.adj)
