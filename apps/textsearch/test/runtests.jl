@@ -30,6 +30,9 @@ lc = true
 nlist = [1]
 mark_token_type = true
 
+[vocabulary]
+min_ndocs = %MIN_NDOCS%
+
 [stopwords]
 enabled = %STOPWORDS%
 doc_freq_threshold = 0.5
@@ -57,10 +60,11 @@ function write_jsonl_corpus(path, docs)
     end
 end
 
-function write_fit_config(path; corpus, outdir, batch_size=0, stopwords=false)
+function write_fit_config(path; corpus, outdir, batch_size=0, stopwords=false, min_ndocs=1)
     cfg = replace(FIT_CONFIG,
         "%CORPUS%" => corpus, "%OUTDIR%" => outdir,
-        "%BATCH_SIZE%" => string(batch_size), "%STOPWORDS%" => string(stopwords))
+        "%BATCH_SIZE%" => string(batch_size), "%STOPWORDS%" => string(stopwords),
+        "%MIN_NDOCS%" => string(min_ndocs))
     write(path, cfg)
     path
 end
@@ -119,6 +123,22 @@ end
                 @test !isempty(p.stopword_candidates)
             end
 
+            @testset "fit: vocabulary.min_ndocs prunes rare tokens" begin
+                outdir = joinpath(dir, "profiles4")
+                cfgpath = write_fit_config(joinpath(dir, "fit4.toml"); corpus=corpus_path, outdir, min_ndocs=3)
+                TextSearchApp.cmd_fit(["--config", cfgpath])
+                p = TextSearch.load_profile(joinpath(outdir, "corpus-0001.zip"))
+                # "casa" is in 3 of the 7 docs and survives; "azul" is in exactly 1 and does not
+                @test TextSearch.token2id(p.model.voc, "casa") != 0
+                @test TextSearch.token2id(p.model.voc, "azul") == 0
+                @test all(id -> TextSearch.ndocs(p.model.voc, id) >= 3, eachindex(p.model.voc))
+
+                # pruning everything is an error, not a silently empty profile
+                bad = write_fit_config(joinpath(dir, "fit4bad.toml");
+                                       corpus=corpus_path, outdir=joinpath(dir, "profiles4bad"), min_ndocs=999)
+                @test_throws Exception TextSearchApp.cmd_fit(["--config", bad])
+            end
+
             zippath = joinpath(dir, "profiles1", "corpus-0001.zip")
 
             @testset "search: token-intersection matching" begin
@@ -160,8 +180,34 @@ end
                 TextSearchApp.cmd_install([zippath, "mynick", "--force"])              # --force -> ok
             end
 
-            @testset "merge: stub exits nonzero" begin
-                @test TextSearchApp.cmd_merge(["a", "b", "--out", "c"]) == 1
+            @testset "merge: folds batched profiles back into one" begin
+                # profiles2/ holds the 3 profiles fit above with batch_size=3 over 7 docs
+                batchdir = joinpath(dir, "profiles2")
+                out = joinpath(dir, "merged.zip")
+                @test TextSearchApp.cmd_merge([batchdir, "--out", out]) == 0
+                @test isfile(out)
+
+                m = TextSearch.load_profile(out)
+                # the whole point: merging the batches recovers corpus-wide statistics
+                @test TextSearch.trainsize(m.model.voc) == length(docs)
+
+                whole = TextSearch.load_profile(zippath)   # single unbatched fit of the same docs
+                @test TextSearch.vocsize(m.model.voc) == TextSearch.vocsize(whole.model.voc)
+                @test TextSearch.numtokens(m.model.voc) == TextSearch.numtokens(whole.model.voc)
+                for id in eachindex(whole.model.voc)
+                    t = TextSearch.token(whole.model.voc, id)
+                    mid = TextSearch.token2id(m.model.voc, t)
+                    @test mid != 0
+                    @test TextSearch.ndocs(m.model.voc, mid) == TextSearch.ndocs(whole.model.voc, id)
+                    @test m.model.weight[mid] ≈ whole.model.weight[id]
+                end
+                @test m.encoder["kind"] == "merged"
+                @test m.encoder["n_sources"] == 3
+
+                # a directory of profiles expands; a single profile is not a merge
+                @test_throws Exception TextSearchApp.cmd_merge([zippath, "--out", joinpath(dir, "x.zip")])
+                # output must be a .zip
+                @test_throws Exception TextSearchApp.cmd_merge([batchdir, "--out", joinpath(dir, "nope.tar")])
             end
 
             @testset "corpusio.each_record: jsonl / csv / json" begin

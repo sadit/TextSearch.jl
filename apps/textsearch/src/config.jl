@@ -25,6 +25,13 @@ lc = true
 nlist = [1]
 mark_token_type = true
 
+[vocabulary]
+# Drop tokens appearing in fewer than this many documents. 1 keeps everything; on a real
+# corpus most of the vocabulary is single-document noise (typos, IDs, foreign words) whose
+# embeddings and synonyms are meaningless, and since the synonym network is an all-pairs
+# search over the vocabulary, pruning it cuts that cost quadratically.
+min_ndocs = 1
+
 [stopwords]
 enabled = true
 doc_freq_threshold = 0.5

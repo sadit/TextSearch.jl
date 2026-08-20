@@ -175,16 +175,52 @@ textsearch uninstall <nickname>                       # print the file's path --
   may have spent real compute producing -- remove it yourself once you're sure, with the
   `rm` command it hands you.
 
-### `merge` -- not yet implemented
+### `merge` -- fold batched profiles into one
 
 ```
-textsearch merge <profiles...> --out <path>
+textsearch merge <profiles...> --out OUT.zip [--doc-freq-threshold F] [--synonyms-k N]
 ```
 
-Accepts its arguments and exits with a clear "not yet implemented" message. Combining
-vocabulary/weights/synonyms/lemmas across several profiles needs more design than fits
-here; for now, re-run `fit` with `batch_size = 0` over the combined corpus instead of
-fitting the pieces separately.
+This is what makes `fit`'s batching usable: batching a large corpus produces one
+*independent* profile per batch, and `merge` folds them back into a single corpus-wide
+profile. Each input may be an installed nickname, a path to a profile `.zip`/directory, or
+a **directory containing** profile `.zip`s -- the usual case, since `fit` writes a whole
+batch of them into one output directory:
+
+```sh
+textsearch fit --config wiki-es.toml            # -> profiles/wiki20231101-es/*.zip
+textsearch merge profiles/wiki20231101-es --out wiki20231101-es.zip
+textsearch install wiki20231101-es.zip wiki-es
+```
+
+**What is exact, and what isn't** -- worth understanding before trusting a merged profile:
+
+- **Vocabulary counts and weights are exact.** `occs`/`ndocs`/`trainsize`/`numtokens` are
+  additive across disjoint batches, and the weighting scheme is *recomputed* from the
+  merged counters -- so a merged profile's IDF is the true corpus-wide IDF, identical to
+  what a single unbatched fit over the whole corpus would produce (the test suite asserts
+  exactly this equality). This is the main reason to merge rather than to just pick one
+  batch.
+- **Synonyms are a rank-consensus fusion, not a recomputation.** Every input fit its own
+  encoder, so its neighbor *distances* live in its own embedding space and aren't
+  numerically comparable across inputs. What does transfer is the *ranking*, so the lists
+  are combined with Reciprocal Rank Fusion: a neighbor several independently-fit batches
+  all rank highly wins over one a single batch happened to like. The number kept beside
+  each neighbor is the mean of the distances the contributing batches reported -- no longer
+  a distance in any one space. `--synonyms-k 0` (default) keeps as many neighbors per token
+  as the richest input had.
+- **Lemmas are a plurality vote** over the inputs' clusterings. Independent votes can
+  disagree in ways one clustering never does (`a => b` here, `b => a` there), so winning
+  edges are followed to a fixed point and any cycle is resolved in favor of its most
+  frequent member -- a merged lemma map is always acyclic and terminating.
+- **Stopword candidates** are recomputed from the merged counters, then unioned with the
+  inputs' recorded ones: a token every batch already removed is absent from the merged
+  vocabulary and can't be re-derived, but it is still a stopword and stays recorded.
+
+Inputs must share their normalization and tokenization settings and their weighting scheme;
+transformations may differ *only* in their stopword set (the normal case when each batch
+detected its own), which merges to the union. `EntropyWeighting` profiles cannot be merged,
+since recomputing supervised weights would need the labeled corpus.
 
 ## Tutorial
 

@@ -83,6 +83,7 @@ include("emodel.jl")
 include("stopwords.jl")
 include("queryexpansion.jl")
 include("profile.jl")
+include("mergeprofiles.jl")
 
 include("bm25/BM25.jl")
 using .BM25

@@ -38,7 +38,7 @@ function print_top_help(io::IO)
     Subcommands:
       fit         fit a profile (vocabulary, weights, synonyms, lemmas, stopword
                   candidates) from a corpus -- opens \$EDITOR on a TOML config
-      merge       merge multiple profiles into one (not yet implemented)
+      merge       merge several profiles into one corpus-wide profile
       search      grep-like search over a collection using a profile's tokenization
                   (not fast to start -- see 'textsearch search --help')
       list        list installed profile nicknames

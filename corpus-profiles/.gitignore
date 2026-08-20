@@ -1,0 +1,30 @@
+# Everything here is ignored by default.
+#
+# The corpora we download and the profiles we fit are large binary artifacts: they are
+# published as GitHub release attachments once we've verified they're correct, never
+# committed to the repository. Only the scripts and fit configs that PRODUCE them are
+# tracked, so a profile is always reproducible from git even though it doesn't live here.
+#
+# This is an allowlist rather than a list of data patterns to exclude: a new corpus format
+# or output layout can't accidentally get committed just because nobody remembered to add
+# its extension.
+*
+
+# ...except the recipes: scripts, fit configs, and docs. Add new tracked file types here.
+!*/
+!.gitignore
+!README.md
+!*.jl
+!*.sh
+!*.toml
+
+# `!*.toml` above would otherwise override the root .gitignore's Manifest.toml rule for
+# this subtree.
+Manifest.toml
+
+# Output directories: nothing inside them is ever a recipe, so they are re-excluded after
+# the allowlist above. Without this, the *rendered* fit configs the scripts write into
+# work/ would be picked up by `!*.toml` and committed as if they were hand-written inputs.
+raw/
+work/
+profiles/

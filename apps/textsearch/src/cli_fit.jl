@@ -12,23 +12,32 @@ function parse_fit_args(args::Vector{String})
 end
 
 """
-    _batches(itr, batch_size::Integer) -> Vector{Vector{String}}
+    _each_batch(f, itr, batch_size::Integer) -> Int
 
-Splits an `each_record`-style iterator of `(text, record) => ...` pairs into chunks of at
-most `batch_size` document texts (`batch_size <= 0` means one unbounded chunk).
+Calls `f(batch_index, docs::Vector{String})` for each chunk of at most `batch_size`
+document texts pulled from an `each_record`-style iterator (`batch_size <= 0` means one
+unbounded chunk), and returns how many chunks were produced.
+
+Batches are yielded and released **as they fill**, never accumulated: a corpus far larger
+than memory (all of Wikipedia, say) only ever costs one batch's worth of documents at a
+time, since each batch's profile is independent anyway.
 """
-function _batches(itr, batch_size::Integer)
-    batches = Vector{String}[]
+function _each_batch(f::Function, itr, batch_size::Integer)
+    nbatches = 0
     buf = String[]
     for p in itr
         push!(buf, first(p))
         if batch_size > 0 && length(buf) == batch_size
-            push!(batches, buf)
-            buf = String[]
+            nbatches += 1
+            f(nbatches, buf)
+            buf = String[]   # a fresh buffer: `f` may retain the one it was handed
         end
     end
-    isempty(buf) || push!(batches, buf)
-    batches
+    if !isempty(buf)
+        nbatches += 1
+        f(nbatches, buf)
+    end
+    nbatches
 end
 
 """
@@ -94,6 +103,20 @@ function _fit_one_batch(docs::Vector{String}, cfg, batch_dir::AbstractString)
     end
 
     voc = Vocabulary(textconfig, docs; verbose=false)
+
+    # Prune rare tokens before anything expensive touches the vocabulary: the synonym
+    # network is an all-pairs search over it, so this is quadratic savings, and tokens seen
+    # in one or two documents have no usable embedding to begin with.
+    min_ndocs = Int(get(get(cfg, "vocabulary", Dict()), "min_ndocs", 1))
+    if min_ndocs > 1
+        before = vocsize(voc)
+        voc = filter_tokens(t -> t.ndocs >= min_ndocs, voc)
+        println("  vocabulary pruned by min_ndocs=$min_ndocs: $before -> $(vocsize(voc)) tokens")
+        flush(stdout)   # long runs are usually watched through a redirected log
+        vocsize(voc) > 0 ||
+            error("min_ndocs=$min_ndocs pruned the entire vocabulary ($before tokens, none in >= $min_ndocs documents); lower it")
+    end
+
     model = VectorModel(IdfWeighting(), TfWeighting(), voc)
 
     kind = Symbol(enc["kind"])
@@ -130,21 +153,21 @@ function cmd_fit(args::Vector{String})
     output = cfg["output"]
     format = Symbol(input["format"])
 
-    batches = _batches(each_record(format, input["path"], input["text_key"]), Int(output["batch_size"]))
-    isempty(batches) && error("no documents found in $(input["path"]) (format=$(input["format"]))")
-
     mkpath(output["dir"])
-    n = length(batches)
 
-    for (i, docs) in enumerate(batches)
+    n = _each_batch(each_record(format, input["path"], input["text_key"]), Int(output["batch_size"])) do i, docs
         batch_dir = joinpath(output["dir"], "_textsearch_fit_batch_$(lpad(i, 4, '0'))")
         try
             m, _ = _fit_one_batch(docs, cfg, batch_dir)
             zippath = joinpath(output["dir"], "$(output["prefix"])-$(lpad(i, 4, '0')).zip")
             zip_profile(batch_dir, zippath)
-            println("saved profile $i/$n ($(length(docs)) docs, vocsize=$m) -> $zippath")
+            println("saved profile $i ($(length(docs)) docs, vocsize=$m) -> $zippath")
+            flush(stdout)
         finally
             rm(batch_dir; recursive=true, force=true)
         end
     end
+
+    n == 0 && error("no documents found in $(input["path"]) (format=$(input["format"]))")
+    n
 end
