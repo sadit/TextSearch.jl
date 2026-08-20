@@ -5,6 +5,7 @@ version = "1.0.0"
 
 [deps]
 Accessors = "7d9f7c33-5ae7-4f3b-8dc6-eff91059b697"
+Arpack = "7d9fca2a-8960-54d3-9f78-7d1dccf2cb97"
 JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
@@ -24,6 +25,12 @@ TextSearchSnowballExt = ["Snowball", "Languages"]
 
 [compat]
 Accessors = "0.1"
+# Lower bound is deliberate: Arpack 0.5.0 allows Arpack_jll 3.8, whose libarpack.so
+# hard-links its own libopenblas64_ (a second OpenBLAS beside Julia's -- duplicated thread
+# pools, and the "libopenblas64_.so not found" failures in Arpack.jl issues #97/#127).
+# Arpack 0.5.1+ constrains Arpack_jll to ~3.5, whose build routes through
+# libblastrampoline and so reuses whatever BLAS Julia already loaded.
+Arpack = "0.5.1 - 0.5"
 Aqua = "0.8"
 JSON3 = "1"
 LinearAlgebra = "^1.0"

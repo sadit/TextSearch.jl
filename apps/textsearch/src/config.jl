@@ -44,10 +44,12 @@ external_path = ""          # kind="external": path to a token->vector JSON mapp
 # How LSI's truncated SVD is computed. "full" builds a dense Gram matrix and takes a
 # complete eigendecomposition -- O(min(vocab, docs)^3) time and a squared allocation
 # regardless of outdim, so it stops being viable somewhere in the low thousands of
-# documents per batch. "randomized" never forms that matrix; "auto" picks per batch.
-# oversampling = 0 means "as wide again as outdim"; both knobs trade time for fidelity to
-# the exact factorization (see TextSearch.LSI._randomized_svd for measured numbers).
-factorization = "auto"       # "auto" | "randomized" | "full"
+# documents per batch. "lanczos" (ARPACK) is exact to working precision and the fastest at
+# scale; "randomized" is an approximate sketch, kept as the fallback if ARPACK does not
+# converge. "auto" picks lanczos past a few thousand documents, full below.
+# oversampling/power_iterations only affect "randomized" (0 = as wide again as outdim);
+# see TextSearch.LSI._randomized_svd for its measured accuracy table.
+factorization = "auto"       # "auto" | "lanczos" | "randomized" | "full"
 oversampling = 0
 power_iterations = 4
 

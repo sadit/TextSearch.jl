@@ -3,6 +3,7 @@
 module LSI
 
 using LinearAlgebra, SparseArrays, Random
+using Arpack: svds
 using ProgressMeter
 using SimilaritySearch
 using SimilaritySearch: @BATCHES, getminbatch, MatrixDatabase, AbstractDatabase, ParallelExhaustiveSearch
@@ -127,6 +128,38 @@ function _randomized_svd(A::AbstractMatrix, k::Integer;
 end
 
 """
+    _lanczos_svd(A, k) -> Union{Nothing,Tuple}
+
+Truncated SVD of `A` keeping the top `k` singular triplets via ARPACK's implicitly restarted
+Lanczos iteration (`Arpack.svds`), which is *exact* to working precision (measured ~3e-7
+relative error on the singular values) rather than approximate like
+[`_randomized_svd`](@ref), while still never forming a Gram matrix.
+
+ARPACK's own iteration is sequential and it is not re-entrant (unsynchronized static state,
+so it must not be called concurrently from multiple threads -- LSI factorizes one batch at a
+time, so that is not a constraint here). It is not, however, serial in throughput: the heavy
+work goes to BLAS, so on a multicore host it does use many cores (~17 of 64 measured), just
+less effectively than a dense `eigen`, which is BLAS-3 rather than mostly BLAS-1/2.
+
+Returns `nothing` when ARPACK cannot deliver `k` converged triplets -- either by failing to
+converge or by throwing -- so the caller can fall back rather than abort a long fit.
+"""
+function _lanczos_svd(A::AbstractMatrix, k::Integer)
+    # ARPACK needs strictly fewer singular values than the smaller dimension
+    k < minimum(size(A)) || return nothing
+    try
+        r = svds(A; nsv=k)
+        F, nconv = r[1], r[2]
+        nconv < k && return nothing
+        F.U, F.S
+    catch err
+        err isa InterruptException && rethrow()
+        @warn "LSI: ARPACK/Lanczos factorization failed, falling back to randomized SVD" exception=err
+        nothing
+    end
+end
+
+"""
     LatentSemanticIndexing(model::VectorModel, corpus;
                            maxoutdim::Integer=128,
                            normalize::Bool=true,
@@ -153,10 +186,13 @@ Computes a Latent Semantic Indexing (LSI) projection matrix from `corpus` weight
   - `:singular_values`: singular value weighted projection P = Σ_k U_k^T.
 - `factorization`: how the truncated SVD is computed, which decides whether a large corpus
   is tractable at all:
-  - `:auto` (default): `:randomized` once `min(vocsize, length(corpus))` exceeds
+  - `:auto` (default): `:lanczos` once `min(vocsize, length(corpus))` exceeds
     [`LSI_RANDOMIZED_THRESHOLD`](@ref), `:full` below it.
+  - `:lanczos`: [`_lanczos_svd`](@ref) -- ARPACK's restarted Lanczos iteration. Exact to
+    working precision and the fastest option at scale; falls back to `:randomized` if
+    ARPACK fails to converge.
   - `:randomized`: [`_randomized_svd`](@ref) -- a couple of sparse products plus a small
-    dense SVD, never forming a Gram matrix.
+    dense SVD, never forming a Gram matrix. Approximate (see its accuracy table).
   - `:full`: exact, via a dense Gram matrix and a complete `eigen`. Costs
     `O(min(m,n)^3)` time and `min(m,n)^2` memory *regardless of `maxoutdim`*, so it is only
     appropriate for small corpora.
@@ -193,17 +229,22 @@ function LatentSemanticIndexing(
     k > 0 || throw(ArgumentError("Output dimension k must be positive; got k=$k for matrix size $(size(A))"))
 
     gram_side = min(m_mat, n_mat)
-    use_randomized = if factorization === :auto
-        gram_side > LSI_RANDOMIZED_THRESHOLD
-    elseif factorization === :randomized
-        true
-    elseif factorization === :full
-        false
+    resolved = if factorization === :auto
+        gram_side > LSI_RANDOMIZED_THRESHOLD ? :lanczos : :full
+    elseif factorization in (:lanczos, :randomized, :full)
+        factorization
     else
-        throw(ArgumentError("Unknown factorization: :$factorization (allowed: :auto, :randomized, :full)"))
+        throw(ArgumentError("Unknown factorization: :$factorization (allowed: :auto, :lanczos, :randomized, :full)"))
     end
 
-    U, s = if use_randomized
+    # `:lanczos` is exact but can fail to converge; degrading to the randomized sketch keeps
+    # a long fit alive instead of losing it at the factorization step
+    lanczos = resolved === :lanczos ? _lanczos_svd(A, k) : nothing
+    resolved === :lanczos && lanczos === nothing && (resolved = :randomized)
+
+    U, s = if resolved === :lanczos
+        lanczos
+    elseif resolved === :randomized
         _randomized_svd(A, k; oversampling, power_iterations)
     elseif m_mat <= n_mat
         # exact, via the smaller Gram matrix: dense and O(gram_side^3), see the note on

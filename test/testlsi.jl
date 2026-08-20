@@ -154,12 +154,25 @@ using Test, TextSearch, SimilaritySearch, LinearAlgebra, SparseArrays
         end
     end
 
-    @testset "factorization: randomized vs full" begin
+    @testset "factorization: lanczos / randomized / full" begin
         # this corpus is far below the auto threshold, so :auto must take the exact path
         @test min(vocsize(vmodel), length(corpus)) < TextSearch.LSI.LSI_RANDOMIZED_THRESHOLD
         L_auto = LatentSemanticIndexing(vmodel, corpus; maxoutdim=4, verbose=false)
         L_full = LatentSemanticIndexing(vmodel, corpus; maxoutdim=4, factorization=:full, verbose=false)
         @test L_auto.s == L_full.s
+
+        # lanczos (ARPACK) is exact to working precision, unlike the randomized sketch
+        L_lcz = LatentSemanticIndexing(vmodel, corpus; maxoutdim=4, factorization=:lanczos, verbose=false)
+        @test outdim(L_lcz) == outdim(L_full)
+        @test isapprox(L_lcz.s, L_full.s; rtol=1e-5)
+        v = vectorize(L_lcz, corpus[1])
+        @test length(v) == outdim(L_lcz)
+        @test isapprox(norm(v), 1f0, atol=1e-5)
+
+        # asking for as many dimensions as the smaller side leaves ARPACK no room, so the
+        # lanczos path must degrade instead of throwing
+        L_deg = LatentSemanticIndexing(vmodel, corpus; maxoutdim=length(corpus), factorization=:lanczos, verbose=false)
+        @test outdim(L_deg) == min(length(corpus), vocsize(vmodel))
 
         # the randomized path must agree with the exact one on the leading spectrum when
         # given enough sketch width / power iterations (here: everything, tiny corpus)
