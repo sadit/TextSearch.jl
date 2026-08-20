@@ -17,6 +17,10 @@ Defines a preprocessing and tokenization pipeline, composed of 3 independent sta
   custom [`AbstractTokenGenerator`](@ref)s).
 - `transformation`: an [`AbstractTokenTransformation`](@ref) applied to every generated
   token (e.g. stemming, lemmatization, or stopword removal).
+- `expand_query_synonyms`: whether query-time synonym expansion (see [`expand_synonyms!`](@ref))
+  should be applied when this config's queries are searched against an index carrying a synonym
+  network (e.g. a [`TextInvertedFile`](@ref) built with `synonyms=...`). Has no effect on indexing:
+  documents are never expanded, only queries.
 
 # Example
 
@@ -31,14 +35,16 @@ Base.@kwdef struct TextConfig
     normalization::NormalizationConfig = NormalizationConfig()
     tokenization::TokenizationConfig = TokenizationConfig()
     transformation::AbstractTokenTransformation = IdentityTokenTransformation()
+    expand_query_synonyms::Bool = false
 end
 
 function TextConfig(c::TextConfig;
         normalization::NormalizationConfig=c.normalization,
         tokenization::TokenizationConfig=c.tokenization,
-        transformation::AbstractTokenTransformation=c.transformation
+        transformation::AbstractTokenTransformation=c.transformation,
+        expand_query_synonyms::Bool=c.expand_query_synonyms
     )
-    TextConfig(normalization, tokenization, transformation)
+    TextConfig(normalization, tokenization, transformation, expand_query_synonyms)
 end
 
 function Base.show(io::IO, c::TextConfig; prefix="", indent="  ")
@@ -48,6 +54,7 @@ function Base.show(io::IO, c::TextConfig; prefix="", indent="  ")
     show(io, c.tokenization; prefix, indent)
     print(io, prefix, "transformation: ")
     println(io, c.transformation)
+    println(io, prefix, "expand_query_synonyms: ", c.expand_query_synonyms)
 end
 
 Base.broadcastable(c::TextConfig) = (c,)

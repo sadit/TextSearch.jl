@@ -61,4 +61,40 @@ using Test, SimilaritySearch, TextSearch
         ids = collect(IdView(res))
         @test 6 in ids || 4 in ids || 2 in ids
     end
+
+    @testset "Query-time synonym expansion (expand_query_synonyms)" begin
+        # corpus[4] = "la manzana roja"; a query for "pera roja" should rank it higher
+        # once "pera" is registered as a synonym of "manzana".
+        synonyms = Dict("pera" => [("manzana", 0.1f0)])
+
+        expand_textconfig = TextConfig(tokenization=TokenizationConfig(nlist=[1]), expand_query_synonyms=true)
+        expand_voc = Vocabulary(expand_textconfig, corpus)
+        expand_model = VectorModel(IdfWeighting(), TfWeighting(), expand_voc)
+        idx_expand = TextInvertedFile(expand_model; dist=Dist.NormCosine(), synonyms)
+        ctx = InvertedFileContext()
+        append_items!(idx_expand, ctx, corpus)
+
+        plain_model = VectorModel(IdfWeighting(), TfWeighting(), voc)
+        idx_plain = TextInvertedFile(plain_model; dist=Dist.NormCosine())
+        append_items!(idx_plain, ctx, corpus)
+
+        res_expand = search(idx_expand, ctx, "pera roja", knnqueue(KnnSorted, 3))
+        res_plain = search(idx_plain, ctx, "pera roja", knnqueue(KnnSorted, 3))
+
+        ids_expand = collect(IdView(res_expand))
+        ids_plain = collect(IdView(res_plain))
+        dists_expand = collect(DistView(res_expand))
+        dists_plain = collect(DistView(res_plain))
+
+        @test 4 in ids_plain && 4 in ids_expand
+        # doc4 ("la manzana roja") ranks strictly better once "pera" expands into its synonym "manzana"
+        @test findfirst(==(4), ids_expand) < findfirst(==(4), ids_plain)
+        @test dists_expand[findfirst(==(4), ids_expand)] < dists_plain[findfirst(==(4), ids_plain)]
+
+        # the flag alone, without an attached synonyms dict, must not error and must behave like plain search
+        idx_flag_only = TextInvertedFile(expand_model; dist=Dist.NormCosine())
+        append_items!(idx_flag_only, ctx, corpus)
+        res_flag_only = search(idx_flag_only, ctx, "pera roja", knnqueue(KnnSorted, 3))
+        @test collect(IdView(res_flag_only)) == ids_plain
+    end
 end

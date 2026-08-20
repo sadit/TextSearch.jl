@@ -3,7 +3,7 @@
 export TextInvertedFile
 
 """
-    TextInvertedFile{ModelType<:VectorModel, InvFileType<:InvertedFile} <: AbstractInvertedFile
+    TextInvertedFile{ModelType<:VectorModel, InvFileType<:InvertedFile, SynType} <: AbstractInvertedFile
 
 An inverted-file index (built on top of `SimilaritySearch.InvertedFiles`) that pairs a text weighting model
 ([`VectorModel`](@ref)) with an inverted index for fast kNN / radius search under vector distances
@@ -12,6 +12,10 @@ An inverted-file index (built on top of `SimilaritySearch.InvertedFiles`) that p
 # Fields
 - `model`: the [`VectorModel`](@ref) used to vectorize documents and queries.
 - `invfile`: the underlying `SimilaritySearch.InvertedFiles.InvertedFile`.
+- `synonyms`: `nothing`, or a synonym network (e.g. as produced by `LSI.synonyms`) used to expand
+  queries -- only when `model.voc.textconfig.expand_query_synonyms` is also `true` -- via
+  [`expand_synonyms!`](@ref). Never applied to documents, only to queries, and only under vector
+  distances (not set distances).
 
 # Example
 
@@ -38,9 +42,10 @@ julia> collect(IdView(res))
 UInt32[0x00000001, 0x00000002]
 ```
 """
-struct TextInvertedFile{ModelType<:VectorModel, InvFileType<:InvertedFile} <: AbstractInvertedFile
+struct TextInvertedFile{ModelType<:VectorModel, InvFileType<:InvertedFile, SynType} <: AbstractInvertedFile
     model::ModelType
     invfile::InvFileType
+    synonyms::SynType
 end
 
 is_set_distance(dist) = parentmodule(typeof(dist)) === SimilaritySearch.Dist.Sets
@@ -49,10 +54,11 @@ is_set_distance(dist) = parentmodule(typeof(dist)) === SimilaritySearch.Dist.Set
 function Base.getproperty(idx::TextInvertedFile, s::Symbol)
     s === :model && return getfield(idx, :model)
     s === :invfile && return getfield(idx, :invfile)
+    s === :synonyms && return getfield(idx, :synonyms)
     getproperty(getfield(idx, :invfile), s)
 end
 
-Base.propertynames(idx::TextInvertedFile) = (:model, :invfile, propertynames(getfield(idx, :invfile))...)
+Base.propertynames(idx::TextInvertedFile) = (:model, :invfile, :synonyms, propertynames(getfield(idx, :invfile))...)
 
 Base.length(idx::TextInvertedFile) = length(idx.invfile)
 SimilaritySearch.database(idx::TextInvertedFile) = database(idx.invfile)
@@ -60,33 +66,35 @@ SimilaritySearch.distance(idx::TextInvertedFile) = distance(idx.invfile)
 
 # Constructors
 """
-    TextInvertedFile(model::VectorModel; dist=Dist.NormCosine(), kwargs...)
+    TextInvertedFile(model::VectorModel; dist=Dist.NormCosine(), synonyms=nothing, kwargs...)
 
-Creates an empty [`TextInvertedFile`](@ref) backed by `model` and `dist`.
+Creates an empty [`TextInvertedFile`](@ref) backed by `model` and `dist`. Pass `synonyms` (e.g. as
+produced by `LSI.synonyms`) to enable query-time synonym expansion (also requires
+`model.voc.textconfig.expand_query_synonyms = true`; see [`expand_synonyms!`](@ref)).
 """
-function TextInvertedFile(model::VectorModel; dist=Dist.NormCosine(), kwargs...)
+function TextInvertedFile(model::VectorModel; dist=Dist.NormCosine(), synonyms=nothing, kwargs...)
     invfile = InvertedFile(vocsize(model.voc), dist; kwargs...)
-    TextInvertedFile(model, invfile)
+    TextInvertedFile(model, invfile, synonyms)
 end
 
 """
-    TextInvertedFile(voc::Vocabulary, local_weighting=TfWeighting(), global_weighting=IdfWeighting(); dist=Dist.NormCosine(), kwargs...)
+    TextInvertedFile(voc::Vocabulary, local_weighting=TfWeighting(), global_weighting=IdfWeighting(); dist=Dist.NormCosine(), synonyms=nothing, kwargs...)
 
 Creates a [`TextInvertedFile`](@ref) from a [`Vocabulary`](@ref) and specified local/global weighting schemes.
 """
-function TextInvertedFile(voc::Vocabulary, local_weighting=TfWeighting(), global_weighting=IdfWeighting(); dist=Dist.NormCosine(), kwargs...)
+function TextInvertedFile(voc::Vocabulary, local_weighting=TfWeighting(), global_weighting=IdfWeighting(); dist=Dist.NormCosine(), synonyms=nothing, kwargs...)
     model = VectorModel(global_weighting, local_weighting, voc)
-    TextInvertedFile(model; dist, kwargs...)
+    TextInvertedFile(model; dist, synonyms, kwargs...)
 end
 
 """
-    TextInvertedFile(textconfig::TextConfig, corpus; local_weighting=TfWeighting(), global_weighting=IdfWeighting(), dist=Dist.NormCosine(), kwargs...)
+    TextInvertedFile(textconfig::TextConfig, corpus; local_weighting=TfWeighting(), global_weighting=IdfWeighting(), dist=Dist.NormCosine(), synonyms=nothing, kwargs...)
 
 Convenience constructor that builds a [`Vocabulary`](@ref) from `corpus` under `textconfig`, creates a [`VectorModel`](@ref), and returns a [`TextInvertedFile`](@ref).
 """
-function TextInvertedFile(textconfig::TextConfig, corpus; local_weighting=TfWeighting(), global_weighting=IdfWeighting(), dist=Dist.NormCosine(), kwargs...)
+function TextInvertedFile(textconfig::TextConfig, corpus; local_weighting=TfWeighting(), global_weighting=IdfWeighting(), dist=Dist.NormCosine(), synonyms=nothing, kwargs...)
     voc = Vocabulary(textconfig, corpus)
-    TextInvertedFile(voc, local_weighting, global_weighting; dist, kwargs...)
+    TextInvertedFile(voc, local_weighting, global_weighting; dist, synonyms, kwargs...)
 end
 
 # InvertedFile insertion & appending methods
@@ -125,7 +133,12 @@ function SimilaritySearch.search(idx::TextInvertedFile, ctx::InvertedFileContext
     if is_set_distance(distance(idx))
         q = bagofwords(idx.model.voc, qtext)
     else
-        q = vectorize(idx.model, qtext)
+        q = vectorize(idx.model, qtext; normalize=false)
+        if idx.synonyms !== nothing && idx.model.voc.textconfig.expand_query_synonyms
+            expand_synonyms!(q, idx.model.voc, idx.synonyms)
+        else
+            normalize!(q)
+        end
     end
     search(idx.invfile, ctx, q, res; t)
 end

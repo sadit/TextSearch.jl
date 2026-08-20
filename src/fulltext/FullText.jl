@@ -9,10 +9,12 @@ using SimilaritySearch.InvertedFiles
 using SimilaritySearch.Special.Sparse: SparseVecView, SparseVectorLike
 using SparseArrays: SparseVector, sparsevec
 using StatsBase
+using LinearAlgebra: normalize!
 
 using ..TextSearch: Vocabulary, VectorModel, TextConfig, TokenizedText, BOW,
                     vocsize, vectorize, vectorize_corpus, bagofwords, bagofwords_corpus,
-                    LocalWeighting, GlobalWeighting, TfWeighting, IdfWeighting
+                    LocalWeighting, GlobalWeighting, TfWeighting, IdfWeighting,
+                    expand_synonyms!
 
 using ..BM25
 using ..BM25: BM25InvertedFile, BM25Scorer, bm25score, tokenscore

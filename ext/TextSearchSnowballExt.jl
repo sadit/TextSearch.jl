@@ -41,6 +41,9 @@ end
 
 TextSearch.Tokenizer.transform_unigram(tt::TextSearch.SnowballTokenTransformation, tok) = Snowball.stem(tt.stemmer, tok)
 
+_construct_snowball_transformation(algorithm::AbstractString, charenc::AbstractString) =
+    TextSearch.SnowballTokenTransformation(Snowball.Stemmer(algorithm, charenc))
+
 """
     IgnoreStopwords(lang::Languages.Language; lc::Bool=true, del_diac::Bool=true)
 

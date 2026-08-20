@@ -8,6 +8,7 @@ import SimilaritySearch: search, append_items!, push_item!, database, distance
 using Accessors
 using SimilaritySearch, LinearAlgebra, SparseArrays
 using SimilaritySearch: getminbatch
+using JSON3
 
 using ProgressMeter
 
@@ -77,6 +78,8 @@ include("bow.jl")
 include("sparseconversions.jl")
 include("vmodel.jl")
 include("emodel.jl")
+include("queryexpansion.jl")
+include("profile.jl")
 
 include("bm25/BM25.jl")
 using .BM25
