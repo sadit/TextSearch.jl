@@ -191,5 +191,9 @@ function cmd_fit(args::Vector{String})
     end
 
     n == 0 && error("no documents found in $(input["path"]) (format=$(input["format"]))")
-    n
+    # NB: return the exit code, not the batch count -- `main` uses an Integer return value
+    # as the process exit status, so returning `n` here reported success as failure
+    # (1 batch -> exit 1), which `set -e` callers such as corpora/wikipedia.sh treat as a
+    # failed fit.
+    0
 end

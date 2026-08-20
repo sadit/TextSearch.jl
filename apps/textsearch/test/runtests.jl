@@ -104,6 +104,13 @@ end
                 @test !isfile(joinpath(outdir, "corpus-0002.zip"))
             end
 
+            @testset "fit exits 0 (a batch count must not leak into the exit status)" begin
+                outdir = joinpath(dir, "profiles_exit")
+                cfgpath = write_fit_config(joinpath(dir, "fit_exit.toml"); corpus=corpus_path, outdir, batch_size=3)
+                # 7 docs / batch_size 3 = 3 batches: a count-as-exit-code bug shows up here
+                @test TextSearchApp.main(["fit", "--config", cfgpath]) == 0
+            end
+
             @testset "fit: batching splits output into multiple zips" begin
                 outdir = joinpath(dir, "profiles2")
                 cfgpath = write_fit_config(joinpath(dir, "fit2.toml"); corpus=corpus_path, outdir, batch_size=3)

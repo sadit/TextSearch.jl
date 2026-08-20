@@ -67,6 +67,8 @@ function (@main)(args::Vector{String}=ARGS)
         return 1
     end
 
+    # A subcommand's Integer return value IS the process exit status; anything else means
+    # success. Subcommands must therefore never return an incidental count.
     result = fn(args[2:end])
     result isa Integer ? result : 0
 end
