@@ -127,12 +127,28 @@ corpora/wikipedia.sh --lang es
 textsearch merge profiles/wiki20231101-es --out wiki20231101-es.zip
 ```
 
-Even so, **mind the total cost before launching a full language.** With *exact* synonyms,
+The other half of the cost is the **LSI factorization**, and it is driven by batch size
+rather than vocabulary. The exact dense path (`[encoder] factorization = "full"`) builds an
+`n×n` Gram matrix and takes a *complete* eigendecomposition, computing every eigenpair to
+keep `outdim` of them -- `O(n^3)` time and an `n^2` allocation. ARPACK's Lanczos iteration
+(`"lanczos"`) is equally exact but never forms that matrix, and `"auto"` switches to it past
+a few thousand documents per batch. Measured on Spanish Wikipedia slices, factorization only,
+same prebuilt matrix, 64 threads:
+
+| documents in batch | `full` | `lanczos` |
+|---|---|---|
+| 2,000 | **4.6s** | 14.8s |
+| 4,000 | 13.2s | **9.5s** |
+| 8,000 | 48.8s | **11.5s** |
+
+`full` grows steeply while `lanczos` stays roughly flat (its cost follows the number of
+nonzeros, not `n^3`), which is why the crossover sits low and why `lanczos` is what makes
+large batches viable at all.
+
+**Still, mind the total cost before launching a full language.** Before these two changes,
 one 25,000-article Spanish batch at `--min-ndocs 5` (≈143k tokens) ran over 50 minutes
-without finishing on 64 threads. Approximate search removes that particular wall, but a
-25k-article batch still carries a second cost that pruning does not touch: LSI factorizes a
-dense `n×n` Gram matrix, so it grows with the *batch size*, independent of vocabulary.
-Practical options:
+without finishing with exact synonym search, and over 30 minutes stuck in the dense
+factorization. Practical options:
 
 - **Prune harder.** `--min-ndocs 20` cuts the vocabulary to ~59k, roughly 6× less synonym
   work than `min_ndocs=5` and ~110× less than no pruning, at the cost of the rare-token

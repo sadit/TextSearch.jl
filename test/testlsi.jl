@@ -154,14 +154,14 @@ using Test, TextSearch, SimilaritySearch, LinearAlgebra, SparseArrays
         end
     end
 
-    @testset "factorization: lanczos / randomized / full" begin
+    @testset "factorization: lanczos / full" begin
         # this corpus is far below the auto threshold, so :auto must take the exact path
-        @test min(vocsize(vmodel), length(corpus)) < TextSearch.LSI.LSI_RANDOMIZED_THRESHOLD
+        @test min(vocsize(vmodel), length(corpus)) <= TextSearch.LSI.LSI_FULL_FACTORIZATION_MAX
         L_auto = LatentSemanticIndexing(vmodel, corpus; maxoutdim=4, verbose=false)
         L_full = LatentSemanticIndexing(vmodel, corpus; maxoutdim=4, factorization=:full, verbose=false)
         @test L_auto.s == L_full.s
 
-        # lanczos (ARPACK) is exact to working precision, unlike the randomized sketch
+        # lanczos (ARPACK) must agree with the dense path to working precision
         L_lcz = LatentSemanticIndexing(vmodel, corpus; maxoutdim=4, factorization=:lanczos, verbose=false)
         @test outdim(L_lcz) == outdim(L_full)
         @test isapprox(L_lcz.s, L_full.s; rtol=1e-5)
@@ -174,20 +174,9 @@ using Test, TextSearch, SimilaritySearch, LinearAlgebra, SparseArrays
         L_deg = LatentSemanticIndexing(vmodel, corpus; maxoutdim=length(corpus), factorization=:lanczos, verbose=false)
         @test outdim(L_deg) == min(length(corpus), vocsize(vmodel))
 
-        # the randomized path must agree with the exact one on the leading spectrum when
-        # given enough sketch width / power iterations (here: everything, tiny corpus)
-        L_rnd = LatentSemanticIndexing(vmodel, corpus; maxoutdim=4, factorization=:randomized,
-                                        oversampling=64, power_iterations=8, verbose=false)
-        @test outdim(L_rnd) == outdim(L_full)
-        @test size(L_rnd.P) == size(L_full.P)
-        @test isapprox(L_rnd.s, L_full.s; rtol=1e-3)
-
-        # ... and still produce a usable projection
-        v = vectorize(L_rnd, corpus[1])
-        @test length(v) == outdim(L_rnd)
-        @test isapprox(norm(v), 1f0, atol=1e-5)
-
         @test_throws ArgumentError LatentSemanticIndexing(vmodel, corpus; factorization=:bogus, verbose=false)
+        # the removed sketch must not linger as a silently-accepted option
+        @test_throws ArgumentError LatentSemanticIndexing(vmodel, corpus; factorization=:randomized, verbose=false)
     end
 
     @testset "synonyms: approximate vs exhaustive search" begin

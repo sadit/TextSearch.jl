@@ -41,17 +41,12 @@ kind = "lsi"                # "lsi" | "external"
 outdim = 128
 scaling = "none"            # "none" | "inv_singular_values" | "singular_values"
 external_path = ""          # kind="external": path to a token->vector JSON mapping
-# How LSI's truncated SVD is computed. "full" builds a dense Gram matrix and takes a
-# complete eigendecomposition -- O(min(vocab, docs)^3) time and a squared allocation
-# regardless of outdim, so it stops being viable somewhere in the low thousands of
-# documents per batch. "lanczos" (ARPACK) is exact to working precision and the fastest at
-# scale; "randomized" is an approximate sketch, kept as the fallback if ARPACK does not
-# converge. "auto" picks lanczos past a few thousand documents, full below.
-# oversampling/power_iterations only affect "randomized" (0 = as wide again as outdim);
-# see TextSearch.LSI._randomized_svd for its measured accuracy table.
-factorization = "auto"       # "auto" | "lanczos" | "randomized" | "full"
-oversampling = 0
-power_iterations = 4
+# How LSI's truncated SVD is computed. Both options are exact, so this is purely a cost
+# choice. "full" builds a dense Gram matrix and takes a complete eigendecomposition --
+# O(min(vocab, docs)^3) time and a squared allocation regardless of outdim -- which wins
+# only for small batches. "lanczos" (ARPACK) never forms that matrix and is far faster at
+# scale. "auto" picks full up to a few thousand documents per batch, lanczos above.
+factorization = "auto"       # "auto" | "lanczos" | "full"
 
 [synonyms]
 k = 8

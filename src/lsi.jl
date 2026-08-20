@@ -2,7 +2,7 @@
 
 module LSI
 
-using LinearAlgebra, SparseArrays, Random
+using LinearAlgebra, SparseArrays
 using Arpack: svds
 using ProgressMeter
 using SimilaritySearch
@@ -63,77 +63,24 @@ function _sparse_matrix(X, m::Integer)
     SparseMatrixCSC(m, n, colptr, rowval, nzval)
 end
 
-"The Gram-matrix side past which `LatentSemanticIndexing`'s `factorization=:auto` uses randomized SVD."
-const LSI_RANDOMIZED_THRESHOLD = 4096
-
 """
-    _randomized_svd(A, k; oversampling=10, power_iterations=2, rng=Random.default_rng()) -> (U, s)
+    LSI_FULL_FACTORIZATION_MAX
 
-Truncated SVD of `A` (`m×n`, typically sparse) keeping the top `k` left singular vectors and
-singular values, by the randomized range-finder method (Halko, Martinsson & Tropp).
-
-This exists because the exact alternative does not scale: forming a Gram matrix and calling
-`eigen` computes *all* `min(m,n)` eigenpairs, at `O(min(m,n)^3)` time and a dense
-`min(m,n)^2` allocation, only to keep `k` of them -- for 25k documents that is a 2.5 GB
-matrix and ~1.6e13 flops to extract 128 directions. Here the cost is instead a couple of
-sparse products plus a QR and an SVD of a `(k+oversampling)`-row matrix, and no Gram matrix
-is ever formed.
-
-`power_iterations` sharpens accuracy when the spectrum decays slowly (term-document matrices
-do); the basis is re-orthonormalized between iterations, which matters in `Float32` where
-the powers would otherwise collapse toward the leading direction. `oversampling = 0` (the
-default) widens the sketch to `2k`.
-
-Accuracy is a real knob here, not a formality: these are measured on 4,000 Spanish Wikipedia
-articles (66,538 tokens, `k=128`), comparing against the exact factorization -- "synonym
-recall" is how much of the exact top-1/top-8 synonym network the resulting embeddings
-reproduce.
-
-| `oversampling` | `power_iterations` | singular-value error | synonym recall@1 / @8 |
-|---:|---:|---:|---:|
-| 10 | 2 | 4.2e-2 | 0.73 / 0.49 |
-| 10 | 4 | 1.4e-2 | 0.90 / 0.67 |
-| 64 | 4 | 5.7e-3 | 0.96 / 0.76 |
-| 0 (=k) | 4 | 2.3e-3 | **0.99 / 0.85** *(default)* |
-| 0 (=k) | 8 | 1.2e-4 | 1.00 / 0.93 |
-| 2k | 8 | 1.0e-5 | 1.00 / 0.99 |
-
-The textbook `p=10, q=2` is visibly not enough for this kind of matrix: it recovers the
-singular *values* to a few percent while still getting a materially different subspace, and
-the synonym network is built from the subspace.
+Largest Gram-matrix side (`min(vocsize, ndocs)`) for which `factorization=:auto` still uses
+the exact dense `:full` path. Above it, `:auto` switches to `:lanczos`: measured on Spanish
+Wikipedia slices, `:full` wins below a couple of thousand documents (n=2000: 4.6s vs 14.8s)
+and loses badly above (n=8000: 48.8s vs 11.5s), since its cost grows with the cube of this
+side while ARPACK's is driven by the number of nonzeros.
 """
-function _randomized_svd(A::AbstractMatrix, k::Integer;
-                          oversampling::Integer=0, power_iterations::Integer=4,
-                          rng=Random.default_rng())
-    m, n = size(A)
-    # oversampling = 0 means "as wide again as k": a term-document spectrum decays too
-    # slowly for the textbook p=10, which loses the subspace (see the docstring's table)
-    p = oversampling > 0 ? Int(oversampling) : k
-    l = min(k + p, n)
-
-    # thin Q of a QR: `Matrix(F.Q)` is not portably thin, so project the implicit Q
-    thinq(Y) = (F = qr(Y); F.Q * Matrix{Float32}(I, size(Y, 1), size(Y, 2)))
-
-    Y = A * randn(rng, Float32, n, l)          # m×l sample of A's range
-    for _ in 1:power_iterations
-        Y = thinq(Y)
-        Y = A * (transpose(A) * Y)
-    end
-
-    Q = thinq(Y)                                # m×l orthonormal basis
-    B = Matrix(transpose(Q) * A)                # l×n -- small, this is what gets factorized
-    F = svd(B)
-    kk = min(k, length(F.S))
-    Q * F.U[:, 1:kk], F.S[1:kk]
-end
+const LSI_FULL_FACTORIZATION_MAX = 3072
 
 """
     _lanczos_svd(A, k) -> Union{Nothing,Tuple}
 
 Truncated SVD of `A` keeping the top `k` singular triplets via ARPACK's implicitly restarted
-Lanczos iteration (`Arpack.svds`), which is *exact* to working precision (measured ~3e-7
-relative error on the singular values) rather than approximate like
-[`_randomized_svd`](@ref), while still never forming a Gram matrix.
+Lanczos iteration (`Arpack.svds`): exact to working precision (measured ~3e-7 relative error
+on the singular values) while never forming a Gram matrix, which is what makes it both the
+accurate and the fast choice at scale.
 
 ARPACK's own iteration is sequential and it is not re-entrant (unsynchronized static state,
 so it must not be called concurrently from multiple threads -- LSI factorizes one batch at a
@@ -142,7 +89,8 @@ work goes to BLAS, so on a multicore host it does use many cores (~17 of 64 meas
 less effectively than a dense `eigen`, which is BLAS-3 rather than mostly BLAS-1/2.
 
 Returns `nothing` when ARPACK cannot deliver `k` converged triplets -- either by failing to
-converge or by throwing -- so the caller can fall back rather than abort a long fit.
+converge or by throwing -- so the caller can fall back to the exact dense path rather than
+abort a long fit.
 """
 function _lanczos_svd(A::AbstractMatrix, k::Integer)
     # ARPACK needs strictly fewer singular values than the smaller dimension
@@ -154,7 +102,7 @@ function _lanczos_svd(A::AbstractMatrix, k::Integer)
         F.U, F.S
     catch err
         err isa InterruptException && rethrow()
-        @warn "LSI: ARPACK/Lanczos factorization failed, falling back to randomized SVD" exception=err
+        @warn "LSI: ARPACK/Lanczos factorization failed; falling back to the exact dense path, which may be much slower" exception=err
         nothing
     end
 end
@@ -167,9 +115,7 @@ end
                            isnormalized::Bool=false,
                            verbose::Bool=true,
                            scaling::Symbol=:none,
-                           factorization::Symbol=:auto,
-                           oversampling::Integer=0,
-                           power_iterations::Integer=4)
+                           factorization::Symbol=:auto)
 
 Computes a Latent Semantic Indexing (LSI) projection matrix from `corpus` weighted by `model`.
 `corpus` can be a collection of raw texts or pre-vectorized sparse vectors (`AbstractVector{<:SparseVectorLike}` or `AbstractDatabase`).
@@ -186,18 +132,18 @@ Computes a Latent Semantic Indexing (LSI) projection matrix from `corpus` weight
   - `:singular_values`: singular value weighted projection P = Σ_k U_k^T.
 - `factorization`: how the truncated SVD is computed, which decides whether a large corpus
   is tractable at all:
-  - `:auto` (default): `:lanczos` once `min(vocsize, length(corpus))` exceeds
-    [`LSI_RANDOMIZED_THRESHOLD`](@ref), `:full` below it.
+  - `:auto` (default): `:full` while `min(vocsize, length(corpus))` is at most
+    [`LSI_FULL_FACTORIZATION_MAX`](@ref), `:lanczos` above it.
   - `:lanczos`: [`_lanczos_svd`](@ref) -- ARPACK's restarted Lanczos iteration. Exact to
-    working precision and the fastest option at scale; falls back to `:randomized` if
-    ARPACK fails to converge.
-  - `:randomized`: [`_randomized_svd`](@ref) -- a couple of sparse products plus a small
-    dense SVD, never forming a Gram matrix. Approximate (see its accuracy table).
+    working precision and the fastest option at scale; falls back to `:full` if ARPACK
+    fails to converge.
   - `:full`: exact, via a dense Gram matrix and a complete `eigen`. Costs
-    `O(min(m,n)^3)` time and `min(m,n)^2` memory *regardless of `maxoutdim`*, so it is only
-    appropriate for small corpora.
-- `oversampling`, `power_iterations`: accuracy knobs for `:randomized` (see
-  [`_randomized_svd`](@ref)); ignored by `:full`.
+    `O(min(m,n)^3)` time and `min(m,n)^2` memory *regardless of `maxoutdim`* (it computes
+    every eigenpair and keeps `maxoutdim` of them), so it is only appropriate for small
+    corpora.
+
+Both options are exact; the choice is purely about cost, so there is no accuracy knob to
+tune here.
 """
 function LatentSemanticIndexing(
     model::VectorModel,
@@ -209,8 +155,6 @@ function LatentSemanticIndexing(
     verbose::Bool=true,
     scaling::Symbol=:none,
     factorization::Symbol=:auto,
-    oversampling::Integer=0,
-    power_iterations::Integer=4
 )
     m = vocsize(model)
     m > 0 || throw(ArgumentError("model vocabulary is empty (vocsize = 0)"))
@@ -230,22 +174,20 @@ function LatentSemanticIndexing(
 
     gram_side = min(m_mat, n_mat)
     resolved = if factorization === :auto
-        gram_side > LSI_RANDOMIZED_THRESHOLD ? :lanczos : :full
-    elseif factorization in (:lanczos, :randomized, :full)
+        gram_side <= LSI_FULL_FACTORIZATION_MAX ? :full : :lanczos
+    elseif factorization in (:lanczos, :full)
         factorization
     else
-        throw(ArgumentError("Unknown factorization: :$factorization (allowed: :auto, :lanczos, :randomized, :full)"))
+        throw(ArgumentError("Unknown factorization: :$factorization (allowed: :auto, :lanczos, :full)"))
     end
 
-    # `:lanczos` is exact but can fail to converge; degrading to the randomized sketch keeps
-    # a long fit alive instead of losing it at the factorization step
+    # `:lanczos` is exact but can fail to converge; falling back to the dense path keeps a
+    # long fit alive (at a real cost in time) instead of losing it at the factorization step
     lanczos = resolved === :lanczos ? _lanczos_svd(A, k) : nothing
-    resolved === :lanczos && lanczos === nothing && (resolved = :randomized)
+    resolved === :lanczos && lanczos === nothing && (resolved = :full)
 
     U, s = if resolved === :lanczos
         lanczos
-    elseif resolved === :randomized
-        _randomized_svd(A, k; oversampling, power_iterations)
     elseif m_mat <= n_mat
         # exact, via the smaller Gram matrix: dense and O(gram_side^3), see the note on
         # `factorization` in the docstring
@@ -303,13 +245,11 @@ function LatentSemanticIndexing(
     verbose::Bool=true,
     scaling::Symbol=:none,
     factorization::Symbol=:auto,
-    oversampling::Integer=0,
-    power_iterations::Integer=4
 )
     voc = Vocabulary(config, corpus; verbose)
     model = VectorModel(gw, lw, voc)
     LatentSemanticIndexing(model, corpus; maxoutdim, normalize, minweight, isnormalized, verbose,
-                            scaling, factorization, oversampling, power_iterations)
+                            scaling, factorization)
 end
 
 """
@@ -338,11 +278,9 @@ function LatentSemanticIndexing(
     verbose::Bool=true,
     scaling::Symbol=:none,
     factorization::Symbol=:auto,
-    oversampling::Integer=0,
-    power_iterations::Integer=4
 )
     LatentSemanticIndexing(config, corpus; gw, lw, maxoutdim, normalize, minweight, isnormalized,
-                            verbose, scaling, factorization, oversampling, power_iterations)
+                            verbose, scaling, factorization)
 end
 
 function _project_sparse!(out::AbstractVector{Float32}, P::AbstractMatrix{Float32}, nzind::AbstractVector{<:Integer}, nzval::AbstractVector{<:Real})
