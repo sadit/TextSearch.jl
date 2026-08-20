@@ -65,6 +65,20 @@ function _load_external_embeddings(path::AbstractString, voc)
     MatrixDatabase(X), oov
 end
 
+"""
+    _synonyms_approx(v::AbstractString) -> Union{Symbol,Bool}
+
+Maps the config's `[synonyms] approx` string onto what `TextSearch.synonyms` expects:
+`"auto"` -> `:auto` (approximate only once the vocabulary is big enough to need it),
+`"always"` -> `true`, `"never"` -> `false`.
+"""
+function _synonyms_approx(v::AbstractString)
+    v == "auto"   && return :auto
+    v == "always" && return true
+    v == "never"  && return false
+    error("invalid [synonyms] approx = $(repr(v)); expected \"auto\", \"always\", or \"never\"")
+end
+
 function _fit_textconfig(cfg)
     norm = cfg["normalization"]
     tok = cfg["tokenization"]
@@ -124,13 +138,19 @@ function _fit_one_batch(docs::Vector{String}, cfg, batch_dir::AbstractString)
     scaling = Symbol(enc["scaling"])
     external_path = get(enc, "external_path", "")
 
+    synopts = (
+        approx = _synonyms_approx(get(syn, "approx", "auto")),
+        construction_recall = Float64(get(syn, "construction_recall", 0.97)),
+        search_recall = Float64(get(syn, "search_recall", 0.9)),
+    )
+
     wordvecs, synmap = if kind === :lsi
         lsi = LatentSemanticIndexing(model, docs; maxoutdim=outdim, scaling, verbose=false)
-        wordvectors(lsi), synonyms(lsi, Int(syn["k"]); verbose=false)
+        wordvectors(lsi), synonyms(lsi, Int(syn["k"]); verbose=false, synopts...)
     elseif kind === :external
         wv, oov = _load_external_embeddings(external_path, voc)
         oov > 0 && @warn "textsearch fit: $oov / $(vocsize(voc)) vocabulary tokens missing from external embeddings; using zero vectors for them"
-        wv, synonyms(voc, wv, Int(syn["k"]); verbose=false)
+        wv, synonyms(voc, wv, Int(syn["k"]); verbose=false, synopts...)
     else
         error("unknown encoder kind: $(enc["kind"]); supported: lsi, external")
     end

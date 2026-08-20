@@ -154,6 +154,32 @@ using Test, TextSearch, SimilaritySearch, LinearAlgebra, SparseArrays
         end
     end
 
+    @testset "synonyms: approximate vs exhaustive search" begin
+        lsi = LatentSemanticIndexing(vmodel, corpus; maxoutdim=8, verbose=false)
+        m = vocsize(lsi)
+
+        # this vocabulary is far below the auto threshold, so :auto must pick the exact
+        # path -- that is what keeps small-corpus results (and these tests) deterministic
+        @test m < TextSearch.LSI.SYNONYMS_APPROX_THRESHOLD
+        @test synonyms(lsi, 3; verbose=false) == synonyms(lsi, 3; approx=false, verbose=false)
+
+        # forcing the approximate path must still produce a well-formed network
+        net = synonyms(lsi, 3; approx=true, verbose=false)
+        @test net isa Dict{String,Vector{Pair{String,Float32}}}
+        @test length(net) == m
+        for (tok, neighbors) in net
+            @test length(neighbors) <= 3
+            @test all(nb != tok for (nb, _) in neighbors)
+            @test issorted(last.(neighbors))
+        end
+
+        # recall targets are forwarded, not silently ignored
+        net2 = synonyms(lsi, 3; approx=true, construction_recall=0.99, search_recall=0.95, verbose=false)
+        @test net2 isa Dict{String,Vector{Pair{String,Float32}}}
+
+        @test_throws ArgumentError synonyms(lsi, 3; approx=:bogus, verbose=false)
+    end
+
     @testset "Scaling options" begin
         for scaling in (:none, :inv_singular_values, :singular_values)
             lsi_s = LatentSemanticIndexing(vmodel, corpus; maxoutdim=4, scaling, verbose=false)

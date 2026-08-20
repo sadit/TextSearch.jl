@@ -44,6 +44,13 @@ external_path = ""          # kind="external": path to a token->vector JSON mapp
 
 [synonyms]
 k = 8
+# The synonym network is an all-pairs kNN over the vocabulary. "auto" uses an approximate
+# autotuned index once the vocabulary is large enough for the exact O(vocabulary^2) search
+# to hurt, and the exact one below that (where exact is both fast and, well, exact).
+# "always"/"never" force one or the other. The recalls are the autotuning targets.
+approx = "auto"              # "auto" | "always" | "never"
+construction_recall = 0.97
+search_recall = 0.9
 
 [lemmas]
 algorithm = "fft"           # "fft" | "dnet" | "randsel" | "multirandsel"

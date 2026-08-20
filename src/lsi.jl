@@ -320,21 +320,34 @@ function wordvectors(lsi::LatentSemanticIndexing; normalize::Bool=true)
     MatrixDatabase(O)
 end
 
+"The vocabulary size past which [`synonyms`](@ref)' `approx=:auto` prefers an approximate index."
+const SYNONYMS_APPROX_THRESHOLD = 4096
+
 """
     synonyms(voc::Vocabulary, wordvecs::AbstractDatabase, k::Integer=8;
-             dist=Dist.Cosine(), verbose::Bool=true) -> Dict{String,Vector{Pair{String,Float32}}}
+             dist=Dist.Cosine(), verbose::Bool=true, approx=:auto,
+             construction_recall::Real=0.97, search_recall::Real=0.9)
+        -> Dict{String,Vector{Pair{String,Float32}}}
 
-Builds an approximate synonym network from `voc`'s token embeddings in `wordvecs` (column
-`t` = embedding of `token(voc, t)`, e.g. from [`wordvectors`](@ref) or an externally
-supplied matrix): for every vocabulary token, finds its `k` nearest neighbors (by `dist`,
-cosine by default, computed exactly via `ParallelExhaustiveSearch`) among all *other*
-tokens' embeddings, using `SimilaritySearch.allknn`. Returns a `Dict` mapping each token to
-a list of `neighbor_token => distance` pairs sorted by increasing distance (lower means
-more similar); the token itself is always excluded from its own neighbor list.
+Builds a synonym network from `voc`'s token embeddings in `wordvecs` (column `t` =
+embedding of `token(voc, t)`, e.g. from [`wordvectors`](@ref) or an externally supplied
+matrix): for every vocabulary token, finds its `k` nearest neighbors (by `dist`, cosine by
+default) among all *other* tokens' embeddings, via `SimilaritySearch.allknn`. Returns a
+`Dict` mapping each token to a list of `neighbor_token => distance` pairs sorted by
+increasing distance (lower means more similar); the token itself is always excluded from
+its own neighbor list.
 
-For very large vocabularies, exhaustive all-pairs search may be too slow -- build your own
-approximate index instead (e.g. `SearchGraph(dist, wordvecs)`, `index!`'d) and call
-`SimilaritySearch.allknn` on it directly.
+`approx` selects how the all-pairs search is done, and matters enormously on real
+vocabularies -- an exhaustive search is O(vocabulary²):
+
+- `:auto` (default): approximate when `length(wordvecs) > SYNONYMS_APPROX_THRESHOLD`,
+  exhaustive below it (where exhaustive is already fast *and* exact, so there is nothing
+  to gain from approximating).
+- `true`: always approximate -- build a `SearchGraph`, autotuning construction to
+  `MinRecall(construction_recall)` and then the search parameters to
+  `MinRecall(search_recall)`.
+- `false`: always exhaustive, via `ParallelExhaustiveSearch`. Exact, and unusably slow past
+  a few tens of thousands of tokens.
 
 # Example
 ```julia
@@ -343,12 +356,30 @@ net["dog"]   # ["dogs" => 0.02, "puppy" => 0.11, ...]
 ```
 """
 function synonyms(voc::Vocabulary, wordvecs::AbstractDatabase, k::Integer=8;
-                   dist=Dist.Cosine(), verbose::Bool=true)
+                   dist=Dist.Cosine(), verbose::Bool=true, approx=:auto,
+                   construction_recall::Real=0.97, search_recall::Real=0.9)
     k > 0 || throw(ArgumentError("k must be positive"))
     m = length(wordvecs)
-    idx = ParallelExhaustiveSearch(dist, wordvecs)
-    ctx = GenericContext()
-    ids, dists = allknn(idx, ctx, min(k + 1, m); progress=Progress(m; dt=1, enabled=verbose, desc="synonyms allknn"))
+    kk = min(k + 1, m)
+
+    useapprox = approx === :auto ? m > SYNONYMS_APPROX_THRESHOLD :
+                approx isa Bool ? approx :
+                throw(ArgumentError("approx must be :auto, true, or false; got $(repr(approx))"))
+
+    ids, dists = if useapprox
+        G = SearchGraph(dist, wordvecs)
+        gctx = SearchGraphContext(;
+            hyperparameters_callback=OptimizeParameters(MinRecall(construction_recall)),
+            verbose)
+        index!(G, gctx)
+        # tune for the same k `allknn` will ask for; optimizing at the default ksearch=10
+        # and then querying at a different k leaves realized recall off target
+        optimize_index!(G, gctx, MinRecall(search_recall); ksearch=kk)
+        allknn(G, gctx, kk; progress=Progress(m; dt=1, enabled=verbose, desc="synonyms allknn (approx)"))
+    else
+        idx = ParallelExhaustiveSearch(dist, wordvecs)
+        allknn(idx, GenericContext(), kk; progress=Progress(m; dt=1, enabled=verbose, desc="synonyms allknn (exact)"))
+    end
 
     net = Dict{String,Vector{Pair{String,Float32}}}()
     for t in 1:m
@@ -373,11 +404,13 @@ end
 
 """
     synonyms(lsi::LatentSemanticIndexing, k::Integer=8;
-             dist=Dist.Cosine(), normalize::Bool=true, verbose::Bool=true) -> Dict{String,Vector{Pair{String,Float32}}}
+             dist=Dist.Cosine(), normalize::Bool=true, verbose::Bool=true, approx=:auto,
+             construction_recall::Real=0.97, search_recall::Real=0.9) -> Dict{String,Vector{Pair{String,Float32}}}
 
-Builds an approximate synonym network from `lsi`'s vocabulary embeddings ([`wordvectors`](@ref));
-see the `(voc, wordvecs, k)` method above for the underlying algorithm. `normalize` is
-forwarded to [`wordvectors`](@ref) before searching.
+Builds a synonym network from `lsi`'s vocabulary embeddings ([`wordvectors`](@ref)); see
+the `(voc, wordvecs, k)` method above for the underlying algorithm and for what `approx`/
+`construction_recall`/`search_recall` control. `normalize` is forwarded to
+[`wordvectors`](@ref) before searching.
 
 # Example
 ```julia
@@ -386,8 +419,10 @@ net["dog"]   # ["dogs" => 0.02, "puppy" => 0.11, ...]
 ```
 """
 function synonyms(lsi::LatentSemanticIndexing, k::Integer=8;
-                   dist=Dist.Cosine(), normalize::Bool=true, verbose::Bool=true)
-    synonyms(lsi.model.voc, wordvectors(lsi; normalize), k; dist, verbose)
+                   dist=Dist.Cosine(), normalize::Bool=true, verbose::Bool=true, approx=:auto,
+                   construction_recall::Real=0.97, search_recall::Real=0.9)
+    synonyms(lsi.model.voc, wordvectors(lsi; normalize), k;
+             dist, verbose, approx, construction_recall, search_recall)
 end
 
 indim(lsi::LatentSemanticIndexing) = vocsize(lsi.model)

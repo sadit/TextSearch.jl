@@ -114,6 +114,9 @@ external_path = ""
 
 [synonyms]
 k = $syn_k
+approx = "auto"
+construction_recall = 0.97
+search_recall = 0.9
 
 [lemmas]
 algorithm = "$lem_alg"

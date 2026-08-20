@@ -66,9 +66,28 @@ As of this writing the only published snapshot is **20231101** (323 languages); 
 
 ## Cost: read this before launching a full language
 
-`fit`'s dominant cost is the **synonym network**, an exact all-pairs kNN over the
-vocabulary -- O(vocabulary²). That makes vocabulary size, not corpus size, the thing that
-decides whether a run finishes today or next month. Measured on this repo (64 threads):
+`fit`'s heaviest step is the **synonym network**, an all-pairs kNN over the vocabulary.
+Done exactly it is O(vocabulary²), which makes vocabulary size -- not corpus size -- the
+thing that decides whether a run finishes today or next month.
+
+By default (`[synonyms] approx = "auto"`) vocabularies past a few thousand tokens use an
+autotuned approximate `SearchGraph` instead: construction tuned to `MinRecall(0.97)`,
+search parameters to `MinRecall(0.9)`. Measured against the exact answer on a real 37,388-
+token vocabulary (64 threads), that is **4× faster at essentially no cost where it
+matters**:
+
+| rank | recall of the exact neighbors |
+|---|---|
+| nearest neighbor (rank 1) | **0.969** |
+| top 3 | 0.949 |
+| top 8 | 0.855 |
+
+i.e. the closest synonyms -- the ones a synonym network is actually for -- are almost all
+recovered, and only the far tail of the list degrades. Raising `construction_recall` to
+0.999 does not improve this (it saturates), so 0.97 is the default. Since exact search
+grows quadratically while the graph does not, the speedup widens with vocabulary size.
+
+Even so, vocabulary size still drives everything. Measured:
 
 | corpus slice | articles | vocabulary | notes |
 |---|---|---|---|
@@ -108,9 +127,12 @@ corpora/wikipedia.sh --lang es
 textsearch merge profiles/wiki20231101-es --out wiki20231101-es.zip
 ```
 
-Even so, **mind the total cost before launching a full language.** One 25,000-article
-Spanish batch at `--min-ndocs 5` (≈143k tokens) ran for **over 50 minutes** without
-finishing on 64 threads, so 74 of them is measured in days, not hours. Practical options:
+Even so, **mind the total cost before launching a full language.** With *exact* synonyms,
+one 25,000-article Spanish batch at `--min-ndocs 5` (≈143k tokens) ran over 50 minutes
+without finishing on 64 threads. Approximate search removes that particular wall, but a
+25k-article batch still carries a second cost that pruning does not touch: LSI factorizes a
+dense `n×n` Gram matrix, so it grows with the *batch size*, independent of vocabulary.
+Practical options:
 
 - **Prune harder.** `--min-ndocs 20` cuts the vocabulary to ~59k, roughly 6× less synonym
   work than `min_ndocs=5` and ~110× less than no pruning, at the cost of the rare-token
