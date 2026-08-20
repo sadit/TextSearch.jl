@@ -36,7 +36,8 @@ set/token-membership objects (sets or sorted vectors of integer ids).
 BinaryInvertedFile(vocsize::Integer, dist=Dist.Sets.Jaccard()) = InvertedFile(vocsize, dist)
 
 export WeightedInvertedFile, BinaryInvertedFile, AbstractInvertedFile, InvertedFile, SortedIntSet,
-       InvertedFileContext, getcontext, set_distance_evaluate, search_invfile, select_posting_lists
+       InvertedFileContext, getcontext, set_distance_evaluate, search_invfile, select_posting_lists,
+       MatrixDatabase, AbstractDatabase
 
 include("tokenizer/Tokenizer.jl")
 using .Tokenizer
@@ -79,6 +80,7 @@ include("bow.jl")
 include("sparseconversions.jl")
 include("vmodel.jl")
 include("emodel.jl")
+include("stopwords.jl")
 include("queryexpansion.jl")
 include("profile.jl")
 
@@ -93,6 +95,8 @@ export FullText, TextInvertedFile
 include("lsi.jl")
 using .LSI: LatentSemanticIndexing, LSIModel, indim, outdim, wordvectors, synonyms
 export LSI, LatentSemanticIndexing, LSIModel, indim, outdim, wordvectors, synonyms
+
+include("lemmas.jl")
 
 include("randomindexing.jl")
 using .RI: RandomIndexing, RIModel, BitSketch, bitsketch, bitsketch_corpus

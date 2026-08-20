@@ -2,7 +2,11 @@
 
 export save_profile, load_profile, zip_profile
 
-const _PROFILE_FORMAT_VERSION = 2
+# Kept at "1.0" while the schema is still being actively developed (lemmas/encoder/
+# stopword_candidates sections added on top of it are all optional/additive, so old
+# profiles without them keep loading fine) -- bump only once the schema is genuinely
+# settled, not for every incremental addition.
+const _PROFILE_FORMAT_VERSION = "1.0"
 const _PROFILE_MANIFEST_NAME = "manifest.json"
 
 # ── weighting tag tables ─────────────────────────────────────────────────────
@@ -194,17 +198,33 @@ end
 
 """
     save_profile(dir::AbstractString, model::VectorModel;
-                 synonyms::AbstractDict=Dict{String,Vector{Pair{String,Float32}}}()) -> dir
+                 synonyms::AbstractDict=Dict{String,Vector{Pair{String,Float32}}}(),
+                 lemmas::AbstractDict{String,String}=Dict{String,String}(),
+                 stopword_candidates::AbstractVector{<:AbstractString}=String[],
+                 encoder::Union{Nothing,NamedTuple}=nothing) -> dir
 
 Serializes `model` -- its `voc`'s [`TextConfig`](@ref) and vocabulary counters, its
 weighting scheme, and its precomputed `weight` vector -- together with a `synonyms`
-network (e.g. as produced by [`LSI.synonyms`](@ref)) into `dir` (created if missing) as a
-small directory of plain, human-readable JSON files: one per "large" piece --
-`vocabulary.json`, `weights.json`, `synonyms.json` (only written if `synonyms` is
-non-empty), and `stopwords.json` (only written if `model`'s `transformation` involves
-one) -- tied together by a small `manifest.json` that holds everything else
-(normalization/tokenization flags, weighting tags, and file references). Load it back
-with [`load_profile`](@ref), or package it for distribution with [`zip_profile`](@ref).
+network (e.g. as produced by [`LSI.synonyms`](@ref)), a `lemmas` map (e.g. as produced by
+[`lemma_clusters`](@ref)), a `stopword_candidates` list (e.g. as produced by
+[`stopword_candidates`](@ref)), and `encoder` provenance metadata, into `dir` (created if
+missing) as a small directory of plain, human-readable JSON files: one per "large" piece --
+`vocabulary.json`, `weights.json`, `synonyms.json`/`lemmas.json`/`stopword_candidates.json`
+(each only written if non-empty), and `stopwords.json` (only written if `model`'s
+`transformation` involves one) -- tied together by a small `manifest.json` that holds
+everything else (normalization/tokenization flags, weighting tags, encoder metadata, and
+file references). Load it back with [`load_profile`](@ref), or package it for
+distribution with [`zip_profile`](@ref).
+
+`lemmas` should map only non-identity tokens (a lookup miss on load means "token is its
+own lemma"). `stopword_candidates` is distinct from and additive to the `stopwords.json`
+mechanism above: that one is the *applied* `IgnoreStopwords` set baked into the
+transformation, this one is the *candidate* list a frequency-based detector produced for
+review -- a profile can have neither, either, or both (they typically coincide when a
+detector's candidates were the ones actually wired into the transformation). `encoder` is
+a `NamedTuple` such as `(; kind=:lsi, outdim=128, scaling=:none, source_path="")` recording
+which encoder produced `synonyms`/`lemmas` and its hyperparameters -- for provenance only;
+the encoder's own projection (e.g. an LSI `P` matrix) is not persisted.
 
 Deliberately NOT a generic object-graph dump (unlike e.g. JLD2): every field is encoded
 by hand into a small, versioned schema, so every file is fully inspectable/diffable/portable
@@ -215,7 +235,10 @@ isn't `IdentityTokenTransformation`/`IgnoreStopwords`/`SnowballTokenTransformati
 `ChainTransformation` of those, errors clearly rather than silently mis-saving.
 """
 function save_profile(dir::AbstractString, model::VectorModel;
-                       synonyms::AbstractDict=Dict{String,Vector{Pair{String,Float32}}}())
+                       synonyms::AbstractDict=Dict{String,Vector{Pair{String,Float32}}}(),
+                       lemmas::AbstractDict{String,String}=Dict{String,String}(),
+                       stopword_candidates::AbstractVector{<:AbstractString}=String[],
+                       encoder::Union{Nothing,NamedTuple}=nothing)
     mkpath(dir)
     voc = model.voc
 
@@ -257,20 +280,41 @@ function save_profile(dir::AbstractString, model::VectorModel;
         manifest["synonyms_file"] = "synonyms.json"
     end
 
+    if !isempty(lemmas)
+        _write_json(joinpath(dir, "lemmas.json"), Dict(lemmas))
+        manifest["lemmas_file"] = "lemmas.json"
+    end
+
+    if !isempty(stopword_candidates)
+        _write_json(joinpath(dir, "stopword_candidates.json"), collect(stopword_candidates))
+        manifest["stopword_candidates_file"] = "stopword_candidates.json"
+    end
+
+    if encoder !== nothing
+        manifest["encoder"] = Dict(String(k) => (v isa Symbol ? String(v) : v) for (k, v) in pairs(encoder))
+    end
+
     _write_json(joinpath(dir, _PROFILE_MANIFEST_NAME), manifest)
     dir
 end
 
 """
-    load_profile(path::AbstractString) -> (model::VectorModel, synonyms::Dict{String,Vector{Pair{String,Float32}}})
+    load_profile(path::AbstractString) -> (; model, synonyms, lemmas, stopword_candidates, encoder)
 
 Reads back a profile written by [`save_profile`](@ref) -- `path` may be either the
 directory `save_profile` produced, or a `.zip` archive of it (see [`zip_profile`](@ref));
 this is auto-detected via `isdir(path)`, and a `.zip` is read directly from memory, no
 extraction to disk needed. Reconstructs the `Vocabulary` (rebuilding `token2id` from the
-stored `tokens` list) and `VectorModel`, and returns the attached synonym network
-alongside it (an empty `Dict` if none was saved), ready to pass straight into e.g.
-`TextInvertedFile(model; synonyms, ...)`.
+stored `tokens` list) and `VectorModel`, and returns a `NamedTuple`:
+
+- `model::VectorModel`
+- `synonyms::Dict{String,Vector{Pair{String,Float32}}}` (empty if none saved)
+- `lemmas::Dict{String,String}` (empty if none saved)
+- `stopword_candidates::Vector{String}` (empty if none saved)
+- `encoder::Union{Nothing,Dict{String,Any}}` (`nothing` if none saved)
+
+`model`/`synonyms` are ready to pass straight into e.g. `TextInvertedFile(model;
+synonyms, ...)`.
 
 Errors if the profile's `transformation` needs `Snowball`/`Languages` to reconstruct (a
 `"snowball"` tagged-union entry) and those packages aren't loaded yet.
@@ -318,7 +362,26 @@ function load_profile(path::AbstractString)
         Dict{String,Vector{Pair{String,Float32}}}()
     end
 
-    model, synonyms
+    lemmas = if haskey(manifest, :lemmas_file)
+        lemd = read_file(String(manifest[:lemmas_file]))
+        Dict{String,String}(String(tok) => String(lemma) for (tok, lemma) in lemd)
+    else
+        Dict{String,String}()
+    end
+
+    stopword_candidates = if haskey(manifest, :stopword_candidates_file)
+        String.(read_file(String(manifest[:stopword_candidates_file])))
+    else
+        String[]
+    end
+
+    encoder = if haskey(manifest, :encoder)
+        Dict{String,Any}(String(k) => v for (k, v) in pairs(manifest[:encoder]))
+    else
+        nothing
+    end
+
+    (; model, synonyms, lemmas, stopword_candidates, encoder)
 end
 
 """

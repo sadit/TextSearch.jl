@@ -12,6 +12,9 @@ using Snowball, Languages
         "casa" => [("hogar" => 0.12f0), ("vivienda" => 0.20f0)],
         "pera" => [("manzana" => 0.1f0)],
     )
+    lemmas = Dict("casas" => "casa", "peras" => "pera")
+    stopword_candidates = ["la", "esta"]
+    encoder = (; kind=:lsi, outdim=8, scaling=:none, source_path="")
 
     @testset "default TextConfig: directory layout and round-trip" begin
         textconfig = TextConfig(tokenization=TokenizationConfig(nlist=[1]))
@@ -20,36 +23,43 @@ using Snowball, Languages
 
         dir = tempname()
         try
-            save_profile(dir, model; synonyms)
+            save_profile(dir, model; synonyms, lemmas, stopword_candidates, encoder)
 
             # one file per "large" variable, not a single big JSON blob
             @test isfile(joinpath(dir, "manifest.json"))
             @test isfile(joinpath(dir, "vocabulary.json"))
             @test isfile(joinpath(dir, "weights.json"))
             @test isfile(joinpath(dir, "synonyms.json"))
+            @test isfile(joinpath(dir, "lemmas.json"))
+            @test isfile(joinpath(dir, "stopword_candidates.json"))
             @test !isfile(joinpath(dir, "stopwords.json"))  # no stopwords transformation here
 
-            reloaded_model, reloaded_synonyms = load_profile(dir)
+            p = load_profile(dir)
 
-            @test reloaded_model.voc.token == model.voc.token
-            @test reloaded_model.voc.occs == model.voc.occs
-            @test reloaded_model.voc.ndocs == model.voc.ndocs
-            @test reloaded_model.voc.trainsize[] == model.voc.trainsize[]
-            @test reloaded_model.voc.numtokens[] == model.voc.numtokens[]
-            @test reloaded_model.global_weighting isa IdfWeighting
-            @test reloaded_model.local_weighting isa TfWeighting
-            @test reloaded_model.maxoccs == model.maxoccs
-            @test reloaded_model.weight == model.weight
-            @test reloaded_synonyms == synonyms
+            @test p.model.voc.token == model.voc.token
+            @test p.model.voc.occs == model.voc.occs
+            @test p.model.voc.ndocs == model.voc.ndocs
+            @test p.model.voc.trainsize[] == model.voc.trainsize[]
+            @test p.model.voc.numtokens[] == model.voc.numtokens[]
+            @test p.model.global_weighting isa IdfWeighting
+            @test p.model.local_weighting isa TfWeighting
+            @test p.model.maxoccs == model.maxoccs
+            @test p.model.weight == model.weight
+            @test p.synonyms == synonyms
+            @test p.lemmas == lemmas
+            @test sort(p.stopword_candidates) == sort(stopword_candidates)
+            @test p.encoder["kind"] == "lsi"
+            @test p.encoder["outdim"] == 8
+            @test p.encoder["scaling"] == "none"
 
             q = "la casa roja"
-            @test vectorize(reloaded_model, q) == vectorize(model, q)
+            @test vectorize(p.model, q) == vectorize(model, q)
         finally
             rm(dir; force=true, recursive=true)
         end
     end
 
-    @testset "no synonyms: synonyms.json is omitted, load_profile returns an empty Dict" begin
+    @testset "none of synonyms/lemmas/stopword_candidates/encoder: files+keys omitted" begin
         textconfig = TextConfig(tokenization=TokenizationConfig(nlist=[1]))
         voc = Vocabulary(textconfig, corpus)
         model = VectorModel(IdfWeighting(), TfWeighting(), voc)
@@ -58,10 +68,14 @@ using Snowball, Languages
         try
             save_profile(dir, model)
             @test !isfile(joinpath(dir, "synonyms.json"))
+            @test !isfile(joinpath(dir, "lemmas.json"))
+            @test !isfile(joinpath(dir, "stopword_candidates.json"))
 
-            _, reloaded_synonyms = load_profile(dir)
-            @test reloaded_synonyms isa Dict{String,Vector{Pair{String,Float32}}}
-            @test isempty(reloaded_synonyms)
+            p = load_profile(dir)
+            @test p.synonyms isa Dict{String,Vector{Pair{String,Float32}}} && isempty(p.synonyms)
+            @test p.lemmas isa Dict{String,String} && isempty(p.lemmas)
+            @test p.stopword_candidates isa Vector{String} && isempty(p.stopword_candidates)
+            @test p.encoder === nothing
         finally
             rm(dir; force=true, recursive=true)
         end
@@ -81,14 +95,14 @@ using Snowball, Languages
             save_profile(dir, model)
             @test isfile(joinpath(dir, "stopwords.json"))
 
-            reloaded_model, reloaded_synonyms = load_profile(dir)
+            p = load_profile(dir)
 
-            @test isempty(reloaded_synonyms)
-            @test reloaded_model.voc.token == model.voc.token
+            @test isempty(p.synonyms)
+            @test p.model.voc.token == model.voc.token
 
             q = "la casa roja"
-            @test collect(tokenize(reloaded_model.voc.textconfig, q)) == collect(tokenize(textconfig, q))
-            @test vectorize(reloaded_model, q) == vectorize(model, q)
+            @test collect(tokenize(p.model.voc.textconfig, q)) == collect(tokenize(textconfig, q))
+            @test vectorize(p.model, q) == vectorize(model, q)
         finally
             rm(dir; force=true, recursive=true)
         end
@@ -102,18 +116,21 @@ using Snowball, Languages
         dir = tempname()
         zippath = dir * ".zip"
         try
-            save_profile(dir, model; synonyms)
+            save_profile(dir, model; synonyms, lemmas, stopword_candidates, encoder)
             out = zip_profile(dir, zippath)
             @test out == zippath
             @test isfile(zippath)
 
-            reloaded_model, reloaded_synonyms = load_profile(zippath)
-            @test reloaded_model.voc.token == model.voc.token
-            @test reloaded_model.weight == model.weight
-            @test reloaded_synonyms == synonyms
+            p = load_profile(zippath)
+            @test p.model.voc.token == model.voc.token
+            @test p.model.weight == model.weight
+            @test p.synonyms == synonyms
+            @test p.lemmas == lemmas
+            @test sort(p.stopword_candidates) == sort(stopword_candidates)
+            @test p.encoder["kind"] == "lsi"
 
             q = "la casa roja"
-            @test vectorize(reloaded_model, q) == vectorize(model, q)
+            @test vectorize(p.model, q) == vectorize(model, q)
         finally
             rm(dir; force=true, recursive=true)
             rm(zippath; force=true)

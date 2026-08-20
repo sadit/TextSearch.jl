@@ -1,0 +1,190 @@
+using Test
+using JSON3, CSV
+using TextSearch
+
+include(joinpath(@__DIR__, "..", "src", "TextSearchApp.jl"))
+using .TextSearchApp
+
+const FIT_CONFIG = """
+[input]
+format = "jsonl"
+path = "%CORPUS%"
+text_key = "text"
+
+[output]
+dir = "%OUTDIR%"
+prefix = "corpus"
+batch_size = %BATCH_SIZE%
+
+[normalization]
+del_diac = true
+del_dup = false
+del_punc = false
+group_num = true
+group_url = true
+group_usr = false
+group_emo = false
+lc = true
+
+[tokenization]
+nlist = [1]
+mark_token_type = true
+
+[stopwords]
+enabled = %STOPWORDS%
+doc_freq_threshold = 0.5
+
+[encoder]
+kind = "lsi"
+outdim = 8
+scaling = "none"
+external_path = ""
+
+[synonyms]
+k = 3
+
+[lemmas]
+algorithm = "fft"
+num_clusters = 0
+selector = "shortest"
+"""
+
+function write_jsonl_corpus(path, docs)
+    open(path, "w") do io
+        for d in docs
+            println(io, JSON3.write((; text=d)))
+        end
+    end
+end
+
+function write_fit_config(path; corpus, outdir, batch_size=0, stopwords=false)
+    cfg = replace(FIT_CONFIG,
+        "%CORPUS%" => corpus, "%OUTDIR%" => outdir,
+        "%BATCH_SIZE%" => string(batch_size), "%STOPWORDS%" => string(stopwords))
+    write(path, cfg)
+    path
+end
+
+"""
+    capture_stdout(f) -> String
+
+Runs `f()` with `stdout` redirected to a temp file and returns everything it printed.
+`redirect_stdout` needs a real OS-backed stream (not a plain in-memory `IOBuffer`), hence
+the temp file.
+"""
+function capture_stdout(f)
+    mktemp() do path, io
+        redirect_stdout(f, io)
+        flush(io)
+        read(path, String)
+    end
+end
+
+@testset "textsearch CLI" begin
+    mktempdir() do dir
+        withenv("TEXTSEARCH_HOME" => joinpath(dir, "home")) do
+
+            docs = [
+                "la casa roja", "la casa verde", "la casa azul",
+                "la manzana roja", "la pera verde esta rica",
+                "la manzana verde esta rica", "la hoja verde",
+            ]
+            corpus_path = joinpath(dir, "corpus.jsonl")
+            write_jsonl_corpus(corpus_path, docs)
+
+            @testset "fit: single batch (batch_size=0)" begin
+                outdir = joinpath(dir, "profiles1")
+                cfgpath = write_fit_config(joinpath(dir, "fit1.toml"); corpus=corpus_path, outdir)
+                TextSearchApp.cmd_fit(["--config", cfgpath])
+                @test isfile(joinpath(outdir, "corpus-0001.zip"))
+                @test !isfile(joinpath(outdir, "corpus-0002.zip"))
+            end
+
+            @testset "fit: batching splits output into multiple zips" begin
+                outdir = joinpath(dir, "profiles2")
+                cfgpath = write_fit_config(joinpath(dir, "fit2.toml"); corpus=corpus_path, outdir, batch_size=3)
+                TextSearchApp.cmd_fit(["--config", cfgpath])
+                @test isfile(joinpath(outdir, "corpus-0001.zip"))
+                @test isfile(joinpath(outdir, "corpus-0002.zip"))
+                @test isfile(joinpath(outdir, "corpus-0003.zip"))
+                @test !isfile(joinpath(outdir, "corpus-0004.zip"))
+            end
+
+            @testset "fit: stopwords enabled -- stopwords structurally absent from the profile's vocabulary" begin
+                outdir = joinpath(dir, "profiles3")
+                cfgpath = write_fit_config(joinpath(dir, "fit3.toml"); corpus=corpus_path, outdir, stopwords=true)
+                TextSearchApp.cmd_fit(["--config", cfgpath])
+                p = TextSearch.load_profile(joinpath(outdir, "corpus-0001.zip"))
+                @test TextSearch.token2id(p.model.voc, "la") == 0  # "la" appears in every doc -> flagged and excluded
+                @test !isempty(p.stopword_candidates)
+            end
+
+            zippath = joinpath(dir, "profiles1", "corpus-0001.zip")
+
+            @testset "search: token-intersection matching" begin
+                out = capture_stdout() do
+                    TextSearchApp.cmd_search([zippath, "casa roja", "--collection", corpus_path, "--format", "jsonl"])
+                end
+                lines = filter(!isempty, split(out, '\n'))
+                texts = [JSON3.read(l)[:text] for l in lines]
+                @test "la casa roja" in texts   # shares both "casa" and "roja"
+                @test "la casa verde" in texts  # shares "casa" (t=1 default: any shared token)
+                @test !("la pera verde esta rica" in texts)
+
+                out2 = capture_stdout() do
+                    TextSearchApp.cmd_search([zippath, "casa roja", "--collection", corpus_path, "--format", "jsonl", "-t", "2"])
+                end
+                lines2 = filter(!isempty, split(out2, '\n'))
+                texts2 = [JSON3.read(l)[:text] for l in lines2]
+                @test texts2 == ["la casa roja"]  # t=2: must share BOTH tokens
+            end
+
+            @testset "install / list / info / uninstall" begin
+                TextSearchApp.cmd_install([zippath, "mynick"])
+                @test TextSearchApp.list_nicknames() == ["mynick"]
+
+                info_text = capture_stdout() do
+                    TextSearchApp.cmd_info(["mynick"])
+                end
+                @test occursin("trainsize", info_text)
+                @test occursin("vocsize", info_text)
+                @test occursin(TextSearchApp.profile_path("mynick"), info_text)
+
+                uninstall_text = capture_stdout() do
+                    TextSearchApp.cmd_uninstall(["mynick"])
+                end
+                @test occursin(TextSearchApp.profile_path("mynick"), uninstall_text)
+                @test isfile(TextSearchApp.profile_path("mynick"))  # NOT deleted
+
+                @test_throws Exception TextSearchApp.cmd_install([zippath, "mynick"])  # no --force -> errors
+                TextSearchApp.cmd_install([zippath, "mynick", "--force"])              # --force -> ok
+            end
+
+            @testset "merge: stub exits nonzero" begin
+                @test TextSearchApp.cmd_merge(["a", "b", "--out", "c"]) == 1
+            end
+
+            @testset "corpusio.each_record: jsonl / csv / json" begin
+                jsonl_path = joinpath(dir, "rec.jsonl")
+                write_jsonl_corpus(jsonl_path, ["hello", "world"])
+                recs = collect(TextSearchApp.each_record(:jsonl, jsonl_path, "text"))
+                @test [r.first for r in recs] == ["hello", "world"]
+
+                csv_path = joinpath(dir, "rec.csv")
+                open(csv_path, "w") do io
+                    println(io, "text,extra")
+                    println(io, "hello,1")
+                    println(io, "world,2")
+                end
+                recs_csv = collect(TextSearchApp.each_record(:csv, csv_path, "text"))
+                @test [r.first for r in recs_csv] == ["hello", "world"]
+                @test string(recs_csv[1].second["extra"]) == "1"
+
+                json_path = joinpath(dir, "rec.json")
+                write(json_path, JSON3.write([(; text="hello"), (; text="world")]))
+                recs_json = collect(TextSearchApp.each_record(:json, json_path, "text"))
+                @test [r.first for r in recs_json] == ["hello", "world"]
+            end
+        end
+    end
+end

@@ -1,6 +1,6 @@
 # This file is a part of TextSearch.jl
 
-export Vocabulary, occs, ndocs, token, vocsize, trainsize, numtokens, filter_tokens, tokenize_and_append!, merge_voc, update_voc!, vocabulary_from_thesaurus, token2id, encode, decode, table
+export Vocabulary, occs, ndocs, token, vocsize, trainsize, numtokens, avgdoclen, filter_tokens, tokenize_and_append!, merge_voc, update_voc!, vocabulary_from_thesaurus, token2id, encode, decode, table
 
 """
     Vocabulary

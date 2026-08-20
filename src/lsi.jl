@@ -321,19 +321,63 @@ function wordvectors(lsi::LatentSemanticIndexing; normalize::Bool=true)
 end
 
 """
+    synonyms(voc::Vocabulary, wordvecs::AbstractDatabase, k::Integer=8;
+             dist=Dist.Cosine(), verbose::Bool=true) -> Dict{String,Vector{Pair{String,Float32}}}
+
+Builds an approximate synonym network from `voc`'s token embeddings in `wordvecs` (column
+`t` = embedding of `token(voc, t)`, e.g. from [`wordvectors`](@ref) or an externally
+supplied matrix): for every vocabulary token, finds its `k` nearest neighbors (by `dist`,
+cosine by default, computed exactly via `ParallelExhaustiveSearch`) among all *other*
+tokens' embeddings, using `SimilaritySearch.allknn`. Returns a `Dict` mapping each token to
+a list of `neighbor_token => distance` pairs sorted by increasing distance (lower means
+more similar); the token itself is always excluded from its own neighbor list.
+
+For very large vocabularies, exhaustive all-pairs search may be too slow -- build your own
+approximate index instead (e.g. `SearchGraph(dist, wordvecs)`, `index!`'d) and call
+`SimilaritySearch.allknn` on it directly.
+
+# Example
+```julia
+net = synonyms(voc, wordvectors(lsi), 5)
+net["dog"]   # ["dogs" => 0.02, "puppy" => 0.11, ...]
+```
+"""
+function synonyms(voc::Vocabulary, wordvecs::AbstractDatabase, k::Integer=8;
+                   dist=Dist.Cosine(), verbose::Bool=true)
+    k > 0 || throw(ArgumentError("k must be positive"))
+    m = length(wordvecs)
+    idx = ParallelExhaustiveSearch(dist, wordvecs)
+    ctx = GenericContext()
+    ids, dists = allknn(idx, ctx, min(k + 1, m); progress=Progress(m; dt=1, enabled=verbose, desc="synonyms allknn"))
+
+    net = Dict{String,Vector{Pair{String,Float32}}}()
+    for t in 1:m
+        pairs = Pair{String,Float32}[]
+        for j in 1:size(ids, 1)
+            nb = ids[j, t]
+            d = dists[j, t]
+            # a token with a near-uniform document frequency (e.g. "the") can end up with
+            # an all-zero embedding after LSI projection, making cosine distance to/from it
+            # undefined (0/0 = NaN); such a token has no meaningful direction to compare, so
+            # it gets no synonyms and is never anyone else's synonym, rather than poisoning
+            # the network (and downstream JSON serialization, which rejects NaN) with NaN.
+            (nb == 0 || nb == t || isnan(d)) && continue
+            push!(pairs, token(voc, nb) => d)
+            length(pairs) >= k && break
+        end
+        net[token(voc, t)] = pairs
+    end
+
+    net
+end
+
+"""
     synonyms(lsi::LatentSemanticIndexing, k::Integer=8;
              dist=Dist.Cosine(), normalize::Bool=true, verbose::Bool=true) -> Dict{String,Vector{Pair{String,Float32}}}
 
-Builds an approximate synonym network from `lsi`'s vocabulary embeddings ([`wordvectors`](@ref)):
-for every vocabulary token, finds its `k` nearest neighbors (by `dist`, cosine by default,
-computed exactly via `ParallelExhaustiveSearch`) among all *other* tokens' LSI embeddings, using
-`SimilaritySearch.allknn`. Returns a `Dict` mapping each token to a list of
-`neighbor_token => distance` pairs sorted by increasing distance (lower means more similar); the
-token itself is always excluded from its own neighbor list.
-
-For very large vocabularies, exhaustive all-pairs search may be too slow -- build your own
-approximate index instead (e.g. `SearchGraph(dist, wordvectors(lsi))`, `index!`'d) and call
-`SimilaritySearch.allknn` on it directly.
+Builds an approximate synonym network from `lsi`'s vocabulary embeddings ([`wordvectors`](@ref));
+see the `(voc, wordvecs, k)` method above for the underlying algorithm. `normalize` is
+forwarded to [`wordvectors`](@ref) before searching.
 
 # Example
 ```julia
@@ -343,27 +387,7 @@ net["dog"]   # ["dogs" => 0.02, "puppy" => 0.11, ...]
 """
 function synonyms(lsi::LatentSemanticIndexing, k::Integer=8;
                    dist=Dist.Cosine(), normalize::Bool=true, verbose::Bool=true)
-    k > 0 || throw(ArgumentError("k must be positive"))
-    m = vocsize(lsi)
-    X = wordvectors(lsi; normalize)
-    idx = ParallelExhaustiveSearch(dist, X)
-    ctx = GenericContext()
-    ids, dists = allknn(idx, ctx, min(k + 1, m); progress=Progress(m; dt=1, enabled=verbose, desc="synonyms allknn"))
-
-    voc = lsi.model.voc
-    net = Dict{String,Vector{Pair{String,Float32}}}()
-    for t in 1:m
-        pairs = Pair{String,Float32}[]
-        for j in 1:size(ids, 1)
-            nb = ids[j, t]
-            (nb == 0 || nb == t) && continue
-            push!(pairs, token(voc, nb) => dists[j, t])
-            length(pairs) >= k && break
-        end
-        net[token(voc, t)] = pairs
-    end
-
-    net
+    synonyms(lsi.model.voc, wordvectors(lsi; normalize), k; dist, verbose)
 end
 
 indim(lsi::LatentSemanticIndexing) = vocsize(lsi.model)
