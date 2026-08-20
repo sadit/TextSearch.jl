@@ -1,7 +1,7 @@
 using Test, TextSearch, SimilaritySearch
 using Snowball, Languages
 
-@testset "save_profile / load_profile" begin
+@testset "save_profile / load_profile / zip_profile" begin
     corpus = [
         "la casa roja",
         "la casa verde",
@@ -13,15 +13,23 @@ using Snowball, Languages
         "pera" => [("manzana" => 0.1f0)],
     )
 
-    @testset "default TextConfig round-trip" begin
+    @testset "default TextConfig: directory layout and round-trip" begin
         textconfig = TextConfig(tokenization=TokenizationConfig(nlist=[1]))
         voc = Vocabulary(textconfig, corpus)
         model = VectorModel(IdfWeighting(), TfWeighting(), voc)
 
-        path = tempname() * ".json"
+        dir = tempname()
         try
-            save_profile(path, model; synonyms)
-            reloaded_model, reloaded_synonyms = load_profile(path)
+            save_profile(dir, model; synonyms)
+
+            # one file per "large" variable, not a single big JSON blob
+            @test isfile(joinpath(dir, "manifest.json"))
+            @test isfile(joinpath(dir, "vocabulary.json"))
+            @test isfile(joinpath(dir, "weights.json"))
+            @test isfile(joinpath(dir, "synonyms.json"))
+            @test !isfile(joinpath(dir, "stopwords.json"))  # no stopwords transformation here
+
+            reloaded_model, reloaded_synonyms = load_profile(dir)
 
             @test reloaded_model.voc.token == model.voc.token
             @test reloaded_model.voc.occs == model.voc.occs
@@ -37,11 +45,29 @@ using Snowball, Languages
             q = "la casa roja"
             @test vectorize(reloaded_model, q) == vectorize(model, q)
         finally
-            rm(path; force=true)
+            rm(dir; force=true, recursive=true)
         end
     end
 
-    @testset "ChainTransformation with Snowball + IgnoreStopwords round-trip" begin
+    @testset "no synonyms: synonyms.json is omitted, load_profile returns an empty Dict" begin
+        textconfig = TextConfig(tokenization=TokenizationConfig(nlist=[1]))
+        voc = Vocabulary(textconfig, corpus)
+        model = VectorModel(IdfWeighting(), TfWeighting(), voc)
+
+        dir = tempname()
+        try
+            save_profile(dir, model)
+            @test !isfile(joinpath(dir, "synonyms.json"))
+
+            _, reloaded_synonyms = load_profile(dir)
+            @test reloaded_synonyms isa Dict{String,Vector{Pair{String,Float32}}}
+            @test isempty(reloaded_synonyms)
+        finally
+            rm(dir; force=true, recursive=true)
+        end
+    end
+
+    @testset "ChainTransformation with Snowball + IgnoreStopwords: stopwords.json + round-trip" begin
         lang = Languages.Spanish()
         textconfig = TextConfig(
             tokenization=TokenizationConfig(nlist=[1]),
@@ -50,10 +76,12 @@ using Snowball, Languages
         voc = Vocabulary(textconfig, corpus)
         model = VectorModel(IdfWeighting(), TfWeighting(), voc)
 
-        path = tempname() * ".json"
+        dir = tempname()
         try
-            save_profile(path, model)
-            reloaded_model, reloaded_synonyms = load_profile(path)
+            save_profile(dir, model)
+            @test isfile(joinpath(dir, "stopwords.json"))
+
+            reloaded_model, reloaded_synonyms = load_profile(dir)
 
             @test isempty(reloaded_synonyms)
             @test reloaded_model.voc.token == model.voc.token
@@ -62,7 +90,53 @@ using Snowball, Languages
             @test collect(tokenize(reloaded_model.voc.textconfig, q)) == collect(tokenize(textconfig, q))
             @test vectorize(reloaded_model, q) == vectorize(model, q)
         finally
-            rm(path; force=true)
+            rm(dir; force=true, recursive=true)
+        end
+    end
+
+    @testset "zip_profile packages a directory, load_profile reads it back directly" begin
+        textconfig = TextConfig(tokenization=TokenizationConfig(nlist=[1]))
+        voc = Vocabulary(textconfig, corpus)
+        model = VectorModel(IdfWeighting(), TfWeighting(), voc)
+
+        dir = tempname()
+        zippath = dir * ".zip"
+        try
+            save_profile(dir, model; synonyms)
+            out = zip_profile(dir, zippath)
+            @test out == zippath
+            @test isfile(zippath)
+
+            reloaded_model, reloaded_synonyms = load_profile(zippath)
+            @test reloaded_model.voc.token == model.voc.token
+            @test reloaded_model.weight == model.weight
+            @test reloaded_synonyms == synonyms
+
+            q = "la casa roja"
+            @test vectorize(reloaded_model, q) == vectorize(model, q)
+        finally
+            rm(dir; force=true, recursive=true)
+            rm(zippath; force=true)
+        end
+    end
+
+    @testset "zip_profile default zippath is dir * \".zip\"" begin
+        textconfig = TextConfig(tokenization=TokenizationConfig(nlist=[1]))
+        voc = Vocabulary(textconfig, corpus)
+        model = VectorModel(IdfWeighting(), TfWeighting(), voc)
+
+        dir = tempname()
+        try
+            save_profile(dir, model)
+            out = zip_profile(dir)
+            try
+                @test out == dir * ".zip"
+                @test isfile(out)
+            finally
+                rm(out; force=true)
+            end
+        finally
+            rm(dir; force=true, recursive=true)
         end
     end
 end

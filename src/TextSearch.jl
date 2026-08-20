@@ -9,6 +9,7 @@ using Accessors
 using SimilaritySearch, LinearAlgebra, SparseArrays
 using SimilaritySearch: getminbatch
 using JSON3
+using ZipArchives
 
 using ProgressMeter
 

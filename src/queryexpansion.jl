@@ -75,3 +75,33 @@ function expand_synonyms!(vec::SparseVector, voc::Vocabulary, synonyms; weight_f
     normalize && normalize!(vec)
     vec
 end
+
+"""
+    expand_synonyms!(bow::AbstractDict{<:Integer,<:Real}, voc::Vocabulary, synonyms) -> bow
+
+Expands a **query**'s bag-of-words IN PLACE by adding every present token's synonyms as
+extra keys -- the [`BM25InvertedFile`](@ref) counterpart of the `SparseVector` method above.
+There is no `weight_fn`/`normalize` here: BM25 scoring (`bm25score`) never reads the query
+side's frequencies, only which token ids are present ("query's own frequencies are not
+used"), so an injected synonym only needs to make its id present in `bow` -- any positive
+count works, and an id already present (e.g. the synonym also appears literally in the
+query) is left untouched rather than overwritten.
+
+As with the `SparseVector` method, `bow`'s original keys are snapshotted once (via
+`collect`) before any insertion, so newly-added synonym ids are never themselves expanded.
+An OOV synonym (`token2id` returning `0`) is silently skipped, matching `bagofwords!`'s
+existing convention.
+"""
+function expand_synonyms!(bow::AbstractDict{K,V}, voc::Vocabulary, synonyms) where {K<:Integer,V<:Real}
+    for (tokenID, _) in collect(bow)
+        tok = token(voc, tokenID)
+        haskey(synonyms, tok) || continue
+        for (syn, _) in synonyms[tok]
+            sid = token2id(voc, syn)
+            sid == 0 && continue
+            k = K(sid)
+            haskey(bow, k) || (bow[k] = one(V))
+        end
+    end
+    bow
+end

@@ -44,6 +44,41 @@ end
     @show invfile.bm25
 end
 
+@testset "BM25InvertedFile query-time synonym expansion" begin
+    synonyms = Dict("pera" => [("manzana" => 0.1f0)])
+
+    textconfig = TextConfig(tokenization=TokenizationConfig(nlist=[1]))
+    voc = Vocabulary(textconfig, _corpus)
+    ctx = InvertedFileContext()
+
+    idx_plain = BM25InvertedFile(voc)
+    append_items!(idx_plain, ctx, _corpus)
+
+    expand_textconfig = TextConfig(tokenization=TokenizationConfig(nlist=[1]), expand_query_synonyms=true)
+    expand_voc = Vocabulary(expand_textconfig, _corpus)
+    idx_expand = BM25InvertedFile(expand_voc; synonyms)
+    append_items!(idx_expand, ctx, _corpus)
+
+    res_plain = search(idx_plain, ctx, "pera roja", knnqueue(KnnSorted, 3))
+    res_expand = search(idx_expand, ctx, "pera roja", knnqueue(KnnSorted, 3))
+
+    ids_plain = collect(IdView(res_plain))
+    ids_expand = collect(IdView(res_expand))
+    dists_plain = collect(DistView(res_plain))
+    dists_expand = collect(DistView(res_expand))
+
+    @test 4 in ids_plain && 4 in ids_expand
+    # doc4 ("la manzana roja") ranks strictly better once "pera" expands into its synonym "manzana"
+    @test findfirst(==(4), ids_expand) < findfirst(==(4), ids_plain)
+    @test dists_expand[findfirst(==(4), ids_expand)] < dists_plain[findfirst(==(4), ids_plain)]
+
+    # the flag alone, without an attached synonyms dict, must not error and must behave like plain search
+    idx_flag_only = BM25InvertedFile(expand_voc)
+    append_items!(idx_flag_only, ctx, _corpus)
+    res_flag_only = search(idx_flag_only, ctx, "pera roja", knnqueue(KnnSorted, 3))
+    @test collect(IdView(res_flag_only)) == ids_plain
+end
+
 struct RecorderLog <: AbstractLog
     events::Vector{Tuple{Symbol,Int,Int}}
 end

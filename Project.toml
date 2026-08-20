@@ -13,6 +13,7 @@ SimilaritySearch = "053f045d-5466-53fd-b400-a066f88fe02a"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 Unicode = "4ec0a83e-493e-50e2-b9ac-8f72acf5a8f5"
+ZipArchives = "49080126-0e18-4c2a-b176-c102e4b3760c"
 
 [weakdeps]
 Languages = "8ef0a80b-9436-5d2c-a485-80b904378c43"
@@ -35,6 +36,7 @@ SparseArrays = "^1.0"
 StatsBase = "0.32 - 0.35"
 Test = "^1.0"
 Unicode = "^1.0"
+ZipArchives = "1 - 2"
 julia = "^1.10"
 
 [extras]

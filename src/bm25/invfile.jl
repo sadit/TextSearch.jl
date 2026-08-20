@@ -37,6 +37,9 @@ frequencies -- is fetched from `db` instead of being duplicated into the posting
   `SparseVecView`s and then calling `index!(invfile, ctx)` is supported and builds postings from
   the already-stored vectors; the raw-text/BOW-taking `append_items!`/`push_item!` methods remain
   fused (encode+store+register in one pass) for efficiency.
+- `synonyms`: `nothing`, or a synonym network (e.g. as produced by `LSI.synonyms`) used to expand
+  queries -- only when `voc.textconfig.expand_query_synonyms` is also `true` -- via
+  [`expand_synonyms!`](@ref). Never applied to documents, only to queries.
 
 # Example
 
@@ -64,13 +67,14 @@ julia> collect(IdView(res))
 UInt32[0x00000001, 0x00000002]
 ```
 """
-struct BM25InvertedFile{AdjType<:AbstractAdjList,DbType<:AbstractDatabase} <: AbstractInvertedFile
+struct BM25InvertedFile{AdjType<:AbstractAdjList,DbType<:AbstractDatabase,SynType} <: AbstractInvertedFile
     voc::Vocabulary
     bm25::BM25Scorer
     adj::AdjType
     doclens::Vector{Int32}  ## number of tokens per document
     db::DbType              ## per-document term-frequency vectors
     len::Ref{Int64}         ## number of documents already indexed (postings built)
+    synonyms::SynType       ## nothing, or a query-time synonym network (see expand_synonyms!)
 end
 
 function Base.show(io::IO, invfile::BM25InvertedFile; prefix="", indent="  ")
@@ -108,11 +112,13 @@ function select_posting_lists(idx::BM25InvertedFile, ctx::InvertedFileContext, q
 end
 
 """
-    BM25InvertedFile(voc::Vocabulary; k1=1.2f0, b=0.75f0, δ=1f0)
+    BM25InvertedFile(voc::Vocabulary; k1=1.2f0, b=0.75f0, δ=1f0, synonyms=nothing)
 
 Creates an empty [`BM25InvertedFile`](@ref), fitting its [`BM25Scorer`](@ref) from `voc`
 (see [`BM25Scorer(voc)`](@ref BM25Scorer) for `k1`/`b`/`δ`). Populate it with
-[`append_items!`](@ref)/[`push_item!`](@ref).
+[`append_items!`](@ref)/[`push_item!`](@ref). Pass `synonyms` (e.g. as produced by
+`LSI.synonyms`) to enable query-time synonym expansion (also requires
+`voc.textconfig.expand_query_synonyms = true`; see [`expand_synonyms!`](@ref)).
 
 # Example
 
@@ -125,7 +131,7 @@ julia> length(invfile)
 0
 ```
 """
-function BM25InvertedFile(voc::Vocabulary;  k1=1.2f0, b=0.75f0, δ=1f0)
+function BM25InvertedFile(voc::Vocabulary;  k1=1.2f0, b=0.75f0, δ=1f0, synonyms=nothing)
     bm25 = BM25Scorer(voc; k1, b, δ)
 
     BM25InvertedFile(
@@ -135,6 +141,7 @@ function BM25InvertedFile(voc::Vocabulary;  k1=1.2f0, b=0.75f0, δ=1f0)
         Vector{Int32}(undef, 0),
         VectorDatabase(SparseVecView{Vector{Int32},Vector{UInt32}}[]),
         Ref(Int64(0)),
+        synonyms,
     )
 end
 

@@ -1,8 +1,9 @@
 # This file is a part of TextSearch.jl
 
-export save_profile, load_profile
+export save_profile, load_profile, zip_profile
 
-const _PROFILE_FORMAT_VERSION = 1
+const _PROFILE_FORMAT_VERSION = 2
+const _PROFILE_MANIFEST_NAME = "manifest.json"
 
 # ── weighting tag tables ─────────────────────────────────────────────────────
 
@@ -43,6 +44,12 @@ function _decode_local_weighting(tag::AbstractString)
 end
 
 # ── transformation tagged union ──────────────────────────────────────────────
+#
+# Every "big" piece of a profile (vocabulary, weights, synonyms, and -- if present --
+# a stopwords list) lives in its OWN file inside the profile directory, referenced by
+# name from `manifest.json`; only small scalar/tag data is inlined there. This keeps
+# each file greppable/diffable on its own and lets a consumer skip loading the pieces
+# it doesn't need.
 
 """
     _decode_snowball_transformation(algorithm::AbstractString, charenc::AbstractString)
@@ -65,34 +72,73 @@ function _decode_snowball_transformation(algorithm::AbstractString, charenc::Abs
     ext._construct_snowball_transformation(algorithm, charenc)
 end
 
-_encode_transformation(::IdentityTokenTransformation) = Dict("kind" => "identity")
+"""
+    _encode_transformation_with_files(tt, counter=Ref(0)) -> (json, files)
 
-_encode_transformation(tt::IgnoreStopwords) = Dict("kind" => "stopwords", "words" => collect(tt.stopwords))
+Encodes `tt` into its tagged-union JSON representation, EXCEPT any `IgnoreStopwords` step's
+word list, which is instead written to its own `"stopwords.json"`-style file (numbered on a
+second, third, ... occurrence via `counter`): `json` gets a `"file"` reference instead of an
+inlined `"words"` array, and `files` collects `filename => word_vector` pairs to be written
+by the caller (`save_profile`).
+"""
+function _encode_transformation_with_files(tt::IdentityTokenTransformation, counter::Ref{Int}=Ref(0))
+    Dict("kind" => "identity"), Pair{String,Vector{String}}[]
+end
 
-_encode_transformation(tt::SnowballTokenTransformation) =
-    Dict("kind" => "snowball", "algorithm" => tt.stemmer.alg, "charenc" => tt.stemmer.enc)
+function _encode_transformation_with_files(tt::IgnoreStopwords, counter::Ref{Int}=Ref(0))
+    counter[] += 1
+    fname = counter[] == 1 ? "stopwords.json" : "stopwords_$(counter[]).json"
+    Dict("kind" => "stopwords", "file" => fname), [fname => collect(tt.stopwords)]
+end
 
-_encode_transformation(tt::ChainTransformation) =
-    Dict("kind" => "chain", "steps" => [_encode_transformation(s) for s in tt.list])
+function _encode_transformation_with_files(tt::SnowballTokenTransformation, counter::Ref{Int}=Ref(0))
+    Dict("kind" => "snowball", "algorithm" => tt.stemmer.alg, "charenc" => tt.stemmer.enc), Pair{String,Vector{String}}[]
+end
 
-_encode_transformation(tt) = error("cannot serialize transformation of type $(typeof(tt)) into a profile")
+function _encode_transformation_with_files(tt::ChainTransformation, counter::Ref{Int}=Ref(0))
+    steps = Any[]
+    files = Pair{String,Vector{String}}[]
+    for s in tt.list
+        sjson, sfiles = _encode_transformation_with_files(s, counter)
+        push!(steps, sjson)
+        append!(files, sfiles)
+    end
+    Dict("kind" => "chain", "steps" => steps), files
+end
 
-function _decode_transformation(d)
+_encode_transformation_with_files(tt, counter::Ref{Int}=Ref(0)) =
+    error("cannot serialize transformation of type $(typeof(tt)) into a profile")
+
+"""
+    _decode_transformation(d, read_file::Function)
+
+Decodes a transformation's tagged-union JSON `d` back into an
+[`AbstractTokenTransformation`](@ref); `read_file(name::AbstractString)` fetches and
+JSON3-parses a referenced file (`"stopwords"` kind) -- the caller supplies one that reads
+from a plain directory or from an open zip archive, so this function itself doesn't care
+which.
+"""
+function _decode_transformation(d, read_file::Function)
     kind = String(d[:kind])
     if kind == "identity"
         IdentityTokenTransformation()
     elseif kind == "stopwords"
-        IgnoreStopwords(Set{String}(String(w) for w in d[:words]))
+        words = read_file(String(d[:file]))
+        IgnoreStopwords(Set{String}(String(w) for w in words))
     elseif kind == "snowball"
         _decode_snowball_transformation(String(d[:algorithm]), String(d[:charenc]))
     elseif kind == "chain"
-        ChainTransformation(AbstractTokenTransformation[_decode_transformation(s) for s in d[:steps]])
+        ChainTransformation(AbstractTokenTransformation[_decode_transformation(s, read_file) for s in d[:steps]])
     else
         error("unknown transformation kind: $kind")
     end
 end
 
 # ── TextConfig (normalization / tokenization / transformation) ──────────────
+#
+# `normalization`/`tokenization` are always small (a handful of flags, regex patterns, and
+# the emoji set) so they stay inlined in the manifest; only `transformation`'s stopwords
+# (if any) are split out, via `_encode_transformation_with_files` above.
 
 function _encode_normalization(n::NormalizationConfig)
     Dict(
@@ -122,91 +168,128 @@ end
 
 _decode_tokenization(d) = TokenizationConfig(nlist=Int8.(d[:nlist]), mark_token_type=Bool(d[:mark_token_type]))
 
-function _encode_textconfig(c::TextConfig)
-    Dict(
-        "normalization" => _encode_normalization(c.normalization),
-        "tokenization" => _encode_tokenization(c.tokenization),
-        "transformation" => _encode_transformation(c.transformation),
-        "expand_query_synonyms" => c.expand_query_synonyms,
-    )
-end
+# ── file-backed I/O helpers (directory or zip, symmetrically) ──────────────
 
-function _decode_textconfig(d)
-    TextConfig(
-        normalization=_decode_normalization(d[:normalization]),
-        tokenization=_decode_tokenization(d[:tokenization]),
-        transformation=_decode_transformation(d[:transformation]),
-        expand_query_synonyms=Bool(get(d, :expand_query_synonyms, false)),
-    )
-end
-
-# ── save_profile / load_profile ──────────────────────────────────────────────
+_write_json(path::AbstractString, data) = open(io -> JSON3.write(io, data), path, "w")
 
 """
-    save_profile(path::AbstractString, model::VectorModel;
-                 synonyms::AbstractDict=Dict{String,Vector{Pair{String,Float32}}}()) -> path
+    _profile_reader(path::AbstractString) -> read_file::Function
+
+Returns a `read_file(name::AbstractString) -> JSON3` closure that fetches and parses a
+named member of the profile at `path` -- a plain directory if `isdir(path)`, otherwise a
+`.zip` archive (opened once and re-read from memory for every subsequent `read_file` call).
+This is what lets [`load_profile`](@ref) not care which of the two forms it was handed.
+"""
+function _profile_reader(path::AbstractString)
+    if isdir(path)
+        name -> JSON3.read(read(joinpath(path, name)))
+    else
+        buf = read(path)
+        zr = ZipArchives.ZipReader(buf)
+        name -> JSON3.read(ZipArchives.zip_readentry(zr, name))
+    end
+end
+
+# ── save_profile / load_profile / zip_profile ────────────────────────────────
+
+"""
+    save_profile(dir::AbstractString, model::VectorModel;
+                 synonyms::AbstractDict=Dict{String,Vector{Pair{String,Float32}}}()) -> dir
 
 Serializes `model` -- its `voc`'s [`TextConfig`](@ref) and vocabulary counters, its
 weighting scheme, and its precomputed `weight` vector -- together with a `synonyms`
-network (e.g. as produced by [`LSI.synonyms`](@ref)) into a plain, human-readable JSON
-file at `path`. Load it back with [`load_profile`](@ref).
+network (e.g. as produced by [`LSI.synonyms`](@ref)) into `dir` (created if missing) as a
+small directory of plain, human-readable JSON files: one per "large" piece --
+`vocabulary.json`, `weights.json`, `synonyms.json` (only written if `synonyms` is
+non-empty), and `stopwords.json` (only written if `model`'s `transformation` involves
+one) -- tied together by a small `manifest.json` that holds everything else
+(normalization/tokenization flags, weighting tags, and file references). Load it back
+with [`load_profile`](@ref), or package it for distribution with [`zip_profile`](@ref).
 
 Deliberately NOT a generic object-graph dump (unlike e.g. JLD2): every field is encoded
-by hand into a small, versioned schema, so the file is fully inspectable/diffable/portable
+by hand into a small, versioned schema, so every file is fully inspectable/diffable/portable
 and there is nothing pointer- or code-shaped to accidentally serialize.
 
 A `TokenizationConfig` with custom (non-empty) `generators`, or a `transformation` that
 isn't `IdentityTokenTransformation`/`IgnoreStopwords`/`SnowballTokenTransformation`/
 `ChainTransformation` of those, errors clearly rather than silently mis-saving.
 """
-function save_profile(path::AbstractString, model::VectorModel;
+function save_profile(dir::AbstractString, model::VectorModel;
                        synonyms::AbstractDict=Dict{String,Vector{Pair{String,Float32}}}())
+    mkpath(dir)
     voc = model.voc
-    data = Dict(
+
+    _write_json(joinpath(dir, "vocabulary.json"), Dict(
+        "tokens" => voc.token,
+        "occs" => voc.occs,
+        "ndocs" => voc.ndocs,
+        "trainsize" => voc.trainsize[],
+        "numtokens" => voc.numtokens[],
+    ))
+
+    _write_json(joinpath(dir, "weights.json"), Dict("weight" => model.weight))
+
+    transformation_json, stopword_files = _encode_transformation_with_files(voc.textconfig.transformation)
+    for (fname, words) in stopword_files
+        _write_json(joinpath(dir, fname), words)
+    end
+
+    manifest = Dict(
         "format_version" => _PROFILE_FORMAT_VERSION,
-        "textconfig" => _encode_textconfig(voc.textconfig),
-        "vocabulary" => Dict(
-            "tokens" => voc.token,
-            "occs" => voc.occs,
-            "ndocs" => voc.ndocs,
-            "trainsize" => voc.trainsize[],
-            "numtokens" => voc.numtokens[],
+        "textconfig" => Dict(
+            "normalization" => _encode_normalization(voc.textconfig.normalization),
+            "tokenization" => _encode_tokenization(voc.textconfig.tokenization),
+            "transformation" => transformation_json,
+            "expand_query_synonyms" => voc.textconfig.expand_query_synonyms,
         ),
+        "vocabulary_file" => "vocabulary.json",
         "weighting" => Dict(
             "global_weighting" => _encode_global_weighting(model.global_weighting),
             "local_weighting" => _encode_local_weighting(model.local_weighting),
             "maxoccs" => model.maxoccs,
-            "weight" => model.weight,
+            "weight_file" => "weights.json",
         ),
-        "synonyms" => Dict(tok => [[syn, Float32(dist)] for (syn, dist) in syns] for (tok, syns) in synonyms),
     )
 
-    open(path, "w") do io
-        JSON3.write(io, data)
+    if !isempty(synonyms)
+        _write_json(joinpath(dir, "synonyms.json"),
+            Dict(tok => [[syn, Float32(dist)] for (syn, dist) in syns] for (tok, syns) in synonyms))
+        manifest["synonyms_file"] = "synonyms.json"
     end
 
-    path
+    _write_json(joinpath(dir, _PROFILE_MANIFEST_NAME), manifest)
+    dir
 end
 
 """
     load_profile(path::AbstractString) -> (model::VectorModel, synonyms::Dict{String,Vector{Pair{String,Float32}}})
 
-Reads back a profile written by [`save_profile`](@ref): reconstructs the `Vocabulary`
-(rebuilding `token2id` from the stored `tokens` list) and `VectorModel`, and returns the
-attached synonym network alongside it, ready to pass straight into e.g.
+Reads back a profile written by [`save_profile`](@ref) -- `path` may be either the
+directory `save_profile` produced, or a `.zip` archive of it (see [`zip_profile`](@ref));
+this is auto-detected via `isdir(path)`, and a `.zip` is read directly from memory, no
+extraction to disk needed. Reconstructs the `Vocabulary` (rebuilding `token2id` from the
+stored `tokens` list) and `VectorModel`, and returns the attached synonym network
+alongside it (an empty `Dict` if none was saved), ready to pass straight into e.g.
 `TextInvertedFile(model; synonyms, ...)`.
 
-Errors if the file's `transformation` needs `Snowball`/`Languages` to reconstruct
-(a `"snowball"` tagged-union entry) and those packages aren't loaded yet.
+Errors if the profile's `transformation` needs `Snowball`/`Languages` to reconstruct (a
+`"snowball"` tagged-union entry) and those packages aren't loaded yet.
 """
 function load_profile(path::AbstractString)
-    data = JSON3.read(read(path, String))
-    data[:format_version] == _PROFILE_FORMAT_VERSION ||
-        error("unsupported profile format_version: $(data[:format_version]) (expected $_PROFILE_FORMAT_VERSION)")
+    read_file = _profile_reader(path)
+    manifest = read_file(_PROFILE_MANIFEST_NAME)
+    manifest[:format_version] == _PROFILE_FORMAT_VERSION ||
+        error("unsupported profile format_version: $(manifest[:format_version]) (expected $_PROFILE_FORMAT_VERSION)")
 
-    textconfig = _decode_textconfig(data[:textconfig])
+    tc = manifest[:textconfig]
+    textconfig = TextConfig(
+        normalization=_decode_normalization(tc[:normalization]),
+        tokenization=_decode_tokenization(tc[:tokenization]),
+        transformation=_decode_transformation(tc[:transformation], read_file),
+        expand_query_synonyms=Bool(get(tc, :expand_query_synonyms, false)),
+    )
 
-    vocd = data[:vocabulary]
+    vocd = read_file(String(manifest[:vocabulary_file]))
     tokens = String.(vocd[:tokens])
     tok2id = Dict{String,UInt32}(tok => UInt32(i) for (i, tok) in enumerate(tokens))
     voc = Vocabulary(
@@ -219,15 +302,40 @@ function load_profile(path::AbstractString)
         Ref{Int64}(Int64(vocd[:numtokens])),
     )
 
-    wd = data[:weighting]
+    wd = manifest[:weighting]
     gw = _decode_global_weighting(String(wd[:global_weighting]))
     lw = _decode_local_weighting(String(wd[:local_weighting]))
-    model = VectorModel(gw, lw, voc, Int32(wd[:maxoccs]), Float32.(wd[:weight]))
+    weightd = read_file(String(wd[:weight_file]))
+    model = VectorModel(gw, lw, voc, Int32(wd[:maxoccs]), Float32.(weightd[:weight]))
 
-    synonyms = Dict{String,Vector{Pair{String,Float32}}}(
-        String(tok) => [Pair(String(syn), Float32(dist)) for (syn, dist) in syns]
-        for (tok, syns) in data[:synonyms]
-    )
+    synonyms = if haskey(manifest, :synonyms_file)
+        synd = read_file(String(manifest[:synonyms_file]))
+        Dict{String,Vector{Pair{String,Float32}}}(
+            String(tok) => [Pair(String(syn), Float32(dist)) for (syn, dist) in syns]
+            for (tok, syns) in synd
+        )
+    else
+        Dict{String,Vector{Pair{String,Float32}}}()
+    end
 
     model, synonyms
+end
+
+"""
+    zip_profile(dir::AbstractString, zippath::AbstractString=dir * ".zip") -> zippath
+
+Packages a profile directory (as written by [`save_profile`](@ref)) into a single `.zip`
+archive at `zippath`, ready to distribute as one file. [`load_profile`](@ref) reads a
+`.zip` produced this way directly (no extraction needed).
+"""
+function zip_profile(dir::AbstractString, zippath::AbstractString=dir * ".zip")
+    isdir(dir) || error("zip_profile: not a directory: $dir")
+    ZipArchives.ZipWriter(zippath) do w
+        for name in sort(readdir(dir))
+            fpath = joinpath(dir, name)
+            isfile(fpath) || continue
+            ZipArchives.zip_writefile(w, name, read(fpath))
+        end
+    end
+    zippath
 end

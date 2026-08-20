@@ -71,4 +71,29 @@ using Test, TextSearch, SimilaritySearch, LinearAlgebra, SparseArrays
         out = expand_synonyms!(q, voc, synonyms)
         @test out === q
     end
+
+    @testset "BOW method (BM25 path): presence-only expansion" begin
+        bow = bagofwords(voc, "pera")
+        pera_id = token2id(voc, "pera")
+        manzana_id = token2id(voc, "manzana")
+        synonyms = Dict("pera" => [("manzana", 0.1f0)])
+
+        out = expand_synonyms!(bow, voc, synonyms)
+        @test out === bow
+        @test haskey(bow, manzana_id)
+        @test bow[pera_id] == 1  # original entry untouched
+
+        @testset "OOV synonym silently skipped" begin
+            bow2 = bagofwords(voc, "pera")
+            n0 = length(bow2)
+            expand_synonyms!(bow2, voc, Dict("pera" => [("nonexistentwordxyz", 0.1f0)]))
+            @test length(bow2) == n0
+        end
+
+        @testset "an id already present (literal match) is left untouched" begin
+            bow3 = bagofwords(voc, "pera manzana manzana")  # manzana already has freq=2
+            expand_synonyms!(bow3, voc, synonyms)
+            @test bow3[manzana_id] == 2  # not overwritten to 1
+        end
+    end
 end
