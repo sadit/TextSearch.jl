@@ -121,6 +121,39 @@ using Test, TextSearch, SimilaritySearch, LinearAlgebra, SparseArrays
         @test IdView(res_g)[1] in (4, 5)
     end
 
+    @testset "wordvectors and synonyms" begin
+        lsi = LatentSemanticIndexing(vmodel, corpus; maxoutdim=8, verbose=false)
+        k = outdim(lsi)
+        m = vocsize(lsi)
+
+        X = wordvectors(lsi)
+        @test X isa MatrixDatabase{Matrix{Float32}}
+        @test length(X) == m
+        @test size(X.matrix) == (k, m)
+        for t in 1:m
+            @test isapprox(norm(X[t]), 1f0, atol=1e-5)
+        end
+
+        # normalize=false keeps the raw (scaling-adjusted) P columns, unnormalized
+        X_raw = wordvectors(lsi; normalize=false)
+        @test isapprox(X_raw.matrix, lsi.P, atol=1e-6)
+
+        # a single in-vocabulary word reduces, after L2-normalization, to exactly its column of P
+        # (a one-nonzero sparse vector projects to a positive scalar multiple of that column)
+        tokenID = token2id(voc, "quick")
+        @test tokenID > 0
+        @test isapprox(X[tokenID], vectorize(lsi, "quick"), atol=1e-5)
+
+        net = synonyms(lsi, 3; verbose=false)
+        @test net isa Dict{String,Vector{Pair{String,Float32}}}
+        @test length(net) == m
+        for (tok, neighbors) in net
+            @test length(neighbors) <= 3
+            @test all(nb != tok for (nb, _) in neighbors)  # never its own synonym
+            @test issorted(last.(neighbors))                # increasing distance
+        end
+    end
+
     @testset "Scaling options" begin
         for scaling in (:none, :inv_singular_values, :singular_values)
             lsi_s = LatentSemanticIndexing(vmodel, corpus; maxoutdim=4, scaling, verbose=false)

@@ -454,6 +454,35 @@ search(lsi_index, sctx, q_vec, res)
 [(id, first(CASK_OF_AMONTILLADO[id], 60) * "...") for id in collect(IdView(res))]
 ```
 
+#### Word Embeddings and a Synonym Network
+
+`lsi.P` is a `(outdim(lsi), vocsize(lsi))` projection matrix -- column `t` is already the LSI
+embedding of vocabulary token `t` (a document's vector is just a weighted sum of its tokens'
+columns), so the same trained model doubles as a source of **word embeddings**, with no extra
+training needed. [`wordvectors`](@ref) returns them as a `MatrixDatabase`, ready for the same
+kind of nearest-neighbor search used above for documents:
+
+```@example gutenberg
+W = wordvectors(lsi)
+size(W.matrix)
+```
+
+Running [`allknn`](https://sadit.github.io/SimilaritySearch.jl/dev/) over that word-embedding
+space is exactly how the "synonymy resolution" mentioned earlier becomes concrete: words that
+tend to co-occur in similar contexts end up with nearby embeddings. [`synonyms`](@ref) wraps this
+into a `token => [(neighbor, distance), ...]` network in one call:
+
+```@example gutenberg
+net = synonyms(lsi, 5; verbose=false)
+net["wine"]
+```
+
+For a small demo corpus like this one, don't expect polished synonym pairs -- a handful of short
+paragraphs isn't enough text for the co-occurrence statistics LSI relies on to fully separate
+content words from frequent function words. On a real corpus (thousands of documents, a pruned
+vocabulary), the same call is a quick way to get a first synonym/related-terms network without
+training a dedicated word-embedding model.
+
 ---
 
 ### Random Indexing (RI) & Quantization Pipelines

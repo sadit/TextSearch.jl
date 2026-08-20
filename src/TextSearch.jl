@@ -87,8 +87,8 @@ using .FullText
 export FullText, TextInvertedFile
 
 include("lsi.jl")
-using .LSI: LatentSemanticIndexing, LSIModel, indim, outdim
-export LSI, LatentSemanticIndexing, LSIModel, indim, outdim
+using .LSI: LatentSemanticIndexing, LSIModel, indim, outdim, wordvectors, synonyms
+export LSI, LatentSemanticIndexing, LSIModel, indim, outdim, wordvectors, synonyms
 
 include("randomindexing.jl")
 using .RI: RandomIndexing, RIModel, BitSketch, bitsketch, bitsketch_corpus

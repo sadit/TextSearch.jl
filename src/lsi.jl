@@ -5,16 +5,16 @@ module LSI
 using LinearAlgebra, SparseArrays
 using ProgressMeter
 using SimilaritySearch
-using SimilaritySearch: @BATCHES, getminbatch, MatrixDatabase, AbstractDatabase
+using SimilaritySearch: @BATCHES, getminbatch, MatrixDatabase, AbstractDatabase, ParallelExhaustiveSearch
 using SimilaritySearch.Special.Sparse: SparseVecView, SparseVectorLike
 
-using ..TextSearch: TextModel, VectorModel, Vocabulary, TextConfig,
+using ..TextSearch: TextModel, VectorModel, Vocabulary, TextConfig, token,
                     GlobalWeighting, LocalWeighting, IdfWeighting, TfWeighting,
                     VECTORIZE_CACHES, VectorizeBuffer
 import ..TextSearch: vectorize, vectorize!, vectorize_corpus, vocsize, trainsize
 
 export LatentSemanticIndexing, LSIModel, indim, outdim, vocsize, trainsize,
-       vectorize, vectorize!, vectorize_corpus
+       vectorize, vectorize!, vectorize_corpus, wordvectors, synonyms
 
 """
     LatentSemanticIndexing{M<:AbstractMatrix{Float32}, VM<:VectorModel} <: TextModel
@@ -288,6 +288,82 @@ function vectorize_corpus(lsi::LatentSemanticIndexing, corpus; normalize::Bool=t
     end
 
     MatrixDatabase(O)
+end
+
+"""
+    wordvectors(lsi::LatentSemanticIndexing; normalize::Bool=true) -> MatrixDatabase{Matrix{Float32}}
+
+Returns the LSI embedding of every vocabulary token, as a `(outdim(lsi), vocsize(lsi))` matrix
+database -- column `t` is the embedding of `token(lsi.model, t)`. This is exactly `lsi.P`
+(optionally column-normalized): a document's LSI vector (via [`vectorize`](@ref)/
+[`vectorize_corpus`](@ref)) is a weighted sum of its tokens' columns of `lsi.P`, so these
+per-token vectors live in the same projected space and are directly comparable to each other and
+to document vectors (e.g. via `Dist.Cosine()`/`Dist.NormCosine()`). Set `normalize=false` to keep
+the raw (`scaling`-adjusted) `lsi.P` columns instead of unit-normalizing them.
+
+# Example
+```julia
+X = wordvectors(lsi)   # (outdim(lsi), vocsize(lsi)) MatrixDatabase
+X[5]                   # the embedding of token(lsi.model, 5)
+```
+"""
+function wordvectors(lsi::LatentSemanticIndexing; normalize::Bool=true)
+    m = vocsize(lsi)
+    O = Matrix{Float32}(undef, outdim(lsi), m)
+    copyto!(O, lsi.P)
+    if normalize
+        minbatch = getminbatch(m)
+        @BATCHES minbatch for t in 1:m
+            _normalize_dense!(view(O, :, t))
+        end
+    end
+    MatrixDatabase(O)
+end
+
+"""
+    synonyms(lsi::LatentSemanticIndexing, k::Integer=8;
+             dist=Dist.Cosine(), normalize::Bool=true, verbose::Bool=true) -> Dict{String,Vector{Pair{String,Float32}}}
+
+Builds an approximate synonym network from `lsi`'s vocabulary embeddings ([`wordvectors`](@ref)):
+for every vocabulary token, finds its `k` nearest neighbors (by `dist`, cosine by default,
+computed exactly via `ParallelExhaustiveSearch`) among all *other* tokens' LSI embeddings, using
+`SimilaritySearch.allknn`. Returns a `Dict` mapping each token to a list of
+`neighbor_token => distance` pairs sorted by increasing distance (lower means more similar); the
+token itself is always excluded from its own neighbor list.
+
+For very large vocabularies, exhaustive all-pairs search may be too slow -- build your own
+approximate index instead (e.g. `SearchGraph(dist, wordvectors(lsi))`, `index!`'d) and call
+`SimilaritySearch.allknn` on it directly.
+
+# Example
+```julia
+net = synonyms(lsi, 5)
+net["dog"]   # ["dogs" => 0.02, "puppy" => 0.11, ...]
+```
+"""
+function synonyms(lsi::LatentSemanticIndexing, k::Integer=8;
+                   dist=Dist.Cosine(), normalize::Bool=true, verbose::Bool=true)
+    k > 0 || throw(ArgumentError("k must be positive"))
+    m = vocsize(lsi)
+    X = wordvectors(lsi; normalize)
+    idx = ParallelExhaustiveSearch(dist, X)
+    ctx = GenericContext()
+    ids, dists = allknn(idx, ctx, min(k + 1, m); progress=Progress(m; dt=1, enabled=verbose, desc="synonyms allknn"))
+
+    voc = lsi.model.voc
+    net = Dict{String,Vector{Pair{String,Float32}}}()
+    for t in 1:m
+        pairs = Pair{String,Float32}[]
+        for j in 1:size(ids, 1)
+            nb = ids[j, t]
+            (nb == 0 || nb == t) && continue
+            push!(pairs, token(voc, nb) => dists[j, t])
+            length(pairs) >= k && break
+        end
+        net[token(voc, t)] = pairs
+    end
+
+    net
 end
 
 indim(lsi::LatentSemanticIndexing) = vocsize(lsi.model)
