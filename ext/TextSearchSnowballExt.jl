@@ -39,7 +39,18 @@ function TextSearch.SnowballTokenTransformation(lang::Languages.Language; charen
     TextSearch.SnowballTokenTransformation(Snowball.Stemmer(alg, charenc))
 end
 
-TextSearch.Tokenizer.transform_unigram(tt::TextSearch.SnowballTokenTransformation, tok) = Snowball.stem(tt.stemmer, tok)
+# `Snowball.stem` writes its result into a buffer owned by the stemmer's C handle, then
+# reads the length back from that same handle in a second ccall -- calling it concurrently
+# on the SAME `Stemmer` instance from multiple threads races on that shared buffer (seen
+# as anything from a wrong/garbled stem to a segfault). `@BATCHES`-parallel vocabulary
+# building (`Vocabulary(cfg, corpus)`) shares one `SnowballTokenTransformation`, and so one
+# `Stemmer`, across every worker thread, so this lock is required for correctness, not just
+# defensive: stemming itself is fast enough that serializing it is a minor cost next to
+# tokenization's other per-token work, which still parallelizes normally.
+const _STEM_LOCK = ReentrantLock()
+
+TextSearch.Tokenizer.transform_unigram(tt::TextSearch.SnowballTokenTransformation, tok) =
+    @lock _STEM_LOCK Snowball.stem(tt.stemmer, tok)
 
 _construct_snowball_transformation(algorithm::AbstractString, charenc::AbstractString) =
     TextSearch.SnowballTokenTransformation(Snowball.Stemmer(algorithm, charenc))
