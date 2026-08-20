@@ -123,6 +123,10 @@ search_recall = 0.9
 algorithm = "$lem_alg"
 num_clusters = 0
 selector = "$lem_sel"
+morphology = "jaccard"
+morphology_threshold = 0.3
+qgram = 2
+min_common_prefix = 3
 EOF
   log "rendered fit config -> $out"
 }

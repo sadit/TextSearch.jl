@@ -62,6 +62,16 @@ search_recall = 0.9
 algorithm = "fft"           # "fft" | "dnet" | "randsel" | "multirandsel"
 num_clusters = 0             # 0 = auto (sqrt(vocsize))
 selector = "shortest"        # "shortest" | "most_frequent" | "shortest_then_most_frequent"
+# Embeddings alone give topical neighbours, not inflections ("guerra" lands next to
+# "belico", not "guerras"), so each semantic cluster is split again by surface similarity
+# and the lemma is elected per subcluster. morphology_threshold is a normalized distance
+# (lower = stricter); min_common_prefix additionally demands that many shared leading
+# characters, which is what stops position-blind n-gram similarity from merging
+# "abioticos" with "bioticos" -- set it to 0 for languages that do not inflect by suffix.
+morphology = "jaccard"       # "jaccard" | "levenshtein" | "none"
+morphology_threshold = 0.3
+qgram = 2
+min_common_prefix = 3
 """
 
 """

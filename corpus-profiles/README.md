@@ -161,7 +161,45 @@ factorization. Practical options:
 Stopword detection, for the record, works well at this scale without any tuning: on the
 Spanish slice it flagged 55 candidates, headed by `de . , en la el y del a un` -- real
 function words and punctuation, exactly what `[stopwords] doc_freq_threshold = 0.5` is
-supposed to catch.
+supposed to catch. The synonym network is likewise good out of the box: `rio` ->
+`confluencia, afluente, desembocadura, fluvial`, `futbol` -> `copa, supercopa, balompie,
+clubes`.
+
+## Lemmas need morphology, not just embeddings
+
+The `[lemmas]` step deserves a note, because the obvious version of it does not work. LSI
+embeddings encode *distributional* similarity, so a token's neighbours are its topical
+relatives, not its inflected forms -- `guerra` sits next to `belico` and `aliados`, which is
+what the synonym network is for. Electing one representative per semantic cluster therefore
+produced, measured on Spanish Wikipedia, mappings like `casas -> dia`, `ciudades -> 市`,
+`mujeres -> %`: 99.7% of the vocabulary remapped with only 0.3% of pairs even sharing a
+prefix. More clusters did not help -- shrinking them to an average of 1.5 tokens still only
+reached 2%.
+
+So each semantic cluster is split again by *surface* similarity before a lemma is elected.
+Measured on 2,000 Spanish articles (39,407 tokens), share of mappings where one token is a
+prefix of the other -- a conservative proxy, since it cannot see correct gender/number pairs
+like `abrupto`/`abrupta`:
+
+| morphology | threshold | vocabulary remapped | prefix-related | time |
+|---|---|---|---|---|
+| `none` | -- | 99.5% | 0.5% | 3.1s |
+| `jaccard` | 0.3 | 7.1% | **70.7%** | 0.7s |
+| `jaccard` | 0.4 | 10.3% | 50.0% | 0.7s |
+| `levenshtein` | 0.2 | 6.7% | 56.3% | 3.1s |
+| `levenshtein` | 0.5 | 74.2% | 1.1% | 3.0s |
+
+Jaccard over character bigrams wins on both quality and speed, so it is the default at
+`0.3`. `min_common_prefix = 3` then removes the failure mode that position-blind n-gram
+similarity has left: `abioticos`/`bioticos` and `abandonadas`/`donadas` share nearly every
+bigram while being different words. With all of it in place the output looks like a
+lemmatizer -- `aberturas -> abertura`, `acabaran -> acabar`, `absolutas -> absoluto`,
+`algebraico -> algebraica` -- over ~6.6% of the vocabulary.
+
+One caveat worth knowing: the elected lemma is the shortest (or most frequent) member of its
+family, not a linguistically-derived base form, so it can point "backwards"
+(`aborigen -> aborigenes`). For search normalization what matters is that every variant
+collapses onto the *same* key, which it does.
 
 ## Workflow
 

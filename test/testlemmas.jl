@@ -23,7 +23,7 @@ using Test, TextSearch, SimilaritySearch
     wordvecs = MatrixDatabase(X)
 
     @testset "shortest selector groups tight pairs, singleton left alone" begin
-        lemmas = lemma_clusters(voc, wordvecs; algorithm=:fft, num_clusters=3, selector=:shortest, dist=Dist.L2())
+        lemmas = lemma_clusters(voc, wordvecs; algorithm=:fft, num_clusters=3, selector=:shortest, dist=Dist.L2(), morphology=:none)
         @test lemmas["cats"] == "cat"
         @test lemmas["dogs"] == "dog"
         @test !haskey(lemmas, "cat")
@@ -32,7 +32,7 @@ using Test, TextSearch, SimilaritySearch
     end
 
     @testset "num_clusters=0 defaults to sqrt(vocsize) heuristic and still runs" begin
-        lemmas = lemma_clusters(voc, wordvecs; dist=Dist.L2())
+        lemmas = lemma_clusters(voc, wordvecs; dist=Dist.L2(), morphology=:none)
         @test lemmas isa Dict{String,String}
     end
 
@@ -43,7 +43,7 @@ using Test, TextSearch, SimilaritySearch
         for tid in 1:vocsize(voc2)
             X2[:, tid] = coords[token(voc2, tid)]
         end
-        lemmas = lemma_clusters(voc2, MatrixDatabase(X2); num_clusters=1, selector=:most_frequent, dist=Dist.L2())
+        lemmas = lemma_clusters(voc2, MatrixDatabase(X2); num_clusters=1, selector=:most_frequent, dist=Dist.L2(), morphology=:none)
         @test lemmas["cat"] == "cats"  # occs("cats")=3 > occs("cat")=1
     end
 
@@ -55,12 +55,56 @@ using Test, TextSearch, SimilaritySearch
         for tid in 1:vocsize(voc3)
             X3[:, tid] = coords3[token(voc3, tid)]
         end
-        lemmas = lemma_clusters(voc3, MatrixDatabase(X3); num_clusters=1, selector=:shortest_then_most_frequent, dist=Dist.L2())
+        lemmas = lemma_clusters(voc3, MatrixDatabase(X3); num_clusters=1, selector=:shortest_then_most_frequent, dist=Dist.L2(), morphology=:none)
         @test lemmas["by"] == "ax"  # same length, occs("ax")=3 > occs("by")=1
     end
 
-    @testset "unknown algorithm/selector error clearly" begin
+    @testset "unknown algorithm/selector/morphology error clearly" begin
         @test_throws ErrorException lemma_clusters(voc, wordvecs; algorithm=:bogus)
         @test_throws ErrorException lemma_clusters(voc, wordvecs; selector=:bogus)
+        @test_throws ErrorException lemma_clusters(voc, wordvecs; morphology=:bogus)
+    end
+
+    @testset "morphology splits semantically-close but unrelated words apart" begin
+        # one semantic cluster holding two distinct inflection families plus a look-alike
+        # that shares almost every character bigram but no prefix
+        words = ["ciudad", "ciudades", "guerra", "guerras", "abioticos", "bioticos"]
+        voc4 = Vocabulary(textconfig, words)
+        X4 = zeros(Float32, 2, vocsize(voc4))          # all identical -> one cluster
+        wv4 = MatrixDatabase(X4)
+
+        # without morphology the whole cluster collapses onto a single representative
+        plain = lemma_clusters(voc4, wv4; num_clusters=1, morphology=:none, dist=Dist.L2())
+        @test length(unique(values(plain))) == 1
+
+        # with it, each family keeps its own lemma and the look-alike is left alone
+        L = lemma_clusters(voc4, wv4; num_clusters=1, morphology=:jaccard,
+                            morphology_threshold=0.5, min_common_prefix=3, dist=Dist.L2())
+        @test L["ciudades"] == "ciudad"
+        @test L["guerras"] == "guerra"
+        @test !haskey(L, "guerra") && !haskey(L, "ciudad")
+        # "abioticos"/"bioticos" share no 3-char prefix, so they must not be merged
+        @test !haskey(L, "abioticos") && !haskey(L, "bioticos")
+
+        @testset "min_common_prefix=0 lets the position-blind match through" begin
+            L0 = lemma_clusters(voc4, wv4; num_clusters=1, morphology=:jaccard,
+                                 morphology_threshold=0.5, min_common_prefix=0, dist=Dist.L2())
+            @test haskey(L0, "abioticos") || haskey(L0, "bioticos")
+        end
+
+        @testset "levenshtein is available and handles non-ASCII tokens" begin
+            # "»"/"—" are multi-byte: a byte-indexed edit distance (which is what
+            # Dist.Seqs.Levenshtein does on a String) throws StringIndexError on them, so
+            # this also guards the Char-vector conversion in _morphology_metric.
+            voc5 = Vocabulary(textconfig, ["mañana", "mañanas", "»", "—"])
+            @test "»" in [token(voc5, i) for i in eachindex(voc5)]
+            X5 = zeros(Float32, 2, vocsize(voc5))
+            L5 = lemma_clusters(voc5, MatrixDatabase(X5); num_clusters=1,
+                                 morphology=:levenshtein, morphology_threshold=0.3,
+                                 min_common_prefix=3, dist=Dist.L2())
+            @test L5 isa Dict{String,String}
+            # the default normalization strips diacritics, so the vocabulary holds "manana"
+            @test get(L5, "mananas", "") == "manana"
+        end
     end
 end

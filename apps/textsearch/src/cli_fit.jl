@@ -158,7 +158,12 @@ function _fit_one_batch(docs::Vector{String}, cfg, batch_dir::AbstractString)
     end
 
     lemmas = lemma_clusters(voc, wordvecs;
-        algorithm=Symbol(lem["algorithm"]), num_clusters=Int(lem["num_clusters"]), selector=Symbol(lem["selector"]))
+        algorithm=Symbol(lem["algorithm"]), num_clusters=Int(lem["num_clusters"]),
+        selector=Symbol(lem["selector"]),
+        morphology=Symbol(get(lem, "morphology", "jaccard")),
+        morphology_threshold=Float64(get(lem, "morphology_threshold", 0.3)),
+        qgram=Int(get(lem, "qgram", 2)),
+        min_common_prefix=Int(get(lem, "min_common_prefix", 3)))
 
     save_profile(batch_dir, model;
         synonyms=synmap, lemmas, stopword_candidates=candidates,
