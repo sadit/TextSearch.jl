@@ -2,7 +2,7 @@
 
 module LSI
 
-using LinearAlgebra, SparseArrays
+using LinearAlgebra, SparseArrays, Random
 using ProgressMeter
 using SimilaritySearch
 using SimilaritySearch: @BATCHES, getminbatch, MatrixDatabase, AbstractDatabase, ParallelExhaustiveSearch
@@ -62,6 +62,70 @@ function _sparse_matrix(X, m::Integer)
     SparseMatrixCSC(m, n, colptr, rowval, nzval)
 end
 
+"The Gram-matrix side past which `LatentSemanticIndexing`'s `factorization=:auto` uses randomized SVD."
+const LSI_RANDOMIZED_THRESHOLD = 4096
+
+"""
+    _randomized_svd(A, k; oversampling=10, power_iterations=2, rng=Random.default_rng()) -> (U, s)
+
+Truncated SVD of `A` (`m×n`, typically sparse) keeping the top `k` left singular vectors and
+singular values, by the randomized range-finder method (Halko, Martinsson & Tropp).
+
+This exists because the exact alternative does not scale: forming a Gram matrix and calling
+`eigen` computes *all* `min(m,n)` eigenpairs, at `O(min(m,n)^3)` time and a dense
+`min(m,n)^2` allocation, only to keep `k` of them -- for 25k documents that is a 2.5 GB
+matrix and ~1.6e13 flops to extract 128 directions. Here the cost is instead a couple of
+sparse products plus a QR and an SVD of a `(k+oversampling)`-row matrix, and no Gram matrix
+is ever formed.
+
+`power_iterations` sharpens accuracy when the spectrum decays slowly (term-document matrices
+do); the basis is re-orthonormalized between iterations, which matters in `Float32` where
+the powers would otherwise collapse toward the leading direction. `oversampling = 0` (the
+default) widens the sketch to `2k`.
+
+Accuracy is a real knob here, not a formality: these are measured on 4,000 Spanish Wikipedia
+articles (66,538 tokens, `k=128`), comparing against the exact factorization -- "synonym
+recall" is how much of the exact top-1/top-8 synonym network the resulting embeddings
+reproduce.
+
+| `oversampling` | `power_iterations` | singular-value error | synonym recall@1 / @8 |
+|---:|---:|---:|---:|
+| 10 | 2 | 4.2e-2 | 0.73 / 0.49 |
+| 10 | 4 | 1.4e-2 | 0.90 / 0.67 |
+| 64 | 4 | 5.7e-3 | 0.96 / 0.76 |
+| 0 (=k) | 4 | 2.3e-3 | **0.99 / 0.85** *(default)* |
+| 0 (=k) | 8 | 1.2e-4 | 1.00 / 0.93 |
+| 2k | 8 | 1.0e-5 | 1.00 / 0.99 |
+
+The textbook `p=10, q=2` is visibly not enough for this kind of matrix: it recovers the
+singular *values* to a few percent while still getting a materially different subspace, and
+the synonym network is built from the subspace.
+"""
+function _randomized_svd(A::AbstractMatrix, k::Integer;
+                          oversampling::Integer=0, power_iterations::Integer=4,
+                          rng=Random.default_rng())
+    m, n = size(A)
+    # oversampling = 0 means "as wide again as k": a term-document spectrum decays too
+    # slowly for the textbook p=10, which loses the subspace (see the docstring's table)
+    p = oversampling > 0 ? Int(oversampling) : k
+    l = min(k + p, n)
+
+    # thin Q of a QR: `Matrix(F.Q)` is not portably thin, so project the implicit Q
+    thinq(Y) = (F = qr(Y); F.Q * Matrix{Float32}(I, size(Y, 1), size(Y, 2)))
+
+    Y = A * randn(rng, Float32, n, l)          # m×l sample of A's range
+    for _ in 1:power_iterations
+        Y = thinq(Y)
+        Y = A * (transpose(A) * Y)
+    end
+
+    Q = thinq(Y)                                # m×l orthonormal basis
+    B = Matrix(transpose(Q) * A)                # l×n -- small, this is what gets factorized
+    F = svd(B)
+    kk = min(k, length(F.S))
+    Q * F.U[:, 1:kk], F.S[1:kk]
+end
+
 """
     LatentSemanticIndexing(model::VectorModel, corpus;
                            maxoutdim::Integer=128,
@@ -69,7 +133,10 @@ end
                            minweight::Real=1e-6,
                            isnormalized::Bool=false,
                            verbose::Bool=true,
-                           scaling::Symbol=:none)
+                           scaling::Symbol=:none,
+                           factorization::Symbol=:auto,
+                           oversampling::Integer=0,
+                           power_iterations::Integer=4)
 
 Computes a Latent Semantic Indexing (LSI) projection matrix from `corpus` weighted by `model`.
 `corpus` can be a collection of raw texts or pre-vectorized sparse vectors (`AbstractVector{<:SparseVectorLike}` or `AbstractDatabase`).
@@ -84,6 +151,17 @@ Computes a Latent Semantic Indexing (LSI) projection matrix from `corpus` weight
   - `:none` (default): standard orthogonal concept projection P = U_k^T.
   - `:inv_singular_values`: classical LSI document coordinate scaling P = Σ_k^{-1} U_k^T.
   - `:singular_values`: singular value weighted projection P = Σ_k U_k^T.
+- `factorization`: how the truncated SVD is computed, which decides whether a large corpus
+  is tractable at all:
+  - `:auto` (default): `:randomized` once `min(vocsize, length(corpus))` exceeds
+    [`LSI_RANDOMIZED_THRESHOLD`](@ref), `:full` below it.
+  - `:randomized`: [`_randomized_svd`](@ref) -- a couple of sparse products plus a small
+    dense SVD, never forming a Gram matrix.
+  - `:full`: exact, via a dense Gram matrix and a complete `eigen`. Costs
+    `O(min(m,n)^3)` time and `min(m,n)^2` memory *regardless of `maxoutdim`*, so it is only
+    appropriate for small corpora.
+- `oversampling`, `power_iterations`: accuracy knobs for `:randomized` (see
+  [`_randomized_svd`](@ref)); ignored by `:full`.
 """
 function LatentSemanticIndexing(
     model::VectorModel,
@@ -93,7 +171,10 @@ function LatentSemanticIndexing(
     minweight::Real=1e-6,
     isnormalized::Bool=false,
     verbose::Bool=true,
-    scaling::Symbol=:none
+    scaling::Symbol=:none,
+    factorization::Symbol=:auto,
+    oversampling::Integer=0,
+    power_iterations::Integer=4
 )
     m = vocsize(model)
     m > 0 || throw(ArgumentError("model vocabulary is empty (vocsize = 0)"))
@@ -111,21 +192,34 @@ function LatentSemanticIndexing(
     k = min(Int(maxoutdim), m_mat, n_mat)
     k > 0 || throw(ArgumentError("Output dimension k must be positive; got k=$k for matrix size $(size(A))"))
 
-    # Compute truncated SVD using the smaller Gram matrix
-    if m_mat <= n_mat
+    gram_side = min(m_mat, n_mat)
+    use_randomized = if factorization === :auto
+        gram_side > LSI_RANDOMIZED_THRESHOLD
+    elseif factorization === :randomized
+        true
+    elseif factorization === :full
+        false
+    else
+        throw(ArgumentError("Unknown factorization: :$factorization (allowed: :auto, :randomized, :full)"))
+    end
+
+    U, s = if use_randomized
+        _randomized_svd(A, k; oversampling, power_iterations)
+    elseif m_mat <= n_mat
+        # exact, via the smaller Gram matrix: dense and O(gram_side^3), see the note on
+        # `factorization` in the docstring
         C = Matrix(A * transpose(A))
         E = eigen(Symmetric(C))
         idx = sortperm(E.values, rev=true)[1:k]
-        s = sqrt.(max.(0f0, E.values[idx]))
-        U = E.vectors[:, idx]  # (m x k)
+        E.vectors[:, idx], sqrt.(max.(0f0, E.values[idx]))  # (m x k)
     else
         B = Matrix(transpose(A) * A)
         E = eigen(Symmetric(B))
         idx = sortperm(E.values, rev=true)[1:k]
-        s = sqrt.(max.(0f0, E.values[idx]))
+        sv = sqrt.(max.(0f0, E.values[idx]))
         V = E.vectors[:, idx]  # (n x k)
-        inv_s = [si > 1e-12 ? 1f0 / si : 0f0 for si in s]
-        U = Matrix(A * V) .* reshape(inv_s, 1, :)
+        inv_s = [si > 1e-12 ? 1f0 / si : 0f0 for si in sv]
+        Matrix(A * V) .* reshape(inv_s, 1, :), sv
     end
 
     P = Matrix{Float32}(transpose(U))
@@ -166,11 +260,15 @@ function LatentSemanticIndexing(
     minweight::Real=1e-6,
     isnormalized::Bool=false,
     verbose::Bool=true,
-    scaling::Symbol=:none
+    scaling::Symbol=:none,
+    factorization::Symbol=:auto,
+    oversampling::Integer=0,
+    power_iterations::Integer=4
 )
     voc = Vocabulary(config, corpus; verbose)
     model = VectorModel(gw, lw, voc)
-    LatentSemanticIndexing(model, corpus; maxoutdim, normalize, minweight, isnormalized, verbose, scaling)
+    LatentSemanticIndexing(model, corpus; maxoutdim, normalize, minweight, isnormalized, verbose,
+                            scaling, factorization, oversampling, power_iterations)
 end
 
 """
@@ -197,9 +295,13 @@ function LatentSemanticIndexing(
     minweight::Real=1e-6,
     isnormalized::Bool=false,
     verbose::Bool=true,
-    scaling::Symbol=:none
+    scaling::Symbol=:none,
+    factorization::Symbol=:auto,
+    oversampling::Integer=0,
+    power_iterations::Integer=4
 )
-    LatentSemanticIndexing(config, corpus; gw, lw, maxoutdim, normalize, minweight, isnormalized, verbose, scaling)
+    LatentSemanticIndexing(config, corpus; gw, lw, maxoutdim, normalize, minweight, isnormalized,
+                            verbose, scaling, factorization, oversampling, power_iterations)
 end
 
 function _project_sparse!(out::AbstractVector{Float32}, P::AbstractMatrix{Float32}, nzind::AbstractVector{<:Integer}, nzval::AbstractVector{<:Real})

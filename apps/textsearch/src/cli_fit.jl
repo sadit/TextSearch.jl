@@ -144,8 +144,14 @@ function _fit_one_batch(docs::Vector{String}, cfg, batch_dir::AbstractString)
         search_recall = Float64(get(syn, "search_recall", 0.9)),
     )
 
+    lsiopts = (
+        factorization = Symbol(get(enc, "factorization", "auto")),
+        oversampling = Int(get(enc, "oversampling", 0)),
+        power_iterations = Int(get(enc, "power_iterations", 4)),
+    )
+
     wordvecs, synmap = if kind === :lsi
-        lsi = LatentSemanticIndexing(model, docs; maxoutdim=outdim, scaling, verbose=false)
+        lsi = LatentSemanticIndexing(model, docs; maxoutdim=outdim, scaling, verbose=false, lsiopts...)
         wordvectors(lsi), synonyms(lsi, Int(syn["k"]); verbose=false, synopts...)
     elseif kind === :external
         wv, oov = _load_external_embeddings(external_path, voc)

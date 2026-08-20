@@ -41,6 +41,15 @@ kind = "lsi"                # "lsi" | "external"
 outdim = 128
 scaling = "none"            # "none" | "inv_singular_values" | "singular_values"
 external_path = ""          # kind="external": path to a token->vector JSON mapping
+# How LSI's truncated SVD is computed. "full" builds a dense Gram matrix and takes a
+# complete eigendecomposition -- O(min(vocab, docs)^3) time and a squared allocation
+# regardless of outdim, so it stops being viable somewhere in the low thousands of
+# documents per batch. "randomized" never forms that matrix; "auto" picks per batch.
+# oversampling = 0 means "as wide again as outdim"; both knobs trade time for fidelity to
+# the exact factorization (see TextSearch.LSI._randomized_svd for measured numbers).
+factorization = "auto"       # "auto" | "randomized" | "full"
+oversampling = 0
+power_iterations = 4
 
 [synonyms]
 k = 8

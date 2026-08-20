@@ -154,6 +154,29 @@ using Test, TextSearch, SimilaritySearch, LinearAlgebra, SparseArrays
         end
     end
 
+    @testset "factorization: randomized vs full" begin
+        # this corpus is far below the auto threshold, so :auto must take the exact path
+        @test min(vocsize(vmodel), length(corpus)) < TextSearch.LSI.LSI_RANDOMIZED_THRESHOLD
+        L_auto = LatentSemanticIndexing(vmodel, corpus; maxoutdim=4, verbose=false)
+        L_full = LatentSemanticIndexing(vmodel, corpus; maxoutdim=4, factorization=:full, verbose=false)
+        @test L_auto.s == L_full.s
+
+        # the randomized path must agree with the exact one on the leading spectrum when
+        # given enough sketch width / power iterations (here: everything, tiny corpus)
+        L_rnd = LatentSemanticIndexing(vmodel, corpus; maxoutdim=4, factorization=:randomized,
+                                        oversampling=64, power_iterations=8, verbose=false)
+        @test outdim(L_rnd) == outdim(L_full)
+        @test size(L_rnd.P) == size(L_full.P)
+        @test isapprox(L_rnd.s, L_full.s; rtol=1e-3)
+
+        # ... and still produce a usable projection
+        v = vectorize(L_rnd, corpus[1])
+        @test length(v) == outdim(L_rnd)
+        @test isapprox(norm(v), 1f0, atol=1e-5)
+
+        @test_throws ArgumentError LatentSemanticIndexing(vmodel, corpus; factorization=:bogus, verbose=false)
+    end
+
     @testset "synonyms: approximate vs exhaustive search" begin
         lsi = LatentSemanticIndexing(vmodel, corpus; maxoutdim=8, verbose=false)
         m = vocsize(lsi)

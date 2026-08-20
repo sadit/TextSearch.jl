@@ -111,6 +111,9 @@ kind = "lsi"
 outdim = $outdim
 scaling = "none"
 external_path = ""
+factorization = "auto"
+oversampling = 0
+power_iterations = 4
 
 [synonyms]
 k = $syn_k
