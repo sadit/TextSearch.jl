@@ -61,17 +61,28 @@ search_recall = 0.9
 [lemmas]
 algorithm = "fft"           # "fft" | "dnet" | "randsel" | "multirandsel"
 num_clusters = 0             # 0 = auto (sqrt(vocsize))
-selector = "shortest"        # "shortest" | "most_frequent" | "shortest_then_most_frequent"
+# The selector also seeds the grouping, so it decides more than ties: "shortest" lets a
+# short misspelling become a seed and fragment the family around it, while "most_frequent"
+# seeds on the form the corpus actually uses.
+selector = "most_frequent"   # "most_frequent" | "shortest" | "shortest_then_most_frequent"
 # Embeddings alone give topical neighbours, not inflections ("guerra" lands next to
-# "belico", not "guerras"), so each semantic cluster is split again by surface similarity
-# and the lemma is elected per subcluster. morphology_threshold is a normalized distance
-# (lower = stricter); min_common_prefix additionally demands that many shared leading
-# characters, which is what stops position-blind n-gram similarity from merging
-# "abioticos" with "bioticos" -- set it to 0 for languages that do not inflect by suffix.
+# "belico", not "guerras"), so surface similarity is what actually groups a lemma family and
+# the lemma is elected per family. morphology_threshold is a normalized distance (lower =
+# stricter); min_common_prefix additionally demands that many shared leading characters,
+# which is what stops position-blind n-gram similarity from merging "abioticos" with
+# "bioticos" -- set it to 0 for languages that do not inflect by suffix.
 morphology = "jaccard"       # "jaccard" | "levenshtein" | "none"
 morphology_threshold = 0.3
 qgram = 2
 min_common_prefix = 3
+# "morphology_first" groups surface-similar families over the whole vocabulary and lets
+# embeddings only split a family whose members mean different things; "semantic_first"
+# clusters by embedding first, which fragments inflection families across clusters (~1/3 the
+# coverage, ~10x slower) and is the only order that uses algorithm/num_clusters above.
+# semantic_threshold is a distance under cosine, so on [0, 2]: tightening it deletes correct
+# inflections rather than adding precision.
+order = "morphology_first"   # "morphology_first" | "semantic_first"
+semantic_threshold = 1.0
 """
 
 """

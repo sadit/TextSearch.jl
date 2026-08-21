@@ -191,15 +191,34 @@ like `abrupto`/`abrupta`:
 
 Jaccard over character bigrams wins on both quality and speed, so it is the default at
 `0.3`. `min_common_prefix = 3` then removes the failure mode that position-blind n-gram
-similarity has left: `abioticos`/`bioticos` and `abandonadas`/`donadas` share nearly every
-bigram while being different words. With all of it in place the output looks like a
-lemmatizer -- `aberturas -> abertura`, `acabaran -> acabar`, `absolutas -> absoluto`,
-`algebraico -> algebraica` -- over ~6.6% of the vocabulary.
+similarity leaves: `abioticos`/`bioticos` and `abandonadas`/`donadas` share nearly every
+bigram while being different words, and no choice of `qgram` separates them (the pairs score
+*identically* to correct ones like `aberturas`/`abertura` at every `q`, because both are "one
+character different at one end").
 
-One caveat worth knowing: the elected lemma is the shortest (or most frequent) member of its
-family, not a linguistically-derived base form, so it can point "backwards"
-(`aborigen -> aborigenes`). For search normalization what matters is that every variant
-collapses onto the *same* key, which it does.
+Two more choices only showed their teeth at full scale, and both are worth knowing before
+tuning this:
+
+**Grouping is leader-based, not single-linkage.** Transitive linking chains -- `A~B` and
+`B~C` merge even when `A` and `C` are unrelated -- and on 143k Spanish tokens the chains
+swallowed whole prefix neighbourhoods: a 292-member "family" spanning `concentra`...`cons`,
+with `cara` merged into `caracas` and `caracalla`. 324 families exceeded 20 members, holding
+17% of all mappings. Attaching members to a *seed* instead bounds each group by one radius
+around its lemma: the largest family drops from 292 to 26 and only 4 exceed 20 members.
+
+**The selector seeds the grouping, so it decides more than ties.** With `shortest`, a short
+misspelling wins the seed and fragments the family around it -- the typo `guera` seeded a
+group that absorbed `guerra` and left `guerras` stranded. `most_frequent` (the default) seeds
+on the form the corpus actually uses, which recovered `guerras -> guerra`,
+`jugadores -> jugador` and `concentraciones -> concentracion` in the same run.
+
+With all of it in place, at 25,000 Spanish articles: ~32% of the vocabulary remapped, largest
+family 26, and output like `himnos -> himno`, `murallas -> muralla`, `compresores -> compresor`,
+`examinaron -> examinar`, `biologicas -> biologica`.
+
+One caveat worth knowing: the elected lemma is the most frequent member of its family, not a
+linguistically-derived base form, so it can point "backwards". For search normalization what
+matters is that every variant collapses onto the *same* key, which it does.
 
 ## Workflow
 

@@ -163,7 +163,9 @@ function _fit_one_batch(docs::Vector{String}, cfg, batch_dir::AbstractString)
         morphology=Symbol(get(lem, "morphology", "jaccard")),
         morphology_threshold=Float64(get(lem, "morphology_threshold", 0.3)),
         qgram=Int(get(lem, "qgram", 2)),
-        min_common_prefix=Int(get(lem, "min_common_prefix", 3)))
+        min_common_prefix=Int(get(lem, "min_common_prefix", 3)),
+        order=Symbol(get(lem, "order", "morphology_first")),
+        semantic_threshold=Float64(get(lem, "semantic_threshold", 1.0)))
 
     save_profile(batch_dir, model;
         synonyms=synmap, lemmas, stopword_candidates=candidates,

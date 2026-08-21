@@ -23,7 +23,7 @@ using Test, TextSearch, SimilaritySearch
     wordvecs = MatrixDatabase(X)
 
     @testset "shortest selector groups tight pairs, singleton left alone" begin
-        lemmas = lemma_clusters(voc, wordvecs; algorithm=:fft, num_clusters=3, selector=:shortest, dist=Dist.L2(), morphology=:none)
+        lemmas = lemma_clusters(voc, wordvecs; algorithm=:fft, num_clusters=3, selector=:shortest, dist=Dist.L2(), morphology=:none, order=:semantic_first)
         @test lemmas["cats"] == "cat"
         @test lemmas["dogs"] == "dog"
         @test !haskey(lemmas, "cat")
@@ -31,8 +31,31 @@ using Test, TextSearch, SimilaritySearch
         @test !haskey(lemmas, "fish")
     end
 
+    @testset "the default order is morphology-first" begin
+        words7 = ["cantar", "cantara", "cantaba"]
+        voc7 = Vocabulary(textconfig, words7)
+        # nearly parallel but distinct: cosine distances stay far below semantic_threshold
+        # (so the semantic step never splits the family) while still being separable, which
+        # is what lets fft put each token in its own cluster below
+        X7 = Float32[1 1 1; 0 0.05 0.1]
+        wv7 = MatrixDatabase(X7)
+
+        # default order is morphology-first: surface similarity groups the family whatever
+        # the embedding space would have done
+        L = lemma_clusters(voc7, wv7; morphology_threshold=0.5, selector=:shortest)
+        @test L["cantara"] == "cantar"
+        @test L["cantaba"] == "cantar"
+
+        # the same family under semantic-first with one cluster per token: the hard
+        # partition isolates each token, so morphology never gets to see the pairs. This is
+        # the recall ceiling that motivated making morphology-first the default.
+        Lsem = lemma_clusters(voc7, wv7; order=:semantic_first, num_clusters=3,
+                               morphology_threshold=0.5, selector=:shortest)
+        @test isempty(Lsem)
+    end
+
     @testset "num_clusters=0 defaults to sqrt(vocsize) heuristic and still runs" begin
-        lemmas = lemma_clusters(voc, wordvecs; dist=Dist.L2(), morphology=:none)
+        lemmas = lemma_clusters(voc, wordvecs; dist=Dist.L2(), morphology=:none, order=:semantic_first)
         @test lemmas isa Dict{String,String}
     end
 
@@ -43,7 +66,7 @@ using Test, TextSearch, SimilaritySearch
         for tid in 1:vocsize(voc2)
             X2[:, tid] = coords[token(voc2, tid)]
         end
-        lemmas = lemma_clusters(voc2, MatrixDatabase(X2); num_clusters=1, selector=:most_frequent, dist=Dist.L2(), morphology=:none)
+        lemmas = lemma_clusters(voc2, MatrixDatabase(X2); num_clusters=1, selector=:most_frequent, dist=Dist.L2(), morphology=:none, order=:semantic_first)
         @test lemmas["cat"] == "cats"  # occs("cats")=3 > occs("cat")=1
     end
 
@@ -55,7 +78,7 @@ using Test, TextSearch, SimilaritySearch
         for tid in 1:vocsize(voc3)
             X3[:, tid] = coords3[token(voc3, tid)]
         end
-        lemmas = lemma_clusters(voc3, MatrixDatabase(X3); num_clusters=1, selector=:shortest_then_most_frequent, dist=Dist.L2(), morphology=:none)
+        lemmas = lemma_clusters(voc3, MatrixDatabase(X3); num_clusters=1, selector=:shortest_then_most_frequent, dist=Dist.L2(), morphology=:none, order=:semantic_first)
         @test lemmas["by"] == "ax"  # same length, occs("ax")=3 > occs("by")=1
     end
 
@@ -97,7 +120,7 @@ using Test, TextSearch, SimilaritySearch
     end
 
     @testset "unknown algorithm/selector/morphology error clearly" begin
-        @test_throws ErrorException lemma_clusters(voc, wordvecs; algorithm=:bogus)
+        @test_throws ErrorException lemma_clusters(voc, wordvecs; algorithm=:bogus, order=:semantic_first)
         @test_throws ErrorException lemma_clusters(voc, wordvecs; selector=:bogus)
         @test_throws ErrorException lemma_clusters(voc, wordvecs; morphology=:bogus)
     end
@@ -111,11 +134,11 @@ using Test, TextSearch, SimilaritySearch
         wv4 = MatrixDatabase(X4)
 
         # without morphology the whole cluster collapses onto a single representative
-        plain = lemma_clusters(voc4, wv4; num_clusters=1, morphology=:none, dist=Dist.L2())
+        plain = lemma_clusters(voc4, wv4; num_clusters=1, morphology=:none, dist=Dist.L2(), order=:semantic_first)
         @test length(unique(values(plain))) == 1
 
         # with it, each family keeps its own lemma and the look-alike is left alone
-        L = lemma_clusters(voc4, wv4; num_clusters=1, morphology=:jaccard,
+        L = lemma_clusters(voc4, wv4; num_clusters=1, morphology=:jaccard, order=:semantic_first,
                             morphology_threshold=0.5, min_common_prefix=3, dist=Dist.L2())
         @test L["ciudades"] == "ciudad"
         @test L["guerras"] == "guerra"
@@ -124,7 +147,7 @@ using Test, TextSearch, SimilaritySearch
         @test !haskey(L, "abioticos") && !haskey(L, "bioticos")
 
         @testset "min_common_prefix=0 lets the position-blind match through" begin
-            L0 = lemma_clusters(voc4, wv4; num_clusters=1, morphology=:jaccard,
+            L0 = lemma_clusters(voc4, wv4; num_clusters=1, morphology=:jaccard, order=:semantic_first,
                                  morphology_threshold=0.5, min_common_prefix=0, dist=Dist.L2())
             @test haskey(L0, "abioticos") || haskey(L0, "bioticos")
         end
@@ -136,7 +159,7 @@ using Test, TextSearch, SimilaritySearch
             voc5 = Vocabulary(textconfig, ["mañana", "mañanas", "»", "—"])
             @test "»" in [token(voc5, i) for i in eachindex(voc5)]
             X5 = zeros(Float32, 2, vocsize(voc5))
-            L5 = lemma_clusters(voc5, MatrixDatabase(X5); num_clusters=1,
+            L5 = lemma_clusters(voc5, MatrixDatabase(X5); num_clusters=1, order=:semantic_first,
                                  morphology=:levenshtein, morphology_threshold=0.3,
                                  min_common_prefix=3, dist=Dist.L2())
             @test L5 isa Dict{String,String}

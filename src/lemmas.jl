@@ -2,6 +2,24 @@
 
 export lemma_clusters
 
+"""
+    _selector_key(selector) -> (voc, tid) -> key
+
+Sort key matching `_lemma_pick`'s preference, so a leader pass can visit candidates in the
+order the selector would elect them and its seed is already the lemma.
+"""
+function _selector_key(selector::Symbol)
+    if selector === :shortest
+        (voc, tid) -> (length(token(voc, tid)), token(voc, tid))
+    elseif selector === :most_frequent
+        (voc, tid) -> (-occs(voc, tid), token(voc, tid))
+    elseif selector === :shortest_then_most_frequent
+        (voc, tid) -> (length(token(voc, tid)), -occs(voc, tid), token(voc, tid))
+    else
+        error("unknown lemma selector: $selector; supported: shortest, most_frequent, shortest_then_most_frequent")
+    end
+end
+
 function _lemma_pick(selector::Symbol)
     if selector === :shortest
         (voc, group) -> begin
@@ -38,16 +56,19 @@ end
 
 # ── morphological similarity ─────────────────────────────────────────────────
 #
-# Semantic clustering alone does not produce lemmas. LSI embeddings capture distributional
-# similarity, so a token's nearest neighbors are its *topical* relatives ("guerra" ->
-# "belico", "aliados"), not its inflected forms -- which is exactly what the synonym network
-# is for. Measured on Spanish Wikipedia, purely semantic clusters put two morphological
-# variants together only ~2% of the time even when shrunk to an average of 1.5 tokens each.
+# Embeddings do not find lemmas. LSI captures distributional similarity, so a token's
+# nearest neighbours are its *topical* relatives ("guerra" -> "belico", "aliados"), which is
+# what the synonym network is for. Measured on Spanish Wikipedia, purely semantic clusters
+# put two morphological variants together only ~2% of the time even when shrunk to an
+# average of 1.5 tokens each, so electing one representative per semantic cluster produced
+# mappings like "casas" -> "dia".
 #
-# So morphology has to enter explicitly: the semantic clusters are split into subclusters of
-# tokens that also *look* alike, and a lemma is elected per subcluster. That keeps the
-# semantic step (which prevents merging unrelated look-alikes such as "casa"/"caso") while
-# letting surface form decide what counts as the same word.
+# Morphology therefore leads (`order=:morphology_first`, the default): tokens are grouped by
+# surface similarity over the whole vocabulary, and embeddings are demoted to *splitting* a
+# family when its members turn out to mean different things. Leading with the embeddings
+# instead (`:semantic_first`) imposes a hard partition that morphology can never cross, so
+# variants landing in different clusters are unreachable however alike they are spelled --
+# measured, that costs roughly two thirds of the coverage and runs ~10x slower.
 
 """
     _qgram_ids(s, q, vocab) -> Vector{Int32}
@@ -126,58 +147,6 @@ function _common_prefix_len(a::Vector{Char}, b::Vector{Char})
 end
 
 """
-    _morph_subclusters(voc, group, prepare, distance, threshold, min_common_prefix) -> Vector{Vector{UInt32}}
-
-Splits one semantic cluster into morphological subclusters by single-linkage: two tokens
-land together when their surface forms are within `threshold`, transitively. Single linkage
-is the right shape here because an inflection family is a chain (`clara`-`claras`-`claro`),
-not a ball -- requiring every pair to be close would fragment it.
-
-`min_common_prefix > 0` additionally requires two tokens to agree on that many leading
-characters before they can link. Character n-gram similarity is position-blind, which is
-what lets it match `abioticos` with `bioticos` or `abandonadas` with `donadas` -- pairs that
-share almost every gram yet are different words. Requiring a shared prefix encodes that the
-target language inflects by suffix; set it to `0` for languages where that does not hold.
-
-Cost is `O(|group|^2)` distance evaluations, so it is the semantic step's `num_clusters`
-that keeps this affordable: fewer, larger clusters make this quadratic term dominate.
-"""
-function _morph_subclusters(voc::Vocabulary, group::Vector{UInt32}, prepare, distance, threshold::Real,
-                            min_common_prefix::Int)
-    n = length(group)
-    n == 1 && return [group]
-
-    toks = [token(voc, tid) for tid in group]
-    chars = min_common_prefix > 0 ? [collect(t) for t in toks] : nothing
-    reps = [prepare(t) for t in toks]
-    parent = collect(1:n)
-    find(x) = begin
-        while parent[x] != x
-            parent[x] = parent[parent[x]]
-            x = parent[x]
-        end
-        x
-    end
-
-    @inbounds for i in 1:(n - 1), j in (i + 1):n
-        if min_common_prefix > 0 && _common_prefix_len(chars[i], chars[j]) < min_common_prefix
-            continue
-        end
-        if distance(reps[i], reps[j]) <= threshold
-            ri, rj = find(i), find(j)
-            ri != rj && (parent[ri] = rj)
-        end
-    end
-
-    subs = Dict{Int,Vector{UInt32}}()
-    @inbounds for i in 1:n
-        push!(get!(() -> UInt32[], subs, find(i)), group[i])
-    end
-
-    collect(values(subs))
-end
-
-"""
     _link_subclusters(items, close) -> Vector{Vector{T}}
 
 Single-linkage grouping of `items` under the predicate `close(i, j)` (indices into `items`),
@@ -212,6 +181,44 @@ function _link_subclusters(items::Vector{T}, close) where {T}
 end
 
 """
+    _leader_groups(items, order, close) -> Vector{Vector{T}}
+
+Groups `items` around seeds: walking them in `order`, the first unassigned item becomes a
+seed and every still-unassigned item that is `close` **to that seed** joins it.
+
+This deliberately replaces single-linkage for morphology. Single linkage chains -- `A~B` and
+`B~C` merge even when `A` and `C` are unrelated -- and on a real vocabulary the chains
+swallow everything sharing a prefix: measured on 143k Spanish tokens it produced a
+292-member "family" spanning `concentra`...`cons`, and merged `cara` with `caracas` and
+`caracalla`. Requiring closeness to the seed instead bounds every group by one radius around
+its lemma, which is also exactly the shape "a lemma plus its variants" should have.
+
+Visiting in the selector's own order (see [`_selector_key`](@ref)) makes the seed the token
+the selector would have elected anyway.
+"""
+function _leader_groups(items::Vector{T}, order::Vector{Int}, close) where {T}
+    n = length(items)
+    n <= 1 && return [items]
+
+    assigned = falses(n)
+    groups = Vector{Vector{T}}()
+    @inbounds for si in order
+        assigned[si] && continue
+        assigned[si] = true
+        grp = T[items[si]]
+        for qi in order
+            assigned[qi] && continue
+            if close(si, qi)
+                assigned[qi] = true
+                push!(grp, items[qi])
+            end
+        end
+        push!(groups, grp)
+    end
+    groups
+end
+
+"""
     _prefix_blocks(voc, ids, prefix_len) -> Vector{Vector{UInt32}}
 
 Buckets `ids` by their tokens' first `prefix_len` characters. When linking *requires* a
@@ -220,7 +227,13 @@ never link -- and it is what makes morphology-first clustering affordable: compa
 whole vocabulary pairwise is `O(vocsize^2)` (10^10 pairs at 143k tokens), while the sum over
 buckets is smaller by orders of magnitude.
 
-`prefix_len <= 0` cannot block, so everything lands in a single bucket.
+`prefix_len <= 0` cannot block, so everything lands in a single bucket -- which also means
+`min_common_prefix = 0` gives up the blocking speedup entirely.
+
+Requiring a shared prefix is not only an optimization: character n-gram similarity is
+position-blind, so without it `abioticos`/`bioticos` and `abandonadas`/`donadas` link on
+sharing nearly every gram despite being different words. It encodes that the target language
+inflects by suffix, so set it to `0` for languages where that does not hold.
 """
 function _prefix_blocks(voc::Vocabulary, ids, prefix_len::Int)
     prefix_len <= 0 && return [collect(UInt32, ids)]
@@ -236,10 +249,10 @@ end
 """
     lemma_clusters(voc::Vocabulary, wordvecs::AbstractDatabase;
                    algorithm::Symbol=:fft, num_clusters::Integer=0,
-                   selector::Symbol=:shortest, dist=Dist.Cosine(),
+                   selector::Symbol=:most_frequent, dist=Dist.Cosine(),
                    morphology::Symbol=:jaccard, morphology_threshold::Real=0.3,
                    qgram::Integer=2, min_common_prefix::Integer=3,
-                   order::Symbol=:semantic_first, semantic_threshold::Real=0.5) -> Dict{String,String}
+                   order::Symbol=:morphology_first, semantic_threshold::Real=1.0) -> Dict{String,String}
 
 Derives a `token => lemma` map by combining two signals:
 
@@ -251,10 +264,33 @@ Derives a `token => lemma` map by combining two signals:
    `morphology_threshold`, `qgram` -- see [`_morphology_metric`](@ref)), so only tokens that
    also *look* alike end up sharing a lemma.
 
-Then one canonical token is elected per subcluster (`selector`: `:shortest`,
-`:most_frequent`, or `:shortest_then_most_frequent`) and every other member maps to it.
+Then one canonical token is elected per group (`selector`: `:most_frequent` by default,
+`:shortest`, or `:shortest_then_most_frequent`) and every other member maps to it. The
+selector also decides seeding order, so it is more consequential than a tie-break:
+`:shortest` lets a short misspelling win, and a junk seed fragments the family around it --
+measured on 143k Spanish tokens, the typo `guera` seeded a group that swallowed `guerra` and
+left `guerras` stranded. `:most_frequent` seeds on the form the corpus actually uses, which
+recovered `guerras -> guerra`, `jugadores -> jugador` and `concentraciones -> concentracion`
+in the same run.
 Subclusters of one are left alone. Returns only non-identity entries -- a lookup miss means
 the token is its own lemma.
+
+`order` decides which signal partitions first:
+
+- `:morphology_first` (default): surface-similar families over the whole vocabulary (made
+  affordable by blocking on the required shared prefix), then `semantic_threshold` splits a
+  family whose members are far apart in embedding space. Whole conjugations collapse
+  correctly this way (`abandona`, `abandonado`, `abandonar`, `abandone`, ... -> `abandono`).
+- `:semantic_first`: the original order -- cluster by embedding, then split each cluster by
+  surface similarity. Retained because it is the only order that respects a caller-supplied
+  `algorithm`/`num_clusters`, but it fragments inflection families across clusters.
+
+`semantic_threshold` is a distance under `dist`, so with the default cosine it lives on
+`[0, 2]`; the default `1.0` was picked by measurement rather than taste. Tightening it does
+not buy precision -- it mostly deletes correct inflections (at `0.9` only 4 of 10 probed
+inflections survive, against 9 of 10 at `1.0`), while loosening it past `~1.05` stops
+catching anything (the artifacts it legitimately removes are cross-language and truncation
+pairs such as `academic`/`academia` and `abstracta`/`abstract`).
 
 Step 2 is what makes the result lemma-shaped rather than topic-shaped: embeddings alone put
 "guerra" next to "belico" rather than next to "guerras" (measured ~2% morphological pairs
@@ -271,13 +307,22 @@ lemmas["casas"]   # "casa"
 """
 function lemma_clusters(voc::Vocabulary, wordvecs::AbstractDatabase;
                          algorithm::Symbol=:fft, num_clusters::Integer=0,
-                         selector::Symbol=:shortest, dist=Dist.Cosine(),
+                         selector::Symbol=:most_frequent, dist=Dist.Cosine(),
                          morphology::Symbol=:jaccard, morphology_threshold::Real=0.3,
                          qgram::Integer=2, min_common_prefix::Integer=3,
-                         order::Symbol=:semantic_first, semantic_threshold::Real=0.5)
+                         order::Symbol=:morphology_first, semantic_threshold::Real=1.0)
     m = vocsize(voc)
     pick = _lemma_pick(selector)
+    keyof = _selector_key(selector)
     mp = Int(min_common_prefix)
+
+    # morphological grouping is leader-based, not single-linkage: see `_leader_groups`
+    morphgroups(ids) = begin
+        toks = [token(voc, tid) for tid in ids]
+        reps = [prepare(t) for t in toks]
+        order = sortperm(eachindex(ids); by=i -> keyof(voc, ids[i]))
+        _leader_groups(ids, order, (i, j) -> morphdist(reps[i], reps[j]) <= morphology_threshold)
+    end
 
     prepare, morphdist = morphology === :none ? (identity, nothing) :
                          _morphology_metric(morphology, Int(qgram))
@@ -304,8 +349,7 @@ function lemma_clusters(voc::Vocabulary, wordvecs::AbstractDatabase;
             else
                 for blk in _prefix_blocks(voc, group, mp)
                     length(blk) <= 1 && continue
-                    reps = [prepare(token(voc, tid)) for tid in blk]
-                    append!(finalgroups, _link_subclusters(blk, (i, j) -> morphdist(reps[i], reps[j]) <= morphology_threshold))
+                    append!(finalgroups, morphgroups(blk))
                 end
             end
         end
@@ -315,8 +359,7 @@ function lemma_clusters(voc::Vocabulary, wordvecs::AbstractDatabase;
         # 1. morphological families over the WHOLE vocabulary, made affordable by blocking
         for blk in _prefix_blocks(voc, 1:m, mp)
             length(blk) <= 1 && continue
-            reps = [prepare(token(voc, tid)) for tid in blk]
-            for fam in _link_subclusters(blk, (i, j) -> morphdist(reps[i], reps[j]) <= morphology_threshold)
+            for fam in morphgroups(blk)
                 length(fam) <= 1 && continue
                 # 2. embeddings then only *split* a family, keeping homographs apart
                 vecs = [wordvecs[tid] for tid in fam]

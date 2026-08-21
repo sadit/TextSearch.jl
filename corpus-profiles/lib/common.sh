@@ -127,6 +127,8 @@ morphology = "jaccard"
 morphology_threshold = 0.3
 qgram = 2
 min_common_prefix = 3
+order = "morphology_first"
+semantic_threshold = 1.0
 EOF
   log "rendered fit config -> $out"
 }

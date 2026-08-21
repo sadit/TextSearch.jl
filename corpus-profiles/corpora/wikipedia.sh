@@ -35,7 +35,7 @@ MIN_NDOCS=5
 STOPWORDS=true
 DOC_FREQ_THRESHOLD=0.5
 LEMMA_ALG=fft
-LEMMA_SEL=shortest
+LEMMA_SEL=most_frequent
 STEPS="fetch,prepare,fit"
 FORCE=0
 
@@ -58,7 +58,7 @@ Options:
   --no-stopwords         disable stopword detection/removal (on by default)
   --doc-freq-threshold F stopword document-frequency cutoff (default 0.5)
   --lemma-algorithm A    fft | dnet | randsel | multirandsel (default fft)
-  --lemma-selector S     shortest | most_frequent | shortest_then_most_frequent
+  --lemma-selector S     most_frequent (default) | shortest | shortest_then_most_frequent
   --steps LIST           comma list of fetch,prepare,fit (default all)
   --force                re-download / re-convert even if outputs exist
   -h, --help             this help
