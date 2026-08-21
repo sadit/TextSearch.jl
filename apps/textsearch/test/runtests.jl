@@ -432,6 +432,49 @@ end
                     @test vocsize(q.model.voc) >= vocsize(r.model.voc)
                 end
 
+                @testset "--avgdoclen pins BM25's length normalization" begin
+                    pinned = joinpath(dir, "pinned.zip")
+                    TextSearchApp.cmd_refit([zippath, "--sample", samplepath,
+                                             "--out", pinned, "--avgdoclen", "sample"])
+                    q = TextSearch.load_profile(pinned)
+                    # the contract is "matches the sample", not a direction: on this fixture
+                    # the sample's documents are LONGER than the base's, so pinning raises it
+                    svoc = TextSearch.Vocabulary(
+                        TextSearch.refit_textconfig(TextSearch.load_profile(zippath)),
+                        [JSON3.read(l)[:text] for l in eachline(samplepath)]; verbose=false)
+                    @test isapprox(TextSearch.avgdoclen(q.model.voc),
+                                   TextSearch.avgdoclen(svoc); rtol=0.05)
+                    @test TextSearch.avgdoclen(q.model.voc) != TextSearch.avgdoclen(r.model.voc)
+                    # only numtokens moves; the counts the weights come from must not.
+                    # Compared by content: Vocabulary construction is threaded and its token
+                    # ORDER is not part of the contract.
+                    vcounts(v) = Dict(TextSearch.token(v, i) =>
+                                          (TextSearch.occs(v, i), TextSearch.ndocs(v, i))
+                                      for i in eachindex(v))
+                    @test vcounts(q.model.voc) == vcounts(r.model.voc)
+                    @test Dict(TextSearch.token(q.model.voc, i) => q.model.weight[i]
+                               for i in eachindex(q.model.voc)) ==
+                          Dict(TextSearch.token(r.model.voc, i) => r.model.weight[i]
+                               for i in eachindex(r.model.voc))
+                end
+
+                @testset "--extend-lemmas recovers families the base never saw" begin
+                    ext = joinpath(dir, "extended.zip")
+                    @test TextSearchApp.cmd_refit([zippath, "--sample", samplepath,
+                                                   "--out", ext, "--extend-lemmas"]) == 0
+                    q = TextSearch.load_profile(ext)
+                    # this fixture may or may not yield a family, so assert the invariants
+                    # rather than a specific pairing: whatever is mapped must be applied and
+                    # must point into the vocabulary
+                    for (_, lemma) in q.lemmas
+                        @test TextSearch.token2id(q.model.voc, lemma) != 0
+                    end
+
+                    @test_throws Exception TextSearchApp.cmd_refit(
+                        [zippath, "--sample", samplepath, "--out", joinpath(dir, "w.zip"),
+                         "--extend-lemmas", "--no-lemmas"])
+                end
+
                 @testset "invalid arguments are rejected" begin
                     @test_throws Exception TextSearchApp.cmd_refit(
                         [zippath, "--sample", samplepath, "--out", joinpath(dir, "x.tar")])
@@ -442,6 +485,9 @@ end
                     @test_throws Exception TextSearchApp.cmd_refit(
                         [zippath, "--sample", samplepath, "--out", joinpath(dir, "z.zip"),
                          "--base-weight", "1.5"])
+                    @test_throws Exception TextSearchApp.cmd_refit(
+                        [zippath, "--sample", samplepath, "--out", joinpath(dir, "v.zip"),
+                         "--avgdoclen", "nonsense"])
                 end
             end
 

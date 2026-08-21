@@ -30,6 +30,17 @@ end
         basedocs[i] *= " abstruso"
     end
     basedocs[1] *= " typoxyz"
+    # Enough distinct base tokens that the blended vocabulary ends up LARGER than the corpus a
+    # pinned avgdoclen describes. Without that, the fixture cannot catch a `max(vocsize, ...)`
+    # floor swallowing the avgdoclen override -- which is exactly what happened: the floor read
+    # as a sane "one occurrence per token" bound and silently made the knob a no-op on any real
+    # base. Each token lands in ~11 of the 100 documents, enough that the default kappa carries
+    # it rather than rounding it away. The names are alphabetic on purpose: a numeric suffix
+    # would be collapsed by group_num into a single token.
+    xname(k) = "tok" * string(Char('a' + div(k, 26))) * string(Char('a' + mod(k, 26)))
+    for i in 1:100, j in 1:6
+        basedocs[i] *= " " * xname(mod(i * 6 + j, 54))
+    end
 
     function mkprofile(docs; textconfig=tc, kwargs...)
         voc = Vocabulary(textconfig, docs; verbose=false)
@@ -81,6 +92,24 @@ end
         # numtokens below the vocabulary size).
         @test all(id -> occs(voc, id) >= ndocs(voc, id), eachindex(voc))
         @test numtokens(voc) >= vocsize(voc)
+    end
+
+    @testset "the verbose report runs" begin
+        # Every other test here passes verbose=false, which left the reporting branch
+        # unexercised -- and it contained a MethodError: the `avgdoclen` keyword shadows the
+        # function of the same name, so calling it bare threw only when verbose was on. The
+        # CLI found it, not the library tests. Assert the branch executes and says something.
+        for adl in (:blend, :sample)
+            msg = mktemp() do path, io
+                redirect_stderr(io) do
+                    refit_profile(base, sampledocs; avgdoclen=adl, verbose=true)
+                end
+                flush(io)
+                read(path, String)
+            end
+            @test occursin("kappa=", msg)
+            @test occursin("avgdoclen=", msg)
+        end
     end
 
     @testset "a base-important token absent from the sample survives, with LESS weight" begin
@@ -240,6 +269,111 @@ end
             f3 = fold_lemmas(v3, Dict("casas" => "casa"))
             @test f3.capped >= 1
             @test ndocs(f3.voc, token2id(f3.voc, "casa")) == trainsize(v3)
+        end
+    end
+
+    @testset "extend_lemmas: families the base never saw" begin
+        # the base knows "audifono" but has never seen its plural; the sample uses both
+        extdocs = copy(basedocs)
+        for i in 1:30
+            extdocs[i] *= " audifono"
+        end
+        ebase = mkprofile(extdocs; lemmas=Dict("gatos" => "gato"))
+        esample = ["compre audifonos nuevos", "los audifonos suenan bien",
+                   "audifonos y audifono", "un audifono roto", "audifonos otra vez"]
+
+        @testset "without the extension they stay unmerged" begin
+            r = refit_profile(ebase, esample; verbose=false)
+            voc = r.model.voc
+            # two tokens, so the family's document frequency is split across forms
+            @test token2id(voc, "audifono") != 0
+            @test token2id(voc, "audifonos") != 0
+            @test !haskey(r.lemmas, "audifonos")
+        end
+
+        @testset "with it, the new form elects the base's established one" begin
+            r = refit_profile(ebase, esample; extend_lemmas=true, verbose=false)
+            voc = r.model.voc
+            # the base form wins the election because the merged counts favour it, which is
+            # the point of grouping over base+sample rather than the sample alone
+            @test r.lemmas["audifonos"] == "audifono"
+            @test token2id(voc, "audifonos") == 0
+            @test token2id(voc, "audifono") != 0
+            # and the family's counts are now together
+            @test ndocs(voc, token2id(voc, "audifono")) >=
+                  ndocs(refit_profile(ebase, esample; verbose=false).model.voc,
+                        token2id(refit_profile(ebase, esample; verbose=false).model.voc, "audifono"))
+            # the base's own map is carried through untouched
+            @test r.lemmas["gatos"] == "gato"
+        end
+
+        @testset "the base's own clustering decisions are not overruled" begin
+            # "abstruso" and "algo" are base-only tokens; whatever the base decided about
+            # them must stand, so no entry may appear for a token the sample never brought
+            r = refit_profile(ebase, esample; extend_lemmas=true, verbose=false)
+            newtokens = Set(["audifonos", "compre", "nuevos", "suenan", "bien", "roto",
+                             "otra", "vez", "los", "y", "un"])
+            for (tok, _) in r.lemmas
+                haskey(ebase.lemmas, tok) || @test tok in newtokens
+            end
+        end
+
+        @testset "extend_lemmas needs lemmas applied" begin
+            # nothing to extend into: the map would not be in the pipeline at all
+            r = refit_profile(ebase, esample; extend_lemmas=true, apply_lemmas=false, verbose=false)
+            @test !has_lemma_transformation(r.model.voc.textconfig.transformation)
+            @test !haskey(r.lemmas, "audifonos")
+        end
+    end
+
+    @testset "extend_lemmas_morphological on its own" begin
+        voc = Vocabulary(tc, ["gato gatos gatito", "perro perros", "casa"]; verbose=false)
+
+        # no candidates: everything is considered
+        all_ext = extend_lemmas_morphological(voc, Dict{String,String}())
+        @test !isempty(all_ext)
+        @test all(t -> token2id(voc, t) != 0, keys(all_ext))
+        @test all(l -> token2id(voc, l) != 0, values(all_ext))
+        # a lemma is never itself a key, so lookup terminates in one step
+        @test !any(l -> haskey(all_ext, l), values(all_ext))
+
+        # candidates restrict the OUTPUT, not just the cost
+        only_perros = extend_lemmas_morphological(voc, Dict{String,String}(); candidates=["perros"])
+        @test collect(keys(only_perros)) == ["perros"]
+
+        # tokens already mapped are left alone rather than re-grouped or chained
+        pre = Dict("gatos" => "gato")
+        ext = extend_lemmas_morphological(voc, pre)
+        @test !haskey(ext, "gatos")
+
+        # morphology is the whole signal here, so :none is an error rather than a silent no-op
+        @test_throws ErrorException extend_lemmas_morphological(voc, Dict{String,String}();
+                                                               morphology=:none)
+    end
+
+    @testset "avgdoclen: blend vs pinned to the sample" begin
+        # the sample's documents are much shorter than the base's, so the two disagree
+        blended = refit_profile(base, sampledocs; verbose=false)
+        pinned = refit_profile(base, sampledocs; avgdoclen=:sample, verbose=false)
+        svoc = Vocabulary(refit_textconfig(base), sampledocs; verbose=false)
+
+        # the base fixture is deliberately token-rich, so the pinned corpus has FEWER
+        # occurrences than the vocabulary has tokens -- the case a floor would have masked
+        @test numtokens(pinned.model.voc) < vocsize(pinned.model.voc)
+        @test avgdoclen(blended.model.voc) > avgdoclen(pinned.model.voc)
+        @test isapprox(avgdoclen(pinned.model.voc), avgdoclen(svoc); rtol=0.05)
+
+        # only numtokens moves: the knob exists to steer BM25's length normalization, and
+        # must not touch the counts the weights come from. Compared by content, since token
+        # order is not part of Vocabulary's contract.
+        @test counts(blended.model.voc) == counts(pinned.model.voc)
+        @test weights(blended.model) == weights(pinned.model)
+
+        @testset "an explicit average is accepted, nonsense is not" begin
+            fixed = refit_profile(base, sampledocs; avgdoclen=12.5, verbose=false)
+            @test isapprox(avgdoclen(fixed.model.voc), 12.5; rtol=0.05)
+            @test_throws ArgumentError refit_profile(base, sampledocs; avgdoclen=0, verbose=false)
+            @test_throws ArgumentError refit_profile(base, sampledocs; avgdoclen=:bogus, verbose=false)
         end
     end
 

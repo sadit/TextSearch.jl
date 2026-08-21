@@ -312,12 +312,17 @@ counters tunes both, and the weight vector is recomputed from them.
 Both counters (`ndocs` and `occs`) are scaled by the same per-base-document denominator, which
 is what keeps the output a *possible* corpus: scaling occurrences by the base's share of total
 tokens instead looks equally reasonable but makes the two round against different denominators,
-leaving carried tokens present in documents yet never occurring. One consequence to know:
-`avgdoclen` comes out as a weighted mean of the two corpora's average document lengths rather
-than the sample's -- honest, since the pseudo-documents the prior contributes are base
-documents, but it does pull BM25's length normalization toward the base. A base whose documents
-are nothing like the target's (Wikipedia articles against product reviews) argues for a smaller
-`--kappa`.
+leaving carried tokens present in documents yet never occurring.
+
+One consequence needs a decision: `avgdoclen` -- what BM25 divides document lengths by -- comes
+out as a weighted mean of the two corpora's average lengths rather than the sample's. That is
+honest, since the pseudo-documents the prior contributes are base documents, but it pulls
+length normalization toward the base, and the pull is large when the two corpora are nothing
+alike: Wikipedia-es against 400 product reviews lands at 141 tokens/document at the default
+kappa and 56 at `--base-weight 0.2`, against the sample's own 9.2. `--avgdoclen sample` pins it
+to the sample's instead (or pass a number); use it when the profile will index documents shaped
+like the sample, which is the usual reason to refit. Only `numtokens` moves -- the counts the
+weights come from are untouched -- because that field's single consumer is `avgdoclen` itself.
 
 **Lemmas.** By default the base's lemma map is *applied* here -- chained into the new
 profile's `TextConfig` -- and the base's own counters are folded through the same map so both
@@ -326,6 +331,20 @@ document containing two forms of one family counts twice), which is why every `n
 capped at `trainsize`; the counts are reported on stderr. Pass `--no-lemmas` to leave the map
 carried but unapplied. This is why `fit` defaults to `apply = false`: whether to lemmatize
 belongs to the model being tuned, not to the generic base.
+
+A map inherited from the base says nothing about words the base never saw, so those stay
+unmerged with their document frequency split across forms. `--extend-lemmas` recovers them
+from **surface similarity alone** -- morphology is what actually groups an inflection family;
+`fit` uses embeddings only to *split* one whose members mean different things -- so no
+embedding is fit and the cost is one extra pass over the sample. Tune it with
+`--morphology`/`--morphology-threshold`/`--qgram`/`--min-common-prefix`/`--lemma-selector`.
+The grouping runs over the base and sample vocabularies merged, so a new form can elect the
+established one (`"audifonos"` -> the base's `"audifono"`), and only the new tokens get
+entries: the base's own clustering decisions are never overruled. Against Wikipedia-es it
+recovered an accent pair (`devolvi` -> `devolvió`) and a diminutive (`baratito` -> `barato`),
+and reviving one lemma pulled its whole base family back into the profile. The tradeoff is
+that nothing can veto a grouping on meaning, so look-alike words with unrelated senses will
+merge where a full `fit` would have kept them apart.
 
 **What is not recomputed.** No embedding is fit here. Synonyms and lemmas come from the base,
 with synonym entries pointing at pruned tokens removed. That is exactly what makes a refit

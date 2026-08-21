@@ -1,6 +1,6 @@
 # This file is a part of TextSearch.jl
 
-export lemma_clusters
+export lemma_clusters, extend_lemmas_morphological
 
 """
     _selector_key(selector) -> (voc, tid) -> key
@@ -402,4 +402,78 @@ function _semantic_clustering(algorithm::Symbol, dist, wordvecs, num_clusters::I
     else
         error("unknown lemma clustering algorithm: $algorithm; supported: fft, dnet, randsel, multirandsel")
     end
+end
+
+"""
+    extend_lemmas_morphological(voc::Vocabulary, lemmas::AbstractDict;
+                                candidates=nothing,
+                                morphology::Symbol=:jaccard, morphology_threshold::Real=0.3,
+                                qgram::Integer=2, min_common_prefix::Integer=3,
+                                selector::Symbol=:most_frequent) -> Dict{String,String}
+
+Derives **additional** `token => lemma` entries for `voc` from surface similarity alone, and
+returns only the new ones (merge them into `lemmas` yourself).
+
+This exists because morphology is the signal that actually groups an inflection family:
+[`lemma_clusters`](@ref) uses embeddings only to *split* a family whose members mean
+different things, never to form one. So a family can be recovered without fitting any
+embedding -- which is what makes it usable on a vocabulary that arrived after the model was
+trained, e.g. the tokens a refit's sample brings that its base profile never saw
+([`refit_profile`](@ref)). Nothing here needs `wordvecs`, an LSI, or a second pass over a
+corpus. The tradeoff is that no semantic check can veto a grouping, so two look-alike words
+with unrelated meanings will merge where full `lemma_clusters` would have kept them apart.
+
+`candidates` bounds both the cost and the scope. Only prefix blocks containing at least one
+candidate token are examined -- the reason this stays cheap when `voc` is a whole base
+vocabulary and only a handful of tokens are new -- and only candidate tokens get entries.
+That restriction is deliberate: a family may well contain two tokens the base's own
+clustering saw and chose *not* to link, and silently overruling that decision is not this
+function's business. Pass `nothing` to consider everything.
+
+Tokens already keyed in `lemmas` are skipped, so no chain `token -> lemma -> other lemma` can
+be created. Note that under an applied [`LemmaTransformation`](@ref) they are not vocabulary
+tokens to begin with.
+"""
+function extend_lemmas_morphological(voc::Vocabulary, lemmas::AbstractDict;
+                                      candidates=nothing,
+                                      morphology::Symbol=:jaccard, morphology_threshold::Real=0.3,
+                                      qgram::Integer=2, min_common_prefix::Integer=3,
+                                      selector::Symbol=:most_frequent)
+    morphology === :none &&
+        error("extend_lemmas_morphological needs a morphology (:jaccard or :levenshtein) -- " *
+              "surface similarity is the whole signal it has, got :none")
+
+    prepare, morphdist = _morphology_metric(morphology, Int(qgram))
+    pick = _lemma_pick(selector)
+    keyof = _selector_key(selector)
+    mp = Int(min_common_prefix)
+
+    ids = UInt32[UInt32(tid) for tid in eachindex(voc) if !haskey(lemmas, token(voc, tid))]
+    length(ids) <= 1 && return Dict{String,String}()
+
+    want = candidates === nothing ? nothing : Set{String}(String(c) for c in candidates)
+    out = Dict{String,String}()
+
+    for blk in _prefix_blocks(voc, ids, mp)
+        length(blk) <= 1 && continue
+        want === nothing || any(tid -> token(voc, tid) in want, blk) || continue
+
+        reps = [prepare(token(voc, tid)) for tid in blk]
+        order = sortperm(eachindex(blk); by=i -> keyof(voc, blk[i]))
+        groups = _leader_groups(blk, order,
+                                (i, j) -> morphdist(reps[i], reps[j]) <= morphology_threshold)
+
+        for fam in groups
+            length(fam) <= 1 && continue
+            chosen = token(voc, pick(voc, fam))
+            for tid in fam
+                tok = token(voc, tid)
+                tok == chosen && continue
+                want === nothing || tok in want || continue
+                out[tok] = chosen
+            end
+        end
+    end
+
+    out
 end

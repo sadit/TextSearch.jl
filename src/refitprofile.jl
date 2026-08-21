@@ -19,7 +19,7 @@ export refit_profile, refit_textconfig, fold_lemmas, blend_vocabularies
 # tunes both, and the weight follows by recomputation.
 
 """
-    refit_textconfig(base; apply_lemmas::Bool=true) -> TextConfig
+    refit_textconfig(base; apply_lemmas::Bool=true, lemmas=nothing) -> TextConfig
 
 The `TextConfig` a refit of `base` runs under, and the one a caller building its own sample
 `Vocabulary` **must** tokenize with.
@@ -37,12 +37,18 @@ unapplied -- whether to lemmatize belongs to the refit, and a tuned model that d
 simply does not carry the map. When lemmas are added here, [`refit_profile`](@ref) folds the
 base's own counts through the same map so both sides stay comparable.
 
+`lemmas` overrides which map is applied, defaulting to `base.lemmas`. That is what lets a
+caller lemmatize under a map *extended* beyond the base's -- see
+[`extend_lemmas_morphological`](@ref) -- while keeping everything else about the config
+identical.
+
 See also [`refit_profile`](@ref), [`fold_lemmas`](@ref).
 """
-function refit_textconfig(base; apply_lemmas::Bool=true)
+function refit_textconfig(base; apply_lemmas::Bool=true, lemmas=nothing)
     tc = base.model.voc.textconfig
     apply_lemmas || return tc
-    TextConfig(tc; transformation=with_lemma_transformation(tc.transformation, base.lemmas))
+    map = lemmas === nothing ? base.lemmas : lemmas
+    TextConfig(tc; transformation=with_lemma_transformation(tc.transformation, map))
 end
 
 """
@@ -107,7 +113,8 @@ end
 
 """
     blend_vocabularies(voc_base, voc_sample;
-                       kappa::Real=0, keep_rate::Real=1e-5, keep_floor::Integer=3)
+                       kappa::Real=0, keep_rate::Real=1e-5, keep_floor::Integer=3,
+                       avgdoclen=:blend)
         -> Vocabulary
 
 Interpolates two vocabularies into one, treating `voc_base` as a **prior worth `kappa`
@@ -137,12 +144,24 @@ denominators, and a token carried from the base lands with `ndocs >= 1` but `occ
 present in documents yet never occurring. Sharing the denominator preserves each token's
 occurrences-per-document ratio, so `occs >= ndocs` holds by construction.
 
-One consequence is worth knowing: `avgdoclen` comes out as a weighted mean of the two
-corpora's average document lengths, not the sample's. That is the honest reading of the
-blend -- the pseudo-documents the prior contributes are base documents, and they are as long
-as base documents are -- but it does move BM25's length normalization toward the base, so a
-base whose documents are nothing like the target's (Wikipedia articles against product
-reviews) argues for a smaller `κ`.
+# avgdoclen
+
+By default (`avgdoclen = :blend`) `numtokens` is the sum of the surviving `occs`, so
+`avgdoclen` comes out as a weighted mean of the two corpora's average document lengths. That
+is the honest reading of the blend -- the pseudo-documents the prior contributes are base
+documents, and they are as long as base documents are. But it moves BM25's length
+normalization toward the base, and when the two corpora's documents are nothing alike the
+effect is large: Wikipedia-es against 400 product reviews lands at 141 tokens/document at
+`κ = N_s` and 56 at `κ = N_s/4`, against the sample's own ~21.
+
+`avgdoclen = :sample` instead sets `numtokens` so the average matches the sample's, and a
+positive number sets it to that average directly. This deliberately decouples `numtokens`
+from `sum(occs)`, which is safe because that field has exactly one consumer: `avgdoclen`,
+and through it `BM25Scorer`'s length normalization. (`TpWeighting` also divides by a
+"numtokens", but that one is the *document's* in-vocabulary token count computed per call in
+`vectorize!`, not this.) Use it when the profile will index documents shaped like the sample
+-- which is the usual reason to refit at all -- and leave it on `:blend` when the base's
+documents are representative of what you will index.
 
 # The prune
 
@@ -162,7 +181,8 @@ shows keeps only its `κ`-weighted share, so it survives with reduced weight aut
 Lowering importance is arithmetic; dropping is the only part that needs a decision.
 """
 function blend_vocabularies(voc_base::Vocabulary, voc_sample::Vocabulary;
-                             kappa::Real=0, keep_rate::Real=1e-5, keep_floor::Integer=3)
+                             kappa::Real=0, keep_rate::Real=1e-5, keep_floor::Integer=3,
+                             avgdoclen=:blend)
     N_s = trainsize(voc_sample)
     N_b = trainsize(voc_base)
     N_s > 0 || throw(ArgumentError("blend_vocabularies: the sample vocabulary has trainsize 0"))
@@ -209,8 +229,37 @@ function blend_vocabularies(voc_base::Vocabulary, voc_sample::Vocabulary;
     end
 
     voc = filter_tokens(t -> t.ndocs >= 1, out)
-    voc.numtokens[] = Int64(sum(voc.occs; init=Int64(0)))
+    voc.numtokens[] = _blended_numtokens(avgdoclen, voc, voc_sample)
     voc
+end
+
+"""
+    _blended_numtokens(avgdoclen, voc, voc_sample) -> Int64
+
+Resolves `blend_vocabularies`' `avgdoclen` option into the `numtokens` to store:
+`:blend` sums the surviving occurrences, `:sample` matches the sample's average document
+length, and a positive number is used as that average directly.
+"""
+function _blended_numtokens(avgdoclen, voc::Vocabulary, voc_sample::Vocabulary)
+    total = Int64(sum(voc.occs; init=Int64(0)))
+    avgdoclen === :blend && return total
+    target = if avgdoclen === :sample
+        TextSearch.avgdoclen(voc_sample)
+    elseif avgdoclen isa Real && avgdoclen > 0
+        Float64(avgdoclen)
+    else
+        throw(ArgumentError("avgdoclen must be :blend, :sample, or a positive number; " *
+                            "got $(repr(avgdoclen))"))
+    end
+    # No `max(vocsize, ...)` floor here, though "at least one occurrence per token" reads like
+    # an obvious sanity bound. It is the wrong bound for this field: a blended vocabulary
+    # routinely holds more tokens than its nominal corpus could contain (the base contributes
+    # tokens whose rate rounds to a single document), so the floor wins for any realistic base
+    # and silently turns the override into a no-op -- measured at 18.4 instead of the sample's
+    # 9.16 on Wikipedia-es. What describes the corpus is `occs`, which is untouched; in
+    # override mode `numtokens` is purely the number `avgdoclen` divides, i.e. a BM25
+    # length-normalization parameter, and it is only useful if it is obeyed.
+    max(Int64(1), round(Int64, trainsize(voc) * target))
 end
 
 """
@@ -237,9 +286,14 @@ apply_lemmas)`, and is checked against it. The second form is a convenience that
 - **Counters** are interpolated by [`blend_vocabularies`](@ref) and the vocabulary pruned
   there; the weight vector is then *recomputed*, which is what makes the tf-idf and BM25
   paths tuned by one operation rather than only the former.
-- **Lemmas** are reused, never re-derived: the base already paid for them. With
+- **Lemmas** are reused rather than re-derived: the base already paid for them. With
   `apply_lemmas`, they enter the `TextConfig` and the base's counters are folded through the
-  same map ([`fold_lemmas`](@ref)) so both sides stay comparable.
+  same map ([`fold_lemmas`](@ref)) so both sides stay comparable. `extend_lemmas` (corpus
+  form only, since it needs to retokenize) additionally recovers families for tokens the base
+  never saw, from surface similarity alone -- see [`extend_lemmas_morphological`](@ref).
+  Without it those tokens stay unmerged, which is the price of not fitting an embedding.
+- **`avgdoclen`** is `:blend` by default and can be pinned to the sample's with `:sample`;
+  see [`blend_vocabularies`](@ref) for why that choice matters to BM25.
 - **Synonyms** are inherited, restricted to tokens that survived. No embedding is fit here --
   that is exactly what makes a refit cheap next to a fit, and the point of bootstrapping.
 - **Stopword candidates** are recomputed from the blended counters, but the *applied* stopword
@@ -254,23 +308,24 @@ Set `verbose` to see the vocabulary sizes, how much of the result the base accou
 the fold/cap counts from any lemma folding.
 """
 function refit_profile(base, sample_voc::Vocabulary;
-                        kappa::Real=0, apply_lemmas::Bool=true,
-                        keep_rate::Real=1e-5, keep_floor::Integer=3,
+                        kappa::Real=0, apply_lemmas::Bool=true, lemmas=nothing,
+                        keep_rate::Real=1e-5, keep_floor::Integer=3, avgdoclen=:blend,
                         doc_freq_threshold::Real=0.5, verbose::Bool=true)
     gw, lw = base.model.global_weighting, base.model.local_weighting
     gw isa EntropyWeighting &&
         error("cannot refit an EntropyWeighting profile: its weights are supervised and " *
               "would have to be recomputed from the labeled corpus, which a profile does not carry")
 
-    tc = refit_textconfig(base; apply_lemmas)
+    lemmamap = lemmas === nothing ? base.lemmas : lemmas
+    tc = refit_textconfig(base; apply_lemmas, lemmas=lemmamap)
     _check_refit_textconfig(tc, sample_voc.textconfig)
 
     base_voc = base.model.voc
     # Fold only when the refit ADDS a lemma step the base did not have. If the base already
     # lemmatized, its counters are exact and folding again would be wrong.
-    if apply_lemmas && !isempty(base.lemmas) &&
+    if apply_lemmas && !isempty(lemmamap) &&
             !has_lemma_transformation(base_voc.textconfig.transformation)
-        f = fold_lemmas(base_voc, base.lemmas)
+        f = fold_lemmas(base_voc, lemmamap)
         base_voc = f.voc
         verbose && println(stderr,
             "refit: folded $(f.folded) base token(s) into their lemmas " *
@@ -279,11 +334,11 @@ function refit_profile(base, sample_voc::Vocabulary;
             "ndocs capped at trainsize for $(f.capped))")
     end
 
-    voc = blend_vocabularies(base_voc, sample_voc; kappa, keep_rate, keep_floor)
+    voc = blend_vocabularies(base_voc, sample_voc; kappa, keep_rate, keep_floor, avgdoclen)
 
     syn, sdist = _restrict_synonyms(base.synonyms, get(base, :synonym_distances, nothing), voc)
-    lemmas = Dict{String,String}(
-        tok => lemma for (tok, lemma) in base.lemmas if token2id(voc, lemma) != 0)
+    kept_lemmas = Dict{String,String}(
+        tok => lemma for (tok, lemma) in lemmamap if token2id(voc, lemma) != 0)
 
     # The TextConfig still carries the base's FULL lemma map -- it had to, to tokenize the
     # sample before the vocabulary existed -- but the prune has since removed most of its
@@ -299,7 +354,7 @@ function refit_profile(base, sample_voc::Vocabulary;
     if has_lemma_transformation(voc.textconfig.transformation)
         bare = without_lemma_transformation(voc.textconfig.transformation)
         tc2 = TextConfig(voc.textconfig;
-                         transformation=with_lemma_transformation(bare, lemmas))
+                         transformation=with_lemma_transformation(bare, kept_lemmas))
         voc = Vocabulary(tc2, voc.token, voc.occs, voc.ndocs, voc.token2id,
                          voc.trainsize, voc.numtokens)
     end
@@ -323,21 +378,67 @@ function refit_profile(base, sample_voc::Vocabulary;
             "refit: vocsize $(vocsize(base.model.voc)) (base) + $(vocsize(sample_voc)) (sample) " *
             "-> $(vocsize(voc)); $fromsample token(s) seen in the sample, " *
             "$(vocsize(voc) - fromsample) carried from the base alone")
+        # TextSearch.avgdoclen, qualified deliberately: the `avgdoclen` KEYWORD shadows the
+        # function of that name throughout this body, and calling it bare is a MethodError
+        # ("objects of type Symbol are not callable") that only fires when verbose is on.
         println(stderr,
             "refit: kappa=$(round(κ; digits=1)) documents of prior against a " *
             "$(trainsize(sample_voc))-document sample -> trainsize=$(trainsize(voc)), " *
-            "avgdoclen=$(round(avgdoclen(voc); digits=2)), " *
+            "avgdoclen=$(round(TextSearch.avgdoclen(voc); digits=2)), " *
             "lemmas=$(encoder.lemmas_applied ? "applied" : "carried only")")
     end
 
-    (; model, synonyms=syn, synonym_distances=sdist, lemmas,
+    (; model, synonyms=syn, synonym_distances=sdist, lemmas=kept_lemmas,
        stopword_candidates=sort!(collect(candidates)), encoder)
 end
 
-function refit_profile(base, sample_docs; apply_lemmas::Bool=true, verbose::Bool=true, kwargs...)
-    tc = refit_textconfig(base; apply_lemmas)
+function refit_profile(base, sample_docs; apply_lemmas::Bool=true, extend_lemmas::Bool=false,
+                        morphology::Symbol=:jaccard, morphology_threshold::Real=0.3,
+                        qgram::Integer=2, min_common_prefix::Integer=3,
+                        lemma_selector::Symbol=:most_frequent,
+                        verbose::Bool=true, kwargs...)
+    lemmamap = base.lemmas
+    tc = refit_textconfig(base; apply_lemmas, lemmas=lemmamap)
     sample_voc = Vocabulary(tc, sample_docs; verbose=false)
-    refit_profile(base, sample_voc; apply_lemmas, verbose, kwargs...)
+
+    if extend_lemmas && apply_lemmas
+        ext = _extend_lemmas_from_sample(base, sample_voc, lemmamap;
+                                        morphology, morphology_threshold, qgram,
+                                        min_common_prefix, selector=lemma_selector)
+        if !isempty(ext)
+            lemmamap = merge(Dict{String,String}(lemmamap), ext)
+            # Retokenize rather than folding the vocabulary we already have: the sample is
+            # small by definition, so a second pass is cheap and exact, where folding would
+            # over-count ndocs for any document holding two forms of a newly-found family.
+            tc = refit_textconfig(base; apply_lemmas, lemmas=lemmamap)
+            sample_voc = Vocabulary(tc, sample_docs; verbose=false)
+            verbose && println(stderr,
+                "refit: extended the lemma map with $(length(ext)) morphological entr" *
+                "$(length(ext) == 1 ? "y" : "ies") for token(s) the base had not seen")
+        end
+    end
+
+    refit_profile(base, sample_voc; apply_lemmas, lemmas=lemmamap, verbose, kwargs...)
+end
+
+"""
+    _extend_lemmas_from_sample(base, sample_voc, lemmamap; kwargs...) -> Dict{String,String}
+
+Finds lemma entries for the tokens `sample_voc` brings that `base`'s vocabulary never had.
+
+The grouping runs over the base and sample vocabularies **merged**, not over the sample
+alone, and that is the point: a new inflected form usually belongs to a family whose lemma
+the base already knows, so `"audifonos"` must be able to elect the base's `"audifono"`. The
+merged counts also make `:most_frequent` prefer the established form over the newcomer.
+Only the new tokens get entries (see [`extend_lemmas_morphological`](@ref)), so the base's
+own clustering decisions are never overruled.
+"""
+function _extend_lemmas_from_sample(base, sample_voc::Vocabulary, lemmamap; kwargs...)
+    bvoc = base.model.voc
+    new = String[token(sample_voc, id) for id in eachindex(sample_voc)
+                 if token2id(bvoc, token(sample_voc, id)) == 0]
+    isempty(new) && return Dict{String,String}()
+    extend_lemmas_morphological(merge_voc(bvoc, sample_voc), lemmamap; candidates=new, kwargs...)
 end
 
 """

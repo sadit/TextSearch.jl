@@ -35,6 +35,38 @@ function parse_refit_args(args::Vector{String})
                    "kappa relative to the sample size; 0.5 matches the --kappa default"
             arg_type = Float64
             default = 0.0
+        "--extend-lemmas"
+            help = "also recover lemma families for tokens the base never saw, from surface " *
+                   "similarity alone (no embedding is fit). Without this they stay unmerged, " *
+                   "with their document frequency split across forms. Costs a second pass " *
+                   "over the sample, which is exact where folding would over-count."
+            action = :store_true
+        "--morphology"
+            help = "surface metric for --extend-lemmas: jaccard | levenshtein"
+            default = "jaccard"
+        "--morphology-threshold"
+            help = "normalized distance below which two forms join a family (lower = stricter)"
+            arg_type = Float64
+            default = 0.3
+        "--qgram"
+            help = "character n-gram size for --morphology jaccard"
+            arg_type = Int
+            default = 2
+        "--min-common-prefix"
+            help = "leading characters two forms must share to be compared at all; 0 for a " *
+                   "language that does not inflect by suffix (and gives up the blocking speedup)"
+            arg_type = Int
+            default = 3
+        "--lemma-selector"
+            help = "which family member becomes the lemma: most_frequent | shortest | " *
+                   "shortest_then_most_frequent"
+            default = "most_frequent"
+        "--avgdoclen"
+            help = "average document length the profile reports, which is what BM25 normalizes " *
+                   "lengths by: \"blend\" (a weighted mean of the two corpora, the honest " *
+                   "reading of the blend), \"sample\" (pin it to the sample's, for a profile " *
+                   "that will index documents shaped like it), or a positive number"
+            default = "blend"
         "--no-lemmas"
             help = "do not apply the base's lemma map; it is still carried as an artifact. " *
                    "Whether to lemmatize is the refit's decision, which is why a base " *
@@ -110,8 +142,22 @@ function cmd_refit(args::Vector{String})
         0.0 < bw < 1.0 || error("--base-weight must be in (0,1), got $bw")
     end
 
+    avgdoclen = if o["avgdoclen"] == "blend"
+        :blend
+    elseif o["avgdoclen"] == "sample"
+        :sample
+    else
+        v = tryparse(Float64, o["avgdoclen"])
+        (v === nothing || v <= 0) &&
+            error("--avgdoclen must be \"blend\", \"sample\", or a positive number; got $(repr(o["avgdoclen"]))")
+        v
+    end
+
     base = load_profile(_resolve_profile_path(o["profile"]))
     apply_lemmas = !o["no-lemmas"]
+    extend_lemmas = o["extend-lemmas"]
+    extend_lemmas && !apply_lemmas &&
+        error("--extend-lemmas needs lemmas applied; it cannot be combined with --no-lemmas")
 
     println("base: vocsize=$(vocsize(base.model.voc)) trainsize=$(trainsize(base.model.voc)) " *
             "lemmas=$(length(base.lemmas)) synonyms=$(length(base.synonyms))")
@@ -119,18 +165,40 @@ function cmd_refit(args::Vector{String})
 
     # The sample must be tokenized under exactly the config the refit runs under, or the two
     # sides' counters do not correspond; refit_profile re-checks this and errors if not.
-    textconfig = refit_textconfig(base; apply_lemmas)
+    lemmamap = base.lemmas
+    textconfig = refit_textconfig(base; apply_lemmas, lemmas=lemmamap)
     sample_voc = _stream_sample_vocabulary(textconfig, Symbol(o["format"]), o["sample"],
                                            o["text-key"], o["chunk"])
     trainsize(sample_voc) > 0 || error("the sample at '$(o["sample"])' yielded no documents")
+
+    if extend_lemmas
+        # The extension changes how the sample must be tokenized, so the sample is streamed
+        # twice: once to discover its tokens, once under the extended map. Exact, and cheap
+        # -- a sample is small by definition.
+        ext = TextSearch._extend_lemmas_from_sample(base, sample_voc, lemmamap;
+                  morphology=Symbol(o["morphology"]),
+                  morphology_threshold=o["morphology-threshold"],
+                  qgram=o["qgram"], min_common_prefix=o["min-common-prefix"],
+                  selector=Symbol(o["lemma-selector"]))
+        if isempty(ext)
+            println("  no new lemma families found for the sample's own tokens")
+        else
+            println("  extended the lemma map with $(length(ext)) morphological entries")
+            flush(stdout)
+            lemmamap = merge(Dict{String,String}(lemmamap), ext)
+            textconfig = refit_textconfig(base; apply_lemmas, lemmas=lemmamap)
+            sample_voc = _stream_sample_vocabulary(textconfig, Symbol(o["format"]), o["sample"],
+                                                   o["text-key"], o["chunk"])
+        end
+    end
 
     # --base-weight is expressed relative to the sample, so it needs the sample's size first
     bw != 0.0 && (kappa = trainsize(sample_voc) * bw / (1 - bw))
 
     r = refit_profile(base, sample_voc;
-                      kappa, apply_lemmas,
+                      kappa, apply_lemmas, lemmas=lemmamap,
                       keep_rate=o["keep-rate"], keep_floor=o["keep-floor"],
-                      doc_freq_threshold=o["doc-freq-threshold"],
+                      avgdoclen, doc_freq_threshold=o["doc-freq-threshold"],
                       verbose=true)
 
     syndists = o["drop-distances"] ? nothing : r.synonym_distances
