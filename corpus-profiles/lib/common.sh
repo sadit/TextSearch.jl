@@ -83,6 +83,10 @@ ts_render_fit_config() {
   local syn_k="${TS_SYN_K:-8}"
   local lem_alg="${TS_LEMMA_ALG:-fft}"
   local lem_sel="${TS_LEMMA_SEL:-most_frequent}"
+  # Bake the lemma map into the profile's TextConfig, so consumers apply it to documents and
+  # queries alike and the idf counts an inflection family together. Costs one extra
+  # tokenization pass per part; set TS_LEMMA_APPLY=false to keep the map as an artifact only.
+  local lem_apply="${TS_LEMMA_APPLY:-true}"
   local del_diac="${TS_DEL_DIAC:-false}"
   local del_punc="${TS_DEL_PUNC:-true}"
 
@@ -146,6 +150,7 @@ qgram = 2
 min_common_prefix = 3
 order = "morphology_first"
 semantic_threshold = 1.0
+apply = $lem_apply
 EOF
   log "rendered fit config -> $out"
 }

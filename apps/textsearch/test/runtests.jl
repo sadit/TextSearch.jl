@@ -51,6 +51,7 @@ k = 3
 algorithm = "fft"
 num_clusters = 0
 selector = "shortest"
+apply = %LEMMA_APPLY%
 """
 
 function write_jsonl_corpus(path, docs)
@@ -62,11 +63,12 @@ function write_jsonl_corpus(path, docs)
 end
 
 function write_fit_config(path; corpus, outdir, batch_size=0, stopwords=false, min_ndocs=1,
-                          resume=false)
+                          resume=false, lemma_apply=true)
     cfg = replace(FIT_CONFIG,
         "%CORPUS%" => corpus, "%OUTDIR%" => outdir,
         "%BATCH_SIZE%" => string(batch_size), "%STOPWORDS%" => string(stopwords),
-        "%MIN_NDOCS%" => string(min_ndocs), "%RESUME%" => string(resume))
+        "%MIN_NDOCS%" => string(min_ndocs), "%RESUME%" => string(resume),
+        "%LEMMA_APPLY%" => string(lemma_apply))
     write(path, cfg)
     path
 end
@@ -174,6 +176,64 @@ end
                 bad = write_fit_config(joinpath(dir, "fit4bad.toml");
                                        corpus=corpus_path, outdir=joinpath(dir, "profiles4bad"), min_ndocs=999)
                 @test_throws Exception TextSearchApp.cmd_fit(["--config", bad])
+            end
+
+            @testset "fit: [lemmas] apply bakes the lemma map into the TextConfig" begin
+                # The 7-document fixture above yields no lemma families, so the third fit
+                # pass would never run on it. This corpus has explicit inflection pairs.
+                lemmadocs = [
+                    "la casa grande tiene puertas", "las casas grandes tienen puertas",
+                    "el gato negro duerme", "los gatos negros duermen",
+                    "el perro corre rapido", "los perros corren rapido",
+                    "la puerta abierta", "las puertas abiertas",
+                    "casa casas gato gatos perro perros puerta puertas",
+                ]
+                lemmapath = joinpath(dir, "lemmacorpus.jsonl")
+                write_jsonl_corpus(lemmapath, lemmadocs)
+
+                outdir = joinpath(dir, "profiles_lemma")
+                cfgpath = write_fit_config(joinpath(dir, "fit_lemma.toml");
+                                           corpus=lemmapath, outdir)
+                TextSearchApp.cmd_fit(["--config", cfgpath])
+                p = TextSearch.load_profile(joinpath(outdir, "corpus-0001.zip"))
+
+                @test !isempty(p.lemmas)
+                # applied: the map is part of the pipeline, not just a saved artifact
+                tt = p.model.voc.textconfig.transformation
+                @test TextSearchApp._has_lemmas(tt)
+
+                # the vocabulary is lemmatized, so the inflected forms are gone and the
+                # lemma carries the family's counts
+                for (inflected, lemma) in p.lemmas
+                    @test TextSearch.token2id(p.model.voc, inflected) == 0
+                    @test TextSearch.token2id(p.model.voc, lemma) != 0
+                end
+
+                # the synonym network was realigned onto lemmas: no entry may name a form
+                # the vocabulary no longer has, or expand_synonyms! would drop it silently
+                for (tok, syns) in p.synonyms
+                    @test !haskey(p.lemmas, tok)
+                    for (syn, _) in syns
+                        @test !haskey(p.lemmas, syn)
+                    end
+                end
+
+                # querying an inflected form reaches the lemma, through the TextConfig alone
+                infl = first(keys(p.lemmas))
+                @test collect(tokenize(p.model.voc.textconfig, infl)) == [p.lemmas[infl]]
+
+                @testset "apply = false keeps the map as a reviewable artifact only" begin
+                    outdir2 = joinpath(dir, "profiles_nolemma")
+                    cfg2 = write_fit_config(joinpath(dir, "fit_nolemma.toml");
+                                            corpus=lemmapath, outdir=outdir2, lemma_apply=false)
+                    TextSearchApp.cmd_fit(["--config", cfg2])
+                    q = TextSearch.load_profile(joinpath(outdir2, "corpus-0001.zip"))
+
+                    @test !isempty(q.lemmas)                                   # still saved
+                    @test !TextSearchApp._has_lemmas(q.model.voc.textconfig.transformation)
+                    # unlemmatized: the inflected forms are still their own tokens
+                    @test TextSearch.token2id(q.model.voc, first(keys(q.lemmas))) != 0
+                end
             end
 
             zippath = joinpath(dir, "profiles1", "corpus-0001.zip")

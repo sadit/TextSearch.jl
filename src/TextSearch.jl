@@ -44,7 +44,8 @@ using .Tokenizer
 using .Tokenizer: borrowtokenizedtext, tokenizerbuffer, tokenize_paragraphs, tokenize_sentences
 export TextConfig, NormalizationConfig, TokenizationConfig, TokenizedText, tokenize, tokenize_corpus, unigrams,
        normalize_text, isemoji, tokenize_paragraphs, tokenize_sentences,
-       AbstractTokenTransformation, IdentityTokenTransformation, IgnoreStopwords, ChainTransformation, SnowballTokenTransformation, transform,
+       TokenizerBuffer, tokenizerbuffer, borrowtokenizedtext,
+       AbstractTokenTransformation, IdentityTokenTransformation, IgnoreStopwords, LemmaTransformation, ChainTransformation, SnowballTokenTransformation, transform,
        AbstractTokenGenerator, UnigramGenerator, NWordGenerator,
        needs_unigrams, tokentag, generate!, flush_token!, alltokengenerators
 

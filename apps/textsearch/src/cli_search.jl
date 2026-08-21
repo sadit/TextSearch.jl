@@ -30,7 +30,9 @@ function parse_search_args(args::Vector{String})
             arg_type = Int
             default = 1
         "--no-lemmas"
-            help = "do not map tokens through the profile's lemmas on either side"
+            help = "drop the profile's lemma step from the tokenization pipeline, so tokens " *
+                   "are matched in their surface forms on both sides (no effect on a profile " *
+                   "fitted without an applied lemma map)"
             action = :store_true
         "--no-synonyms"
             help = "do not expand the query with the profile's synonym network"
@@ -63,25 +65,47 @@ function _resolve_profile_path(spec::AbstractString)
 end
 
 """
-    _query_tokens(p, query, tc, uselemmas, usesynonyms, synk) -> (Set{String}, report)
+    _strip_lemmas(tt) -> AbstractTokenTransformation
 
-Builds the query's token set by running it through the same pipeline a document goes
-through, plus the expansion only a query gets:
+Returns `tt` with every `LemmaTransformation` step removed, for `--no-lemmas`.
 
-1. tokenize under the profile's `TextConfig`
-2. map each token through `lemmas`, so a query written `casas` reaches documents that said
-   `casa`
-3. add each token's synonyms -- themselves lemma-mapped, so they can meet document tokens on
-   the same footing
-
-`report` carries the intermediate sets for the stderr summary, which is the point of this
-being a probe command: it shows which artifact contributed what.
+Lemmas live in the profile's `TextConfig` (a lemma is a normalization, so the tokenizer
+applies it to documents and queries alike), which means turning them off is a matter of
+taking that step out of the pipeline rather than declining to apply it afterwards.
 """
-function _query_tokens(p, query::AbstractString, tc, uselemmas::Bool, usesynonyms::Bool, synk::Int)
-    lemma(tok) = uselemmas ? get(p.lemmas, tok, tok) : tok
+_strip_lemmas(tt::AbstractTokenTransformation) = tt
+_strip_lemmas(::LemmaTransformation) = IdentityTokenTransformation()
+function _strip_lemmas(tt::ChainTransformation)
+    kept = AbstractTokenTransformation[s for s in tt.list if !(s isa LemmaTransformation)]
+    length(kept) == 1 ? only(kept) : ChainTransformation(kept)
+end
 
+"""
+    _has_lemmas(tt) -> Bool
+
+Whether `tt` applies a lemma map, so the stderr summary can report what the profile is
+actually doing rather than what was asked for (`--no-lemmas` on a profile fitted with
+`[lemmas] apply = false` changes nothing, and saying so is the point of a probe command).
+"""
+_has_lemmas(tt::AbstractTokenTransformation) = false
+_has_lemmas(::LemmaTransformation) = true
+_has_lemmas(tt::ChainTransformation) = any(_has_lemmas, tt.list)
+
+"""
+    _query_tokens(p, query, tc, usesynonyms, synk) -> (Set{String}, report)
+
+Builds the query's token set by running it through the same `tc` a document goes through --
+so normalization, stopwords and lemmas all apply identically to both sides -- plus the one
+step only a query gets: synonym expansion.
+
+Each synonym is itself tokenized through `tc`, which is what lets it meet document tokens
+on the same footing: a synonym stored in an inflected form arrives lemmatized, and one that
+is a stopword drops out. `report` carries the intermediate sets for the stderr summary,
+which is the point of this being a probe command: it shows which artifact contributed what.
+"""
+function _query_tokens(p, query::AbstractString, tc, usesynonyms::Bool, synk::Int)
     raw = collect(tokenize(tc, query))
-    base = Set{String}(lemma(t) for t in raw)
+    base = Set{String}(raw)
 
     expanded = Set{String}()
     if usesynonyms
@@ -90,7 +114,9 @@ function _query_tokens(p, query::AbstractString, tc, uselemmas::Bool, usesynonym
             neighbors === nothing && continue
             for (i, (syn, _)) in enumerate(neighbors)
                 synk > 0 && i > synk && break
-                push!(expanded, lemma(syn))
+                for st in tokenize(tc, syn)
+                    push!(expanded, st)
+                end
             end
         end
         setdiff!(expanded, base)
@@ -100,21 +126,48 @@ function _query_tokens(p, query::AbstractString, tc, uselemmas::Bool, usesynonym
 end
 
 """
-    _matches(qtokens, text, tc, lemmas, t) -> Bool
+    _matches(qtokens, text, tc, buff, t) -> Bool
 
-True when the document shares at least `t` tokens with the query, comparing on the same
-lemma-mapped footing. Counts with an early exit instead of materializing an intersection.
+True when the document shares at least `t` tokens with the query. Counts with an early exit
+instead of materializing an intersection.
+
+`buff` is a borrowed `TokenizerBuffer` reused across the documents one task handles, so
+matching a document allocates nothing per document -- the tokenizer writes into the buffer
+instead of returning a fresh token vector each time. Each task must own its buffer; passing
+one shared across tasks would corrupt it.
 """
-function _matches(qtokens::Set{String}, text::AbstractString, tc, lemmas, t::Int)
+function _matches(qtokens::Set{String}, text::AbstractString, tc, buff, t::Int)
+    empty!(buff)
     c = 0
-    for tok in tokenize(tc, text)
-        tk = lemmas === nothing ? tok : get(lemmas, tok, tok)
-        if tk in qtokens
+    for tok in tokenize(borrowtokenizedtext, tc, text, buff).tokens
+        if tok in qtokens
             c += 1
             c >= t && return true
         end
     end
     false
+end
+
+"""
+    _partition(n::Int, k::Int) -> Vector{UnitRange{Int}}
+
+Splits `1:n` into at most `k` contiguous, non-overlapping ranges covering it exactly, the
+first `n % k` of them one element longer. Contiguity is what keeps a task's writes confined
+to its own slice of the output, and covering `1:n` exactly is what guarantees no record is
+matched twice or skipped.
+"""
+function _partition(n::Int, k::Int)
+    k = min(k, n)
+    k <= 1 && return [1:n]
+    q, r = divrem(n, k)
+    ranges = Vector{UnitRange{Int}}(undef, k)
+    start = 1
+    for j in 1:k
+        len = q + (j <= r ? 1 : 0)
+        ranges[j] = start:(start + len - 1)
+        start += len
+    end
+    ranges
 end
 
 function cmd_search(args::Vector{String})
@@ -123,11 +176,16 @@ function cmd_search(args::Vector{String})
     o["chunk"] >= 1 || error("--chunk must be >= 1, got $(o["chunk"])")
 
     p = load_profile(_resolve_profile_path(o["profile"]))
-    tc = p.model.voc.textconfig
-    uselemmas = !o["no-lemmas"]
-    lemmas = uselemmas ? p.lemmas : nothing
+    # Lemmas are part of the profile's TextConfig, so the tokenizer applies them to
+    # documents and queries alike and there is nothing for this command to apply itself.
+    # A profile fitted with [lemmas] apply = false simply has no such step.
+    profile_tc = p.model.voc.textconfig
+    tc = o["no-lemmas"] ?
+        TextConfig(profile_tc; transformation=_strip_lemmas(profile_tc.transformation)) :
+        profile_tc
+    lemmas_on = _has_lemmas(tc.transformation)
 
-    qtokens, rep = _query_tokens(p, o["query"], tc, uselemmas, !o["no-synonyms"], o["synonyms-k"])
+    qtokens, rep = _query_tokens(p, o["query"], tc, !o["no-synonyms"], o["synonyms-k"])
     isempty(qtokens) && error("the query has no tokens under this profile's TextConfig " *
                               "(every term may have been a stopword); nothing could match")
 
@@ -137,8 +195,12 @@ function cmd_search(args::Vector{String})
     println(stderr, "query: $(length(rep.raw)) token(s) -> $basestr")
     isempty(rep.expanded) ||
         println(stderr, "  + $(length(rep.expanded)) synonym(s) -> $expstr")
+    # report what the profile actually carries, not what was requested: --no-lemmas on a
+    # profile that never had them changes nothing, and a probe command should say so
     println(stderr, "  matching with threshold=$(o["threshold"]) over $(length(qtokens)) token(s), " *
-                    "lemmas=$(uselemmas ? "on" : "off"), threads=$(Threads.nthreads())")
+                    "lemmas=$(lemmas_on ? "on" : "off") (profile " *
+                    "$(_has_lemmas(profile_tc.transformation) ? "carries" : "has no") lemma map), " *
+                    "threads=$(Threads.nthreads())")
 
     t = o["threshold"]
     chunk = o["chunk"]
@@ -155,9 +217,19 @@ function cmd_search(args::Vector{String})
         n == 0 && return
         resize!(out, n)
         fill!(out, nothing)
-        Threads.@threads for i in 1:n
-            if _matches(qtokens, texts[i], tc, lemmas, t)
-                out[i] = JSON3.write(records[i])
+        # Partitioned explicitly rather than looping over 1:n so each task borrows ONE
+        # tokenizer buffer and holds it across all its documents. A buffer must not be
+        # shared between tasks, and the pool holds 2*nthreads()+4 of them, so this never
+        # blocks. Slot assignment is unchanged: a task only ever writes out[i] for i in
+        # its own range.
+        ranges = _partition(n, Threads.nthreads())
+        Threads.@threads for r in ranges
+            tokenizerbuffer() do buff
+                for i in r
+                    if _matches(qtokens, texts[i], tc, buff, t)
+                        out[i] = JSON3.write(records[i])
+                    end
+                end
             end
         end
         for i in 1:n

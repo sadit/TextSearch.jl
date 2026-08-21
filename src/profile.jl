@@ -77,31 +77,50 @@ function _decode_snowball_transformation(algorithm::AbstractString, charenc::Abs
 end
 
 """
-    _encode_transformation_with_files(tt, counter=Ref(0)) -> (json, files)
+    _transformation_filename(counter, base) -> String
 
-Encodes `tt` into its tagged-union JSON representation, EXCEPT any `IgnoreStopwords` step's
-word list, which is instead written to its own `"stopwords.json"`-style file (numbered on a
-second, third, ... occurrence via `counter`): `json` gets a `"file"` reference instead of an
-inlined `"words"` array, and `files` collects `filename => word_vector` pairs to be written
-by the caller (`save_profile`).
+Names the side file for a transformation step that carries bulk data, `"\$base.json"` for
+the first step of that kind and `"\$(base)_2.json"`, `"\$(base)_3.json"`, ... for any
+further ones. `counter` tallies per `base` rather than across all kinds, so a chain of an
+`IgnoreStopwords` and a `LemmaTransformation` yields `"stopwords.json"` and
+`"lemma_map.json"` -- not a `"lemma_map_2.json"` whose suffix would suggest a second lemma
+map that does not exist.
 """
-function _encode_transformation_with_files(tt::IdentityTokenTransformation, counter::Ref{Int}=Ref(0))
-    Dict("kind" => "identity"), Pair{String,Vector{String}}[]
+function _transformation_filename(counter::Dict{String,Int}, base::AbstractString)
+    n = counter[base] = get(counter, base, 0) + 1
+    n == 1 ? "$base.json" : "$(base)_$n.json"
 end
 
-function _encode_transformation_with_files(tt::IgnoreStopwords, counter::Ref{Int}=Ref(0))
-    counter[] += 1
-    fname = counter[] == 1 ? "stopwords.json" : "stopwords_$(counter[]).json"
-    Dict("kind" => "stopwords", "file" => fname), [fname => collect(tt.stopwords)]
+"""
+    _encode_transformation_with_files(tt, counter=Dict{String,Int}()) -> (json, files)
+
+Encodes `tt` into its tagged-union JSON representation, EXCEPT the bulk payload of any step
+that has one -- an `IgnoreStopwords`' word list, a `LemmaTransformation`'s mapping -- which
+is instead written to its own side file (named by [`_transformation_filename`](@ref)):
+`json` gets a `"file"` reference instead of the inlined data, and `files` collects
+`filename => payload` pairs to be written by the caller (`save_profile`).
+"""
+function _encode_transformation_with_files(tt::IdentityTokenTransformation, counter::Dict{String,Int}=Dict{String,Int}())
+    Dict("kind" => "identity"), Pair{String,Any}[]
 end
 
-function _encode_transformation_with_files(tt::SnowballTokenTransformation, counter::Ref{Int}=Ref(0))
-    Dict("kind" => "snowball", "algorithm" => tt.stemmer.alg, "charenc" => tt.stemmer.enc), Pair{String,Vector{String}}[]
+function _encode_transformation_with_files(tt::IgnoreStopwords, counter::Dict{String,Int}=Dict{String,Int}())
+    fname = _transformation_filename(counter, "stopwords")
+    Dict("kind" => "stopwords", "file" => fname), Pair{String,Any}[fname => collect(tt.stopwords)]
 end
 
-function _encode_transformation_with_files(tt::ChainTransformation, counter::Ref{Int}=Ref(0))
+function _encode_transformation_with_files(tt::LemmaTransformation, counter::Dict{String,Int}=Dict{String,Int}())
+    fname = _transformation_filename(counter, "lemma_map")
+    Dict("kind" => "lemmas", "file" => fname), Pair{String,Any}[fname => tt.lemmas]
+end
+
+function _encode_transformation_with_files(tt::SnowballTokenTransformation, counter::Dict{String,Int}=Dict{String,Int}())
+    Dict("kind" => "snowball", "algorithm" => tt.stemmer.alg, "charenc" => tt.stemmer.enc), Pair{String,Any}[]
+end
+
+function _encode_transformation_with_files(tt::ChainTransformation, counter::Dict{String,Int}=Dict{String,Int}())
     steps = Any[]
-    files = Pair{String,Vector{String}}[]
+    files = Pair{String,Any}[]
     for s in tt.list
         sjson, sfiles = _encode_transformation_with_files(s, counter)
         push!(steps, sjson)
@@ -110,7 +129,7 @@ function _encode_transformation_with_files(tt::ChainTransformation, counter::Ref
     Dict("kind" => "chain", "steps" => steps), files
 end
 
-_encode_transformation_with_files(tt, counter::Ref{Int}=Ref(0)) =
+_encode_transformation_with_files(tt, counter::Dict{String,Int}=Dict{String,Int}()) =
     error("cannot serialize transformation of type $(typeof(tt)) into a profile")
 
 """
@@ -118,9 +137,9 @@ _encode_transformation_with_files(tt, counter::Ref{Int}=Ref(0)) =
 
 Decodes a transformation's tagged-union JSON `d` back into an
 [`AbstractTokenTransformation`](@ref); `read_file(name::AbstractString)` fetches and
-JSON3-parses a referenced file (`"stopwords"` kind) -- the caller supplies one that reads
-from a plain directory or from an open zip archive, so this function itself doesn't care
-which.
+JSON3-parses a referenced file (the `"stopwords"` and `"lemmas"` kinds) -- the caller
+supplies one that reads from a plain directory or from an open zip archive, so this
+function itself doesn't care which.
 """
 function _decode_transformation(d, read_file::Function)
     kind = String(d[:kind])
@@ -129,6 +148,9 @@ function _decode_transformation(d, read_file::Function)
     elseif kind == "stopwords"
         words = read_file(String(d[:file]))
         IgnoreStopwords(Set{String}(String(w) for w in words))
+    elseif kind == "lemmas"
+        map = read_file(String(d[:file]))
+        LemmaTransformation(Dict{String,String}(String(k) => String(v) for (k, v) in pairs(map)))
     elseif kind == "snowball"
         _decode_snowball_transformation(String(d[:algorithm]), String(d[:charenc]))
     elseif kind == "chain"
@@ -252,9 +274,9 @@ function save_profile(dir::AbstractString, model::VectorModel;
 
     _write_json(joinpath(dir, "weights.json"), Dict("weight" => model.weight))
 
-    transformation_json, stopword_files = _encode_transformation_with_files(voc.textconfig.transformation)
-    for (fname, words) in stopword_files
-        _write_json(joinpath(dir, fname), words)
+    transformation_json, transformation_files = _encode_transformation_with_files(voc.textconfig.transformation)
+    for (fname, payload) in transformation_files
+        _write_json(joinpath(dir, fname), payload)
     end
 
     manifest = Dict(

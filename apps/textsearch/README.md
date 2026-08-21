@@ -97,6 +97,7 @@ k = 8                      # neighbors per token in the synonym network
 algorithm = "fft"          # "fft" | "dnet" | "randsel" | "multirandsel"
 num_clusters = 0            # 0 = auto (sqrt(vocabulary size))
 selector = "shortest"       # "shortest" | "most_frequent" | "shortest_then_most_frequent"
+apply = true                # bake the map into the profile's TextConfig (see below)
 ```
 
 Notes:
@@ -109,6 +110,18 @@ Notes:
   synonyms, and lemmas, computed only from that batch's documents -- nothing is shared or
   averaged across batches. Combining several profiles back into one is `merge`'s job (see
   below); `fit` never does that itself.
+- **Where lemmas are applied.** With `lemmas.apply = true` (the default) the lemma map is
+  baked into the profile's `TextConfig` as a `LemmaTransformation`, chained *before*
+  `IgnoreStopwords`. A lemma is a normalization, so it belongs on both sides: once it is in
+  the `TextConfig`, `vectorize`/`bagofwords`/the inverted files/`search` all apply it to
+  documents and queries alike, and the idf counts a whole inflection family together instead
+  of splitting it across its forms. This needs a *third* tokenization pass, because the map
+  is derived from embeddings over the vocabulary it rewrites and so cannot be known any
+  earlier; the synonym network is rewritten onto lemmas at the same time, since its entries
+  would otherwise name tokens the vocabulary no longer has and be dropped in silence. LSI is
+  deliberately not recomputed -- the embeddings' job was to find the families. Set
+  `apply = false` to keep the map as a reviewable artifact only, the same detected-versus-
+  applied distinction stopword candidates have.
 - **Stopwords and encoder ordering.** When `stopwords.enabled = true`, candidates are
   detected from a first, unfiltered tokenization pass, then wired into the *real*
   vocabulary's `TextConfig` before that vocabulary is built -- so stopword tokens never
@@ -129,11 +142,12 @@ Notes:
 ```
 textsearch search <profile> <query> --collection PATH [--format FORMAT]
                    [--text-key KEY] [-t THRESHOLD]
+                   [--no-lemmas] [--no-synonyms] [--synonyms-k K] [--chunk N]
 ```
 
 `profile` is an installed nickname or a path to a profile `.zip`/directory. Prints every
-record of `--collection` whose text shares at least `--threshold` tokens (after the
-profile's normalization/tokenization) with `query`, as one JSONL line per hit:
+record of `--collection` whose text shares at least `--threshold` tokens with `query`, as
+one JSONL line per hit:
 
 ```sh
 textsearch search mynick "red car" --collection reviews.jsonl -t 2
@@ -143,7 +157,32 @@ textsearch search mynick "red car" --collection reviews.jsonl -t 2
 if *any* query token is shared (union), raising it toward the query's own token count
 gives progressively stricter, AND-like matching (the same `t`-threshold idea
 `SimilaritySearch.InvertedFiles` uses). There is no ranking or scoring; matches print in
-corpus-encounter order, as found, exactly like `grep`.
+corpus-encounter order, exactly like `grep`.
+
+**The whole pipe runs, and each artifact applies where it belongs.** Normalization,
+tokenization, stopwords and lemmas come from the profile's `TextConfig`, so they apply
+identically to the query and to every document -- that is what a normalization means.
+Synonym expansion applies to the **query only**: it widens what the query reaches, and
+applying it to documents would make everything match everything. Each synonym is itself run
+through the same `TextConfig`, so one stored in an inflected form arrives lemmatized and
+meets document tokens on the same footing.
+
+This makes `search` the way to exercise a profile's artifacts end to end, so each can be
+switched off to see what it contributes: `--no-lemmas` removes the lemma step from the
+tokenization pipeline (on both sides), `--no-synonyms` skips expansion, and `--synonyms-k`
+caps how many synonyms each query token may contribute (`0`, the default, uses every one the
+profile stored). The effective query token set, what the synonyms added, and whether the
+profile actually carries a lemma map are all reported on **stderr**, leaving stdout pure
+JSONL for piping.
+
+Matching runs on all available threads (the installed shim passes `--threads=auto`), over
+buffers of `--chunk` records at a time. Output does not depend on either: each task writes
+only its own slot in a preallocated vector and does no I/O, and printing happens
+single-threaded afterwards in index order, so there is exactly one writer and hits always
+come out in corpus order. `--chunk` bounds memory, not results. The speedup is roughly
+2.6x end to end rather than the thread count, because a large share of the time is GC: the
+tokenizer allocates a fresh `String` per token, which dominates matching and is not
+something parallelism or buffer reuse can recover.
 
 **This is NOT fast to start** -- loading the profile and opening the collection has real
 cost, unlike a real `grep`. Prefer it over `grep` only when you need corpus-consistent

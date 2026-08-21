@@ -93,6 +93,67 @@ function _fit_textconfig(cfg)
 end
 
 """
+    _build_vocabulary(textconfig, docs, min_ndocs; label="") -> Vocabulary
+
+Tokenizes `docs` under `textconfig` into a `Vocabulary`, then drops tokens appearing in
+fewer than `min_ndocs` documents.
+
+Pruning happens before anything expensive touches the vocabulary: the synonym network is an
+all-pairs search over it, so this is a quadratic saving, and a token seen in one or two
+documents has no usable embedding to begin with. `label` distinguishes the passes in the
+progress output.
+"""
+function _build_vocabulary(textconfig, docs::Vector{String}, min_ndocs::Int; label::AbstractString="")
+    voc = Vocabulary(textconfig, docs; verbose=false)
+    min_ndocs > 1 || return voc
+
+    before = vocsize(voc)
+    voc = filter_tokens(t -> t.ndocs >= min_ndocs, voc)
+    println("  $(label)vocabulary pruned by min_ndocs=$min_ndocs: $before -> $(vocsize(voc)) tokens")
+    flush(stdout)   # long runs are usually watched through a redirected log
+    vocsize(voc) > 0 ||
+        error("min_ndocs=$min_ndocs pruned the entire vocabulary ($before tokens, none in >= $min_ndocs documents); lower it")
+    voc
+end
+
+"""
+    _remap_synonyms_to_lemmas(synmap, lemmas) -> Dict{String,Vector{Pair{String,Float32}}}
+
+Rewrites a synonym network's keys and values through `lemmas`, for use when the lemma map
+is baked into the profile's `TextConfig` and the vocabulary is therefore lemmatized.
+
+Without this the network would silently stop working: its entries name unlemmatized forms,
+which are no longer tokens of the vocabulary, and `expand_synonyms!` drops an out-of-
+vocabulary synonym without complaint (`token2id` returning `0`) -- a quiet loss of every
+expansion whose surface form happened to be inflected.
+
+Two source tokens can share a lemma, so entries are merged rather than overwritten,
+keeping the smallest distance for each target; a synonym that lemmatizes onto its own key
+is dropped, since a token is not its own synonym. Each list comes back sorted by distance,
+matching how `TextSearch.synonyms` produces them.
+"""
+function _remap_synonyms_to_lemmas(synmap, lemmas)
+    lem(t) = get(lemmas, t, t)
+    acc = Dict{String,Dict{String,Float32}}()
+    for (tok, syns) in synmap
+        k = lem(tok)
+        d = get!(() -> Dict{String,Float32}(), acc, k)
+        for (syn, dist) in syns
+            s = lem(syn)
+            s == k && continue
+            prev = get(d, s, Inf32)
+            dist < prev && (d[s] = Float32(dist))
+        end
+    end
+    out = Dict{String,Vector{Pair{String,Float32}}}()
+    for (k, d) in acc
+        isempty(d) && continue
+        out[k] = sort!([s => dist for (s, dist) in d]; by=last)
+    end
+    out
+end
+
+"""
     _fit_one_batch(docs::Vector{String}, cfg, batch_dir::AbstractString) -> (vocsize::Int, model)
 
 Runs the full `fit` pipeline over one batch of document texts and saves the resulting
@@ -116,21 +177,8 @@ function _fit_one_batch(docs::Vector{String}, cfg, batch_dir::AbstractString)
         candidates = String[]
     end
 
-    voc = Vocabulary(textconfig, docs; verbose=false)
-
-    # Prune rare tokens before anything expensive touches the vocabulary: the synonym
-    # network is an all-pairs search over it, so this is quadratic savings, and tokens seen
-    # in one or two documents have no usable embedding to begin with.
     min_ndocs = Int(get(get(cfg, "vocabulary", Dict()), "min_ndocs", 1))
-    if min_ndocs > 1
-        before = vocsize(voc)
-        voc = filter_tokens(t -> t.ndocs >= min_ndocs, voc)
-        println("  vocabulary pruned by min_ndocs=$min_ndocs: $before -> $(vocsize(voc)) tokens")
-        flush(stdout)   # long runs are usually watched through a redirected log
-        vocsize(voc) > 0 ||
-            error("min_ndocs=$min_ndocs pruned the entire vocabulary ($before tokens, none in >= $min_ndocs documents); lower it")
-    end
-
+    voc = _build_vocabulary(textconfig, docs, min_ndocs)
     model = VectorModel(IdfWeighting(), TfWeighting(), voc)
 
     kind = Symbol(enc["kind"])
@@ -166,6 +214,37 @@ function _fit_one_batch(docs::Vector{String}, cfg, batch_dir::AbstractString)
         min_common_prefix=Int(get(lem, "min_common_prefix", 3)),
         order=Symbol(get(lem, "order", "morphology_first")),
         semantic_threshold=Float64(get(lem, "semantic_threshold", 1.0)))
+
+    # Third pass: bake the lemma map into the TextConfig and rebuild vocabulary/weights
+    # under it. A lemma is a normalization, so this is where it belongs -- once it is in the
+    # TextConfig, every consumer (vectorize, bagofwords, the inverted files, search) applies
+    # it to documents and queries alike, and the idf counts a whole inflection family
+    # together instead of splitting it across its forms.
+    #
+    # The lemma map cannot be known before this point: it is derived from embeddings over
+    # the vocabulary it now rewrites, so this pass cannot be folded into an earlier one. LSI
+    # is deliberately NOT redone on the lemmatized vocabulary -- the embeddings' job was to
+    # discover the families, and they have; re-deriving them would only shift synonym
+    # neighbours slightly for the cost of a full factorization.
+    if Bool(get(lem, "apply", true)) && !isempty(lemmas)
+        lt = LemmaTransformation(lemmas)
+        # Lemmas run BEFORE the stopword filter. The reverse order silently reintroduces
+        # stopwords: a form not in the stopword set survives the filter and is only then
+        # rewritten into one ("las" -> "la"). This order works because a lemma is always one
+        # of its family's own surface forms, so a set collected from unlemmatized text
+        # already contains the lemma of any family that is a stopword family.
+        transformation = sw["enabled"] ?
+            ChainTransformation([lt, IgnoreStopwords(Set(candidates))]) : lt
+        final_textconfig = TextConfig(base_textconfig; transformation)
+
+        voc = _build_vocabulary(final_textconfig, docs, min_ndocs; label="lemmatized ")
+        model = VectorModel(IdfWeighting(), TfWeighting(), voc)
+        # the network's entries name unlemmatized forms, which are no longer vocabulary
+        # tokens; left alone, every inflected entry would be silently dropped at query time
+        synmap = _remap_synonyms_to_lemmas(synmap, lemmas)
+        println("  lemmas applied: $(length(lemmas)) remapped tokens -> vocsize=$(vocsize(voc)), synonyms=$(length(synmap))")
+        flush(stdout)
+    end
 
     save_profile(batch_dir, model;
         synonyms=synmap, lemmas, stopword_candidates=candidates,
