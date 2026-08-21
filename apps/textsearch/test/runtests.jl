@@ -231,6 +231,45 @@ end
                     @info "single-threaded run: the ordering assertions above cannot fail here"
             end
 
+            @testset "search: presentation is serialized at volume" begin
+                # The testset above runs over 7 documents, which is far too few to ever
+                # expose a torn line or a reordering. This one builds a corpus big enough
+                # that every chunk holds many documents per thread, and pins down the two
+                # properties that parallel printing could break:
+                #
+                #   1. serialization -- no two tasks may write stdout concurrently, or a
+                #      line would tear mid-JSON. Every line must parse.
+                #   2. order -- hits must come out in corpus order, exactly.
+                #
+                # Matches are seeded at irregular positions so a chunk boundary landing on
+                # one is not a special case, and each carries its index so the expected
+                # output is known exactly rather than merely counted.
+                big = String[]
+                expected = String[]
+                for i in 1:5000
+                    if i % 7 == 3
+                        push!(big, "documento numero $i con casa")
+                        push!(expected, "documento numero $i con casa")
+                    else
+                        push!(big, "texto irrelevante numero $i")
+                    end
+                end
+                bigpath = joinpath(dir, "big.jsonl")
+                write_jsonl_corpus(bigpath, big)
+
+                for chunk in ("64", "512", "4096", "9999")
+                    out = capture_stdout() do
+                        TextSearchApp.cmd_search([zippath, "casa", "--no-synonyms", "--no-lemmas",
+                                                  "--collection", bigpath, "--format", "jsonl",
+                                                  "--chunk", chunk])
+                    end
+                    lines = filter(!isempty, split(out, '\n'))
+                    # every line is intact JSON: a concurrent write would tear one
+                    parsed = [JSON3.read(l) for l in lines]
+                    @test [String(r[:text]) for r in parsed] == expected
+                end
+            end
+
             @testset "install / list / info / uninstall" begin
                 TextSearchApp.cmd_install([zippath, "mynick"])
                 @test TextSearchApp.list_nicknames() == ["mynick"]
