@@ -10,10 +10,12 @@
 #   corpora/wikipedia.sh --lang es
 #   corpora/wikipedia.sh --lang es --limit 20000          # smoke test on a slice
 #   corpora/wikipedia.sh --lang de --snapshot 20231101
+#   corpora/wikipedia.sh --lang es --parts 32             # more, smaller parts
+#   corpora/wikipedia.sh --lang es --resume               # continue an interrupted run
 #   corpora/wikipedia.sh --lang es --steps fetch          # download only
 #
 # Produces profiles/wiki<SNAPSHOT>-<LANG>/wiki<SNAPSHOT>-<LANG>-NNNN.zip -- one independent
-# profile per --batch-size articles.
+# profile per part (see --parts), which `textsearch merge` folds back into one.
 #
 # Only downloads and fits; nothing is published. Verify a profile (textsearch info, a few
 # textsearch search queries) before attaching it to a release -- see ../README.md.
@@ -27,7 +29,9 @@ HF_RESOLVE="https://huggingface.co/datasets/$HF_REPO/resolve/main"
 LANG_CODE=""
 SNAPSHOT=""
 LIMIT=0
-BATCH_SIZE=25000
+PARTS=16
+BATCH_SIZE=""      # empty: derived from PARTS once the document count is known
+RESUME=false
 OUTDIM=128
 SYN_K=8
 MIN_CHARS=200
@@ -48,7 +52,12 @@ Options:
   --lang CODE            wikipedia language code (required), e.g. es, en, de
   --snapshot DATE        dump snapshot, e.g. 20231101 (default: newest available)
   --limit N              stop after N articles (smoke tests; 0 = all)
-  --batch-size N         articles per output profile (default 25000; 0 = single profile)
+  --parts N              split the output into N profile files (default 16). Batch size is
+                         derived from the document count, so this bounds peak memory and
+                         gives N snapshots: each part is written as it finishes, so an
+                         interrupted run keeps the completed ones
+  --batch-size N         articles per part, overriding --parts (0 = one single profile)
+  --resume               skip parts whose .zip already exists instead of refitting them
   --outdim N             LSI dimension (default 128)
   --syn-k N              synonyms per token (default 8)
   --min-chars N          skip articles shorter than this (default 200, drops stubs)
@@ -70,7 +79,9 @@ while [[ $# -gt 0 ]]; do
     --lang)                 LANG_CODE="$2"; shift 2 ;;
     --snapshot)             SNAPSHOT="$2"; shift 2 ;;
     --limit)                LIMIT="$2"; shift 2 ;;
+    --parts)                PARTS="$2"; shift 2 ;;
     --batch-size)           BATCH_SIZE="$2"; shift 2 ;;
+    --resume)               RESUME=true; shift ;;
     --outdim)               OUTDIM="$2"; shift 2 ;;
     --syn-k)                SYN_K="$2"; shift 2 ;;
     --min-chars)            MIN_CHARS="$2"; shift 2 ;;
@@ -182,9 +193,26 @@ fi
 if has_step fit; then
   [[ -s "$JSONL" ]] || die "missing $JSONL -- run with --steps prepare first"
   mkdir -p "$OUT_DIR"
-  ts_render_fit_config "$FIT_CFG" "$JSONL" "$OUT_DIR" "$PROFILE_NAME" "$BATCH_SIZE" \
-    "$STOPWORDS" "$DOC_FREQ_THRESHOLD" "$OUTDIM" "$SYN_K" "$LEMMA_ALG" "$LEMMA_SEL" \
-    "$MIN_NDOCS"
+
+  # Derive the batch size from the requested number of parts. Batch size is no longer a
+  # time knob -- measured on 100k Spanish articles, 10/30/100k batches all took ~575s in
+  # total -- so it is chosen to bound peak memory and to decide how many snapshots a long
+  # run leaves behind, not to make the run faster.
+  if [[ -z "$BATCH_SIZE" ]]; then
+    [[ "$PARTS" -ge 1 ]] || die "--parts must be >= 1, got $PARTS"
+    ndocs=$(wc -l < "$JSONL")
+    [[ "$ndocs" -gt 0 ]] || die "$JSONL is empty"
+    BATCH_SIZE=$(( (ndocs + PARTS - 1) / PARTS ))
+    log "$ndocs documents / $PARTS parts -> batch_size=$BATCH_SIZE"
+  else
+    log "batch_size=$BATCH_SIZE (explicit, --parts ignored)"
+  fi
+
+  TS_JSONL="$JSONL" TS_OUTDIR="$OUT_DIR" TS_PREFIX="$PROFILE_NAME" TS_BATCH="$BATCH_SIZE" \
+  TS_RESUME="$RESUME" TS_MIN_NDOCS="$MIN_NDOCS" TS_STOPWORDS="$STOPWORDS" \
+  TS_DOC_FREQ_THRESHOLD="$DOC_FREQ_THRESHOLD" TS_OUTDIM="$OUTDIM" TS_SYN_K="$SYN_K" \
+  TS_LEMMA_ALG="$LEMMA_ALG" TS_LEMMA_SEL="$LEMMA_SEL" \
+    ts_render_fit_config "$FIT_CFG"
   ts_fit "$FIT_CFG"
   log "profiles in $OUT_DIR:"
   ls -la "$OUT_DIR" >&2

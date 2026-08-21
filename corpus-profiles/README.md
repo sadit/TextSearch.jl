@@ -153,10 +153,37 @@ factorization. Practical options:
 - **Prune harder.** `--min-ndocs 20` cuts the vocabulary to ~59k, roughly 6× less synonym
   work than `min_ndocs=5` and ~110× less than no pruning, at the cost of the rare-token
   tail. This is the first knob to reach for.
-- **Sample instead of covering everything.** `--limit 200000 --batch-size 25000` gives 8
-  batches to merge rather than 74 -- usually plenty for stable corpus-wide vocabulary and
-  IDF statistics.
-- **Cover everything anyway**, accepting a multi-day run, then merge once at the end.
+- **Sample instead of covering everything.** `--limit 200000` is usually plenty for stable
+  corpus-wide vocabulary and IDF statistics.
+
+## `--parts` is about memory and snapshots, not speed
+
+Once the factorization stopped being cubic in batch size, batch size stopped mattering for
+time. Measured on the same 100,000 Spanish articles, varying only how they were split:
+
+| parts | batch size | total time | peak RSS | total .zip |
+|---|---|---|---|---|
+| 10 | 10,000 | 580s | 3.1 GB | 153 MB |
+| 4 | 30,000 | 575s | 3.7 GB | 102 MB |
+| 1 | 100,000 | **572s** | 5.1 GB | **59 MB** |
+
+Within 1.4% -- so the driver takes `--parts N` (default 16) and derives the batch size from
+the document count, because what the split actually controls is:
+
+- **peak memory**, which grows with the part size, and
+- **snapshots**: each part is written as soon as it is fitted, so an interrupted run keeps
+  the parts it finished. `--resume` then skips those instead of refitting them (it still
+  reads their documents, so later parts keep the same boundaries).
+
+Fewer, larger parts are otherwise better: less duplicated vocabulary on disk (the 10-part
+split stores overlapping vocabularies ten times over), better per-part statistics, and fewer
+merges -- which matters because `merge` is exact only for counts and weights, while synonyms
+and lemmas go through rank fusion and voting.
+
+Extrapolating the measured throughput to all **1,841,155** Spanish articles: roughly **3
+hours**, near enough independent of the split. That is an upper bound -- vocabulary per part
+falls monotonically through the corpus (93,886 down to 54,944 across the ten parts above),
+since the early articles are the long ones.
 
 Stopword detection, for the record, works well at this scale without any tuning: on the
 Spanish slice it flagged 55 candidates, headed by `de . , en la el y del a un` -- real

@@ -15,6 +15,7 @@ text_key = "text"
 dir = "%OUTDIR%"
 prefix = "corpus"
 batch_size = %BATCH_SIZE%
+resume = %RESUME%
 
 [normalization]
 del_diac = true
@@ -60,11 +61,12 @@ function write_jsonl_corpus(path, docs)
     end
 end
 
-function write_fit_config(path; corpus, outdir, batch_size=0, stopwords=false, min_ndocs=1)
+function write_fit_config(path; corpus, outdir, batch_size=0, stopwords=false, min_ndocs=1,
+                          resume=false)
     cfg = replace(FIT_CONFIG,
         "%CORPUS%" => corpus, "%OUTDIR%" => outdir,
         "%BATCH_SIZE%" => string(batch_size), "%STOPWORDS%" => string(stopwords),
-        "%MIN_NDOCS%" => string(min_ndocs))
+        "%MIN_NDOCS%" => string(min_ndocs), "%RESUME%" => string(resume))
     write(path, cfg)
     path
 end
@@ -119,6 +121,34 @@ end
                 @test isfile(joinpath(outdir, "corpus-0002.zip"))
                 @test isfile(joinpath(outdir, "corpus-0003.zip"))
                 @test !isfile(joinpath(outdir, "corpus-0004.zip"))
+            end
+
+            @testset "fit: resume skips completed parts without shifting boundaries" begin
+                outdir = joinpath(dir, "profiles_resume")
+                cfgpath = write_fit_config(joinpath(dir, "fit_resume.toml");
+                                           corpus=corpus_path, outdir, batch_size=3, resume=true)
+                TextSearchApp.cmd_fit(["--config", cfgpath])
+                zips = sort(filter(f -> endswith(f, ".zip"), readdir(outdir)))
+                @test length(zips) == 3
+
+                # record what part 3 contained, drop it, and resume
+                p3 = TextSearch.load_profile(joinpath(outdir, "corpus-0003.zip"))
+                trainsize3, vocsize3 = TextSearch.trainsize(p3.model.voc), TextSearch.vocsize(p3.model.voc)
+                mtime1 = mtime(joinpath(outdir, "corpus-0001.zip"))
+                rm(joinpath(outdir, "corpus-0003.zip"))
+
+                out = capture_stdout() do
+                    TextSearchApp.cmd_fit(["--config", cfgpath])
+                end
+                @test occursin("skipping fit", out)
+                @test isfile(joinpath(outdir, "corpus-0003.zip"))
+                @test mtime(joinpath(outdir, "corpus-0001.zip")) == mtime1   # untouched
+
+                # the refitted part must cover the same documents as before: skipping a part
+                # still has to consume its inputs or every later boundary shifts
+                p3b = TextSearch.load_profile(joinpath(outdir, "corpus-0003.zip"))
+                @test TextSearch.trainsize(p3b.model.voc) == trainsize3
+                @test TextSearch.vocsize(p3b.model.voc) == vocsize3
             end
 
             @testset "fit: stopwords enabled -- stopwords structurally absent from the profile's vocabulary" begin

@@ -57,18 +57,31 @@ ts_julia() {
 
 # ── fit config rendering ─────────────────────────────────────────────────────
 
-# ts_render_fit_config <out.toml> <jsonl-path> <out-dir> <prefix> <batch-size> \
-#                      <stopwords-enabled> <doc-freq-threshold> <encoder-outdim> \
-#                      <synonyms-k> <lemma-algorithm> <lemma-selector> <min-ndocs>
+# ts_render_fit_config <out.toml>
 #
-# Writes a `textsearch fit --config` TOML. Kept as one explicit function rather than a
-# template file with sed placeholders so that every field a profile depends on is visible
-# in one place, and a typo'd key fails loudly at fit time instead of being silently
-# substituted.
+# Writes a `textsearch fit --config` TOML from the TS_* variables below. Named variables
+# rather than positional arguments on purpose: this grew past a dozen fields, and at that
+# size a positional call is impossible to read and trivial to mis-order.
+#
+# Required: TS_JSONL TS_OUTDIR TS_PREFIX TS_BATCH
+# Optional (defaults shown): everything else.
 ts_render_fit_config() {
-  local out="$1" jsonl="$2" outdir="$3" prefix="$4" batch="$5" \
-        sw_enabled="$6" sw_thresh="$7" outdim="$8" syn_k="$9" lem_alg="${10}" lem_sel="${11}" \
-        min_ndocs="${12}"
+  local out="$1"
+  : "${TS_JSONL:?ts_render_fit_config: TS_JSONL not set}"
+  : "${TS_OUTDIR:?ts_render_fit_config: TS_OUTDIR not set}"
+  : "${TS_PREFIX:?ts_render_fit_config: TS_PREFIX not set}"
+  : "${TS_BATCH:?ts_render_fit_config: TS_BATCH not set}"
+
+  local resume="${TS_RESUME:-false}"
+  local text_key="${TS_TEXT_KEY:-text}"
+  local fmt="${TS_FORMAT:-jsonl}"
+  local min_ndocs="${TS_MIN_NDOCS:-5}"
+  local sw_enabled="${TS_STOPWORDS:-true}"
+  local sw_thresh="${TS_DOC_FREQ_THRESHOLD:-0.5}"
+  local outdim="${TS_OUTDIM:-128}"
+  local syn_k="${TS_SYN_K:-8}"
+  local lem_alg="${TS_LEMMA_ALG:-fft}"
+  local lem_sel="${TS_LEMMA_SEL:-most_frequent}"
 
   mkdir -p "$(dirname "$out")"
   cat > "$out" << EOF
@@ -76,14 +89,15 @@ ts_render_fit_config() {
 # Rendered $(date -Iseconds)
 
 [input]
-format = "jsonl"
-path = "$jsonl"
-text_key = "text"
+format = "$fmt"
+path = "$TS_JSONL"
+text_key = "$text_key"
 
 [output]
-dir = "$outdir"
-prefix = "$prefix"
-batch_size = $batch
+dir = "$TS_OUTDIR"
+prefix = "$TS_PREFIX"
+batch_size = $TS_BATCH
+resume = $resume
 
 [normalization]
 del_diac = true

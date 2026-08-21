@@ -184,11 +184,25 @@ function cmd_fit(args::Vector{String})
 
     mkpath(output["dir"])
 
+    resume = Bool(get(output, "resume", false))
+
     n = _each_batch(each_record(format, input["path"], input["text_key"]), Int(output["batch_size"])) do i, docs
+        zippath = joinpath(output["dir"], "$(output["prefix"])-$(lpad(i, 4, '0')).zip")
+
+        # Each part is written as soon as it is fitted, so an interrupted run leaves the
+        # finished ones on disk. `resume` then skips refitting those -- the batch's documents
+        # are still read (cheap) so later parts keep the same boundaries, only the fit
+        # (the expensive part) is skipped. Off by default: silently reusing a profile fitted
+        # under different settings would be worse than redoing the work.
+        if resume && isfile(zippath)
+            println("part $i already present, skipping fit (resume=true) -> $zippath")
+            flush(stdout)
+            return
+        end
+
         batch_dir = joinpath(output["dir"], "_textsearch_fit_batch_$(lpad(i, 4, '0'))")
         try
             m, _ = _fit_one_batch(docs, cfg, batch_dir)
-            zippath = joinpath(output["dir"], "$(output["prefix"])-$(lpad(i, 4, '0')).zip")
             zip_profile(batch_dir, zippath)
             println("saved profile $i ($(length(docs)) docs, vocsize=$m) -> $zippath")
             flush(stdout)

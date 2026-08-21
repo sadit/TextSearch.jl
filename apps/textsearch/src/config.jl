@@ -10,6 +10,11 @@ text_key = "text"          # ignored for format="plaintext"
 dir = "./profiles"
 prefix = "corpus"
 batch_size = 10000          # max docs per output profile zip; 0 = unbounded (single profile)
+# Skip parts whose .zip already exists instead of refitting them. Each part is written as
+# soon as it is fitted, so an interrupted run leaves the finished ones behind and this
+# resumes from there. Off by default: reusing a profile fitted under different settings
+# silently would be worse than redoing the work.
+resume = false
 
 [normalization]
 del_diac = true
