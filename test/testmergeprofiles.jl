@@ -16,7 +16,7 @@ using Test, TextSearch, SimilaritySearch
         voc = Vocabulary(textconfig, d; verbose=false)
         model = VectorModel(gw, lw, voc)
         dir = tempname()
-        save_profile(dir, model; kwargs...)
+        save_profile(dir, TextProfile(model; kwargs...))
         p = load_profile(dir)
         rm(dir; recursive=true, force=true)
         p
@@ -52,12 +52,14 @@ using Test, TextSearch, SimilaritySearch
         @test merged.model.maxoccs == wholemodel.maxoccs
     end
 
-    @testset "encoder records the merge" begin
-        merged = merge_profiles([roundtrip(docs[1:3]; encoder=(; kind=:lsi, outdim=4)),
-                                 roundtrip(docs[4:6]; encoder=(; kind=:lsi, outdim=4))])
-        @test merged.encoder.kind === :merged
-        @test merged.encoder.n_sources == 2
-        @test merged.encoder.source_kinds == "lsi"
+    @testset "lineage records the merge" begin
+        fit = [LineageStep(:fit; outdim=4)]
+        merged = merge_profiles([roundtrip(docs[1:3]; lineage=fit),
+                                 roundtrip(docs[4:6]; lineage=fit)])
+        @test last(merged.lineage).stage === :merge
+        @test last(merged.lineage).params["n_sources"] == 2
+        # merging batches of one corpus does not make a tuned model
+        @test isbase(merged)
     end
 
     @testset "synonyms fuse by rank consensus" begin
@@ -126,45 +128,48 @@ using Test, TextSearch, SimilaritySearch
         @test merged.lemmas["roja"] == "casa"
     end
 
-    @testset "stopword candidates: recomputed globally, unioned with the inputs'" begin
-        a = roundtrip(docs[1:3]; stopword_candidates=["previamente_detectada"])
+    @testset "stopwords: recomputed globally, unioned with the inputs'" begin
+        a = roundtrip(docs[1:3]; stopwords=Set(["previamente_detectada"]))
         b = roundtrip(docs[4:6])
         merged = merge_profiles([a, b]; doc_freq_threshold=0.5)
         # kept even though it cannot be re-derived (it is absent from the merged vocabulary)
-        @test "previamente_detectada" in merged.stopword_candidates
+        @test "previamente_detectada" in merged.stopwords
         # and "la", in 5 of 6 documents, is re-derived from the merged counters
-        @test "la" in merged.stopword_candidates
-        @test issorted(merged.stopword_candidates)
+        @test "la" in merged.stopwords
     end
 
-    @testset "profiles with the same applied lemma map merge" begin
-        # regression guard: _same_transformation had no LemmaTransformation method, so it
-        # fell through to the `false` fallback and merging two lemmatized profiles errored
-        # as "incompatible transformations" even when their maps were identical
-        lt = LemmaTransformation(Dict("casas" => "casa"))
-        tc_l = TextConfig(tc; transformation=lt)
-        merged = merge_profiles([roundtrip(docs[1:3]; textconfig=tc_l),
-                                 roundtrip(docs[4:6]; textconfig=tc_l)])
-        @test has_lemma_transformation(merged.model.voc.textconfig.transformation)
+    @testset "differing artifacts combine instead of being rejected" begin
+        # This used to be the sharpest edge of the old design: artifacts lived inside the
+        # TextConfig, so merging compared them for EQUALITY and needed a special case to
+        # union differing stopword sets -- and it rejected two profiles whose lemma maps were
+        # merely different, even though voting on them is exactly what a merge should do.
+        # Now policy is compared and artifacts combine, so nothing about them has to match.
+        applied_lem = AppliedArtifacts(lemmas=true)
+        a = roundtrip(docs[1:3]; stopwords=Set(["la"]), lemmas=Dict("roja" => "casa"),
+                                 applied=applied_lem)
+        b = roundtrip(docs[4:6]; stopwords=Set(["una"]), lemmas=Dict("roja" => "casa"),
+                                 applied=applied_lem)
+        merged = merge_profiles([a, b])
+
         @test trainsize(merged.model.voc) == 6
-
-        # differing maps genuinely cannot be reconciled and must still be refused
-        tc_l2 = TextConfig(tc; transformation=LemmaTransformation(Dict("casas" => "jardin")))
-        @test_throws ErrorException merge_profiles([roundtrip(docs[1:3]; textconfig=tc_l),
-                                                   roundtrip(docs[4:6]; textconfig=tc_l2)])
+        @test merged.stopwords ⊇ Set(["la", "una"])         # sets union
+        @test merged.lemmas["roja"] == "casa"                # maps vote
+        @test merged.applied.lemmas                          # applied if any input applied
+        # and the merged profile applies exactly the map it carries
+        @test has_lemma_transformation(textconfig(merged).transformation)
     end
 
-    @testset "differing stopword transformations union" begin
-        tc_a = TextConfig(tc; transformation=IgnoreStopwords(Set(["la"])))
-        tc_b = TextConfig(tc; transformation=IgnoreStopwords(Set(["una"])))
-        merged = merge_profiles([roundtrip(docs[1:3]; textconfig=tc_a),
-                                 roundtrip(docs[4:6]; textconfig=tc_b)])
-        tt = merged.model.voc.textconfig.transformation
-        @test tt isa IgnoreStopwords
-        @test tt.stopwords == Set(["la", "una"])
+    @testset "a disagreeing lemma map votes rather than erroring" begin
+        applied_lem = AppliedArtifacts(lemmas=true)
+        a = roundtrip(docs; lemmas=Dict("roja" => "casa"), applied=applied_lem)
+        b = roundtrip(docs; lemmas=Dict("roja" => "casa"), applied=applied_lem)
+        c = roundtrip(docs; lemmas=Dict("roja" => "jardin"), applied=applied_lem)
+        merged = merge_profiles([a, b, c])
+        @test merged.lemmas["roja"] == "casa"    # 2 votes vs 1, no error
     end
 
-    @testset "incompatible inputs are rejected" begin
+    @testset "incompatible POLICY is rejected" begin
+        # policy is the only thing that has to match, and it has to match exactly
         @test_throws ArgumentError merge_profiles([])
 
         # different tokenization

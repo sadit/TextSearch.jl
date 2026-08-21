@@ -71,9 +71,7 @@ function cmd_merge(args::Vector{String})
     mkpath(dirname(abspath(out)))
     tmpdir = out * ".tmpdir"
     try
-        save_profile(tmpdir, merged.model;
-            merged.synonyms, merged.synonym_distances, merged.lemmas,
-            merged.stopword_candidates, merged.encoder)
+        save_profile(tmpdir, merged)
         zip_profile(tmpdir, out)
     finally
         rm(tmpdir; recursive=true, force=true)
@@ -83,6 +81,7 @@ function cmd_merge(args::Vector{String})
     println("merged -> $out")
     println("  trainsize=$(trainsize(voc))  vocsize=$(vocsize(voc))  numtokens=$(numtokens(voc))")
     println("  synonyms=$(length(merged.synonyms)) tokens  lemmas=$(length(merged.lemmas)) remapped  " *
-            "stopword_candidates=$(length(merged.stopword_candidates))")
+            "stopwords=$(length(merged.stopwords))")
+    println("  lineage: ", lineage_summary(merged))
     0
 end

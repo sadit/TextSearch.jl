@@ -54,9 +54,8 @@ end
     idx_plain = BM25InvertedFile(voc)
     append_items!(idx_plain, ctx, _corpus)
 
-    expand_textconfig = TextConfig(tokenization=TokenizationConfig(nlist=[1]), expand_query_synonyms=true)
-    expand_voc = Vocabulary(expand_textconfig, _corpus)
-    idx_expand = BM25InvertedFile(expand_voc; synonyms)
+    # Handing a network over IS the request to expand with it; there is no separate flag.
+    idx_expand = BM25InvertedFile(voc; synonyms)
     append_items!(idx_expand, ctx, _corpus)
 
     res_plain = search(idx_plain, ctx, "pera roja", knnqueue(KnnSorted, 3))
@@ -72,8 +71,8 @@ end
     @test findfirst(==(4), ids_expand) < findfirst(==(4), ids_plain)
     @test dists_expand[findfirst(==(4), ids_expand)] < dists_plain[findfirst(==(4), ids_plain)]
 
-    # the flag alone, without an attached synonyms dict, must not error and must behave like plain search
-    idx_flag_only = BM25InvertedFile(expand_voc)
+    # no network attached: plain search, no error
+    idx_flag_only = BM25InvertedFile(voc)
     append_items!(idx_flag_only, ctx, _corpus)
     res_flag_only = search(idx_flag_only, ctx, "pera roja", knnqueue(KnnSorted, 3))
     @test collect(IdView(res_flag_only)) == ids_plain

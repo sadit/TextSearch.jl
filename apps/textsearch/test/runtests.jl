@@ -159,7 +159,8 @@ end
                 TextSearchApp.cmd_fit(["--config", cfgpath])
                 p = TextSearch.load_profile(joinpath(outdir, "corpus-0001.zip"))
                 @test TextSearch.token2id(p.model.voc, "la") == 0  # "la" appears in every doc -> flagged and excluded
-                @test !isempty(p.stopword_candidates)
+                @test !isempty(p.stopwords)
+                @test p.applied.stopwords
             end
 
             @testset "fit: vocabulary.min_ndocs prunes rare tokens" begin
@@ -199,8 +200,8 @@ end
 
                 @test !isempty(p.lemmas)
                 # applied: the map is part of the pipeline, not just a saved artifact
-                tt = p.model.voc.textconfig.transformation
-                @test TextSearchApp._has_lemmas(tt)
+                @test p.applied.lemmas
+                @test has_lemma_transformation(textconfig(p).transformation)
 
                 # the vocabulary is lemmatized, so the inflected forms are gone and the
                 # lemma carries the family's counts
@@ -230,7 +231,8 @@ end
                     q = TextSearch.load_profile(joinpath(outdir2, "corpus-0001.zip"))
 
                     @test !isempty(q.lemmas)                                   # still saved
-                    @test !TextSearchApp._has_lemmas(q.model.voc.textconfig.transformation)
+                    @test !q.applied.lemmas
+                    @test !has_lemma_transformation(textconfig(q).transformation)
                     # unlemmatized: the inflected forms are still their own tokens
                     @test TextSearch.token2id(q.model.voc, first(keys(q.lemmas))) != 0
                 end
@@ -372,8 +374,9 @@ end
                     @test TextSearch.ndocs(m.model.voc, mid) == TextSearch.ndocs(whole.model.voc, id)
                     @test m.model.weight[mid] ≈ whole.model.weight[id]
                 end
-                @test m.encoder["kind"] == "merged"
-                @test m.encoder["n_sources"] == 3
+                @test last(m.lineage).stage === :merge
+                @test last(m.lineage).params["n_sources"] == 3
+                @test isbase(m)
 
                 # a directory of profiles expands; a single profile is not a merge
                 @test_throws Exception TextSearchApp.cmd_merge([zippath, "--out", joinpath(dir, "x.zip")])
@@ -396,7 +399,8 @@ end
 
                 r = TextSearch.load_profile(outpath)
                 @test TextSearch.token2id(r.model.voc, "perro") != 0
-                @test r.encoder["kind"] == "refit"
+                @test istuned(r)
+                @test last(r.lineage).stage === :refit
                 # sample-sized, not base-sized: kappa defaults to the sample's document count
                 @test TextSearch.trainsize(r.model.voc) == 8
                 # the guard against a negative idf / negative BM25 numerator

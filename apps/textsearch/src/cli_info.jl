@@ -22,14 +22,18 @@ function cmd_info(args::Vector{String})
     println("vocsize:   ", vocsize(voc))
     println("numtokens: ", numtokens(voc))
     println("avgdoclen: ", avgdoclen(voc))
-    println("synonyms:  ", length(p.synonyms), " tokens")
-    println("lemmas:    ", length(p.lemmas), " remapped tokens")
-    println("stopword_candidates: ", length(p.stopword_candidates), " tokens")
-    if p.encoder !== nothing
-        println("encoder:   ", p.encoder["kind"], " (", join(["$k=$v" for (k, v) in p.encoder if k != "kind"], ", "), ")")
-    else
-        println("encoder:   (none saved)")
-    end
+    println("kind:      ", istuned(p) ? "tuned" : "base")
+    println("lineage:   ", lineage_summary(p))
+
+    # For each artifact: how much of it there is, and whether the profile APPLIES it or merely
+    # carries it. That second half is the difference between a base model and a tuned one, and
+    # it used to be invisible here.
+    mark(n, applied) = "$n " * (applied ? "(applied)" : "(carried, not applied)")
+    println("stopwords: ", mark(length(p.stopwords), p.applied.stopwords))
+    println("lemmas:    ", mark(length(p.lemmas), p.applied.lemmas), " remapped tokens")
+    println("synonyms:  ", mark(length(p.synonyms), p.applied.synonyms), " tokens",
+            p.synonym_distances === nothing ? ", ranking only" :
+            ", with $(length(p.synonym_distances)) distance lists")
     println()
-    show(stdout, voc.textconfig)
+    show(stdout, textconfig(p))
 end

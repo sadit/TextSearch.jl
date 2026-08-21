@@ -2,11 +2,11 @@
 
 export save_profile, load_profile, zip_profile
 
-# Kept at "1.0" while the schema is still being actively developed (lemmas/encoder/
-# stopword_candidates sections added on top of it are all optional/additive, so old
-# profiles without them keep loading fine) -- bump only once the schema is genuinely
-# settled, not for every incremental addition.
-const _PROFILE_FORMAT_VERSION = "1.0"
+# Bumped from "1.0" with the policy/artifact split. The freeze at "1.0" was right while every
+# schema change was additive and older files still loaded; this one changes the layout and
+# drops compatibility, so the version's job flips from "irrelevant" to "refuse an older file
+# with a sentence that says what happened" rather than half-parsing it.
+const _PROFILE_FORMAT_VERSION = "2.0"
 const _PROFILE_MANIFEST_NAME = "manifest.json"
 
 # ── weighting tag tables ─────────────────────────────────────────────────────
@@ -47,124 +47,13 @@ function _decode_local_weighting(tag::AbstractString)
     _TAG_LOCAL_WEIGHTING[tag]()
 end
 
-# ── transformation tagged union ──────────────────────────────────────────────
+# ── policy (normalization / tokenization) ────────────────────────────────────
 #
-# Every "big" piece of a profile (vocabulary, weights, synonyms, and -- if present --
-# a stopwords list) lives in its OWN file inside the profile directory, referenced by
-# name from `manifest.json`; only small scalar/tag data is inlined there. This keeps
-# each file greppable/diffable on its own and lets a consumer skip loading the pieces
-# it doesn't need.
-
-"""
-    _decode_snowball_transformation(algorithm::AbstractString, charenc::AbstractString)
-
-Reconstructs a [`SnowballTokenTransformation`](@ref) from a profile by dispatching into
-`TextSearchSnowballExt` (the `Snowball`/`Languages` package extension), looked up at
-runtime via `Base.get_extension` rather than as an overridable method -- a package
-extension is not allowed to overwrite a method already defined in the parent package, so
-the extension instead defines a same-named function inside its OWN module
-(`TextSearchSnowballExt._construct_snowball_transformation`), which this looks up
-dynamically. Errors clearly if the extension isn't loaded yet, naming what to `using` first.
-"""
-function _decode_snowball_transformation(algorithm::AbstractString, charenc::AbstractString)
-    ext = Base.get_extension(TextSearch, :TextSearchSnowballExt)
-    ext === nothing && error(
-        "loading a profile with a Snowball-stemmed transformation (algorithm=\"$algorithm\") " *
-        "requires `using Snowball, Languages` to be active first, so the TextSearchSnowballExt " *
-        "package extension can reconstruct the stemmer."
-    )
-    ext._construct_snowball_transformation(algorithm, charenc)
-end
-
-"""
-    _transformation_filename(counter, base) -> String
-
-Names the side file for a transformation step that carries bulk data, `"\$base.json"` for
-the first step of that kind and `"\$(base)_2.json"`, `"\$(base)_3.json"`, ... for any
-further ones. `counter` tallies per `base` rather than across all kinds, so a chain of an
-`IgnoreStopwords` and a `LemmaTransformation` yields `"stopwords.json"` and
-`"lemma_map.json"` -- not a `"lemma_map_2.json"` whose suffix would suggest a second lemma
-map that does not exist.
-"""
-function _transformation_filename(counter::Dict{String,Int}, base::AbstractString)
-    n = counter[base] = get(counter, base, 0) + 1
-    n == 1 ? "$base.json" : "$(base)_$n.json"
-end
-
-"""
-    _encode_transformation_with_files(tt, counter=Dict{String,Int}()) -> (json, files)
-
-Encodes `tt` into its tagged-union JSON representation, EXCEPT the bulk payload of any step
-that has one -- an `IgnoreStopwords`' word list, a `LemmaTransformation`'s mapping -- which
-is instead written to its own side file (named by [`_transformation_filename`](@ref)):
-`json` gets a `"file"` reference instead of the inlined data, and `files` collects
-`filename => payload` pairs to be written by the caller (`save_profile`).
-"""
-function _encode_transformation_with_files(tt::IdentityTokenTransformation, counter::Dict{String,Int}=Dict{String,Int}())
-    Dict("kind" => "identity"), Pair{String,Any}[]
-end
-
-function _encode_transformation_with_files(tt::IgnoreStopwords, counter::Dict{String,Int}=Dict{String,Int}())
-    fname = _transformation_filename(counter, "stopwords")
-    Dict("kind" => "stopwords", "file" => fname), Pair{String,Any}[fname => collect(tt.stopwords)]
-end
-
-function _encode_transformation_with_files(tt::LemmaTransformation, counter::Dict{String,Int}=Dict{String,Int}())
-    fname = _transformation_filename(counter, "lemma_map")
-    Dict("kind" => "lemmas", "file" => fname), Pair{String,Any}[fname => tt.lemmas]
-end
-
-function _encode_transformation_with_files(tt::SnowballTokenTransformation, counter::Dict{String,Int}=Dict{String,Int}())
-    Dict("kind" => "snowball", "algorithm" => tt.stemmer.alg, "charenc" => tt.stemmer.enc), Pair{String,Any}[]
-end
-
-function _encode_transformation_with_files(tt::ChainTransformation, counter::Dict{String,Int}=Dict{String,Int}())
-    steps = Any[]
-    files = Pair{String,Any}[]
-    for s in tt.list
-        sjson, sfiles = _encode_transformation_with_files(s, counter)
-        push!(steps, sjson)
-        append!(files, sfiles)
-    end
-    Dict("kind" => "chain", "steps" => steps), files
-end
-
-_encode_transformation_with_files(tt, counter::Dict{String,Int}=Dict{String,Int}()) =
-    error("cannot serialize transformation of type $(typeof(tt)) into a profile")
-
-"""
-    _decode_transformation(d, read_file::Function)
-
-Decodes a transformation's tagged-union JSON `d` back into an
-[`AbstractTokenTransformation`](@ref); `read_file(name::AbstractString)` fetches and
-JSON3-parses a referenced file (the `"stopwords"` and `"lemmas"` kinds) -- the caller
-supplies one that reads from a plain directory or from an open zip archive, so this
-function itself doesn't care which.
-"""
-function _decode_transformation(d, read_file::Function)
-    kind = String(d[:kind])
-    if kind == "identity"
-        IdentityTokenTransformation()
-    elseif kind == "stopwords"
-        words = read_file(String(d[:file]))
-        IgnoreStopwords(Set{String}(String(w) for w in words))
-    elseif kind == "lemmas"
-        map = read_file(String(d[:file]))
-        LemmaTransformation(Dict{String,String}(String(k) => String(v) for (k, v) in pairs(map)))
-    elseif kind == "snowball"
-        _decode_snowball_transformation(String(d[:algorithm]), String(d[:charenc]))
-    elseif kind == "chain"
-        ChainTransformation(AbstractTokenTransformation[_decode_transformation(s, read_file) for s in d[:steps]])
-    else
-        error("unknown transformation kind: $kind")
-    end
-end
-
-# ── TextConfig (normalization / tokenization / transformation) ──────────────
-#
-# `normalization`/`tokenization` are always small (a handful of flags, regex patterns, and
-# the emoji set) so they stay inlined in the manifest; only `transformation`'s stopwords
-# (if any) are split out, via `_encode_transformation_with_files` above.
+# Both halves are small -- a handful of flags, three regex patterns, the emoji set -- so they
+# stay inlined in the manifest. There is no transformation to encode: a profile's
+# transformation is *derived* from its artifacts by `textconfig`, so serializing it would be
+# storing the same stopword set and lemma map a second time. That second copy is exactly what
+# used to drift out of sync with the first.
 
 function _encode_normalization(n::NormalizationConfig)
     Dict(
@@ -194,6 +83,24 @@ end
 
 _decode_tokenization(d) = TokenizationConfig(nlist=Int8.(d[:nlist]), mark_token_type=Bool(d[:mark_token_type]))
 
+function _encode_policy(tc::TextConfig)
+    Dict("normalization" => _encode_normalization(tc.normalization),
+         "tokenization" => _encode_tokenization(tc.tokenization))
+end
+
+_decode_policy(d) = TextConfig(normalization=_decode_normalization(d[:normalization]),
+                               tokenization=_decode_tokenization(d[:tokenization]))
+
+# ── lineage ──────────────────────────────────────────────────────────────────
+
+_encode_lineage(l::AbstractVector{LineageStep}) =
+    [Dict("stage" => String(s.stage), "params" => s.params) for s in l]
+
+_decode_lineage(d) =
+    LineageStep[LineageStep(Symbol(s[:stage]),
+                            Dict{String,Any}(String(k) => v for (k, v) in pairs(s[:params])))
+                for s in d]
+
 # ── file-backed I/O helpers (directory or zip, symmetrically) ──────────────
 
 _write_json(path::AbstractString, data) = open(io -> JSON3.write(io, data), path, "w")
@@ -216,100 +123,40 @@ function _profile_reader(path::AbstractString)
     end
 end
 
-"""
-    _decode_synonyms(synd) -> (words, distances)
-
-Decodes a profile's `synonyms.json` into per-token neighbor lists, accepting both layouts.
-
-The current one stores the ranking alone, `{token: [neighbor, ...]}`, with distances in their
-own file. Profiles written before the split store the two interleaved,
-`{token: [[neighbor, distance], ...]}`. They are told apart by the shape of a list's
-elements -- a string means the ranking-only layout -- which is why this needs no format
-version bump: the payload identifies itself.
-
-`distances` comes back `nothing` for the current layout (the caller reads the separate file)
-and as the recovered mapping for the interleaved one, so an older profile loses nothing.
-"""
-function _decode_synonyms(synd)
-    words = Dict{String,Vector{String}}()
-    dists = Dict{String,Vector{Float32}}()
-
-    for (tok, syns) in synd
-        t = String(tok)
-        w = String[]
-        d = Float32[]
-        for e in syns
-            if e isa AbstractString || e isa Symbol
-                push!(w, String(e))
-            else
-                # interleaved [neighbor, distance]
-                push!(w, String(e[1]))
-                push!(d, Float32(e[2]))
-            end
-        end
-        words[t] = w
-        isempty(d) || (dists[t] = d)
-    end
-
-    words, (isempty(dists) ? nothing : dists)
-end
-
 # ── save_profile / load_profile / zip_profile ────────────────────────────────
 
 """
-    save_profile(dir::AbstractString, model::VectorModel;
-                 synonyms::AbstractDict=Dict{String,Vector{String}}(),
-                 synonym_distances::Union{Nothing,AbstractDict}=nothing,
-                 lemmas::AbstractDict{String,String}=Dict{String,String}(),
-                 stopword_candidates::AbstractVector{<:AbstractString}=String[],
-                 encoder::Union{Nothing,NamedTuple}=nothing) -> dir
+    save_profile(dir::AbstractString, p::TextProfile) -> dir
 
-Serializes `model` -- its `voc`'s [`TextConfig`](@ref) and vocabulary counters, its
-weighting scheme, and its precomputed `weight` vector -- together with a `synonyms`
-network (e.g. as produced by [`LSI.synonyms`](@ref)), a `lemmas` map (e.g. as produced by
-[`lemma_clusters`](@ref)), a `stopword_candidates` list (e.g. as produced by
-[`stopword_candidates`](@ref)), and `encoder` provenance metadata, into `dir` (created if
-missing) as a small directory of plain, human-readable JSON files: one per "large" piece --
-`vocabulary.json`, `weights.json`, `synonyms.json`/`synonym_distances.json`/`lemmas.json`/
-`stopword_candidates.json` (each only written if non-empty), and `stopwords.json` (only written if `model`'s
-`transformation` involves one) -- tied together by a small `manifest.json` that holds
-everything else (normalization/tokenization flags, weighting tags, encoder metadata, and
-file references). Load it back with [`load_profile`](@ref), or package it for
-distribution with [`zip_profile`](@ref).
+Serializes a [`TextProfile`](@ref) into `dir` (created if missing) as a small directory of
+plain, human-readable JSON files: one per "large" piece -- `vocabulary.json`, `weights.json`,
+and `stopwords.json`/`lemmas.json`/`synonyms.json`/`synonym_distances.json` for whichever
+artifacts are non-empty -- tied together by a `manifest.json` holding everything else.
 
-`synonyms` maps a token to its neighbor tokens **in rank order** (nearest first);
-`synonym_distances`, if given, is the parallel `token => Vector{Float32}` of distances, written
-to its own file. The split is deliberate: only the ranking participates in normal query
-expansion, and the distances are by far the bulk of a network on disk, so a consumer that does
-not need them can skip an entire file. Omit `synonym_distances` (or pass an empty mapping) to
-save the ranking alone.
+The manifest keeps policy and artifacts apart, which is the point of the layout:
 
-`lemmas` should map only non-identity tokens (a lookup miss on load means "token is its
-own lemma"). `stopword_candidates` is distinct from and additive to the `stopwords.json`
-mechanism above: that one is the *applied* `IgnoreStopwords` set baked into the
-transformation, this one is the *candidate* list a frequency-based detector produced for
-review -- a profile can have neither, either, or both (they typically coincide when a
-detector's candidates were the ones actually wired into the transformation). `encoder` is
-a `NamedTuple` such as `(; kind=:lsi, outdim=128, scaling=:none, source_path="")` recording
-which encoder produced `synonyms`/`lemmas` and its hyperparameters -- for provenance only;
-the encoder's own projection (e.g. an LSI `P` matrix) is not persisted.
+```
+policy:     { normalization: {...}, tokenization: {...} }
+artifacts:  { stopwords: {file, applied}, lemmas: {file, applied}, synonyms: {file, ...} }
+lineage:    [ {stage, params}, ... ]
+```
 
-Deliberately NOT a generic object-graph dump (unlike e.g. JLD2): every field is encoded
-by hand into a small, versioned schema, so every file is fully inspectable/diffable/portable
-and there is nothing pointer- or code-shaped to accidentally serialize.
+Each artifact is named **once**, with the marker saying whether the profile applies it. The
+token transformation is not serialized at all: it is derived from these on load, so the
+applied lemma map cannot differ from the saved one.
 
-A `TokenizationConfig` with custom (non-empty) `generators`, or a `transformation` that
-isn't `IdentityTokenTransformation`/`IgnoreStopwords`/`SnowballTokenTransformation`/
-`ChainTransformation` of those, errors clearly rather than silently mis-saving.
+Deliberately NOT a generic object-graph dump (unlike e.g. JLD2): every field is encoded by
+hand into a small, versioned schema, so every file is fully inspectable/diffable/portable and
+there is nothing pointer- or code-shaped to accidentally serialize.
+
+Load it back with [`load_profile`](@ref), or package it for distribution with
+[`zip_profile`](@ref). A `TokenizationConfig` with custom (non-empty) `generators` errors
+clearly rather than silently mis-saving.
 """
-function save_profile(dir::AbstractString, model::VectorModel;
-                       synonyms::AbstractDict=Dict{String,Vector{String}}(),
-                       synonym_distances::Union{Nothing,AbstractDict}=nothing,
-                       lemmas::AbstractDict{String,String}=Dict{String,String}(),
-                       stopword_candidates::AbstractVector{<:AbstractString}=String[],
-                       encoder::Union{Nothing,NamedTuple}=nothing)
+function save_profile(dir::AbstractString, p::TextProfile)
     mkpath(dir)
-    voc = model.voc
+    voc = p.model.voc
+    model = p.model
 
     _write_json(joinpath(dir, "vocabulary.json"), Dict(
         "tokens" => voc.token,
@@ -321,19 +168,44 @@ function save_profile(dir::AbstractString, model::VectorModel;
 
     _write_json(joinpath(dir, "weights.json"), Dict("weight" => model.weight))
 
-    transformation_json, transformation_files = _encode_transformation_with_files(voc.textconfig.transformation)
-    for (fname, payload) in transformation_files
-        _write_json(joinpath(dir, fname), payload)
+    artifacts = Dict{String,Any}()
+
+    if !isempty(p.stopwords)
+        _write_json(joinpath(dir, "stopwords.json"), sort!(collect(p.stopwords)))
+        artifacts["stopwords"] = Dict("file" => "stopwords.json", "applied" => p.applied.stopwords)
     end
 
-    manifest = Dict(
+    if !isempty(p.lemmas)
+        _write_json(joinpath(dir, "lemmas.json"), p.lemmas)
+        artifacts["lemmas"] = Dict("file" => "lemmas.json", "applied" => p.applied.lemmas)
+    end
+
+    if !isempty(p.synonyms)
+        _write_json(joinpath(dir, "synonyms.json"),
+            Dict(tok => syns for (tok, syns) in p.synonyms))
+        entry = Dict{String,Any}("file" => "synonyms.json", "applied" => p.applied.synonyms)
+
+        # Only for tokens the ranking carries: a distance list without its words could not be
+        # interpreted, and the distances live in their own file so a consumer that needs only
+        # the ranking -- which is the normal case -- can skip the bulk of the network.
+        if p.synonym_distances !== nothing
+            dd = Dict{String,Vector{Float32}}()
+            for (tok, ds) in p.synonym_distances
+                haskey(p.synonyms, tok) && !isempty(ds) || continue
+                dd[tok] = ds
+            end
+            if !isempty(dd)
+                _write_json(joinpath(dir, "synonym_distances.json"), dd)
+                entry["distances_file"] = "synonym_distances.json"
+            end
+        end
+        artifacts["synonyms"] = entry
+    end
+
+    _write_json(joinpath(dir, _PROFILE_MANIFEST_NAME), Dict(
         "format_version" => _PROFILE_FORMAT_VERSION,
-        "textconfig" => Dict(
-            "normalization" => _encode_normalization(voc.textconfig.normalization),
-            "tokenization" => _encode_tokenization(voc.textconfig.tokenization),
-            "transformation" => transformation_json,
-            "expand_query_synonyms" => voc.textconfig.expand_query_synonyms,
-        ),
+        "policy" => _encode_policy(policy(p)),
+        "artifacts" => artifacts,
         "vocabulary_file" => "vocabulary.json",
         "weighting" => Dict(
             "global_weighting" => _encode_global_weighting(model.global_weighting),
@@ -341,96 +213,41 @@ function save_profile(dir::AbstractString, model::VectorModel;
             "maxoccs" => model.maxoccs,
             "weight_file" => "weights.json",
         ),
-    )
+        "lineage" => _encode_lineage(p.lineage),
+    ))
 
-    if !isempty(synonyms)
-        _write_json(joinpath(dir, "synonyms.json"),
-            Dict(String(tok) => [String(syn) for syn in syns] for (tok, syns) in synonyms))
-        manifest["synonyms_file"] = "synonyms.json"
-
-        # Only for tokens the ranking actually carries: a distance list without its words
-        # could not be interpreted, and an entry for a token absent from `synonyms` would be
-        # dead weight in the file that exists to be skippable.
-        if synonym_distances !== nothing && !isempty(synonym_distances)
-            dd = Dict{String,Vector{Float32}}()
-            for (tok, ds) in synonym_distances
-                t = String(tok)
-                haskey(synonyms, tok) && !isempty(ds) || continue
-                dd[t] = Float32[Float32(d) for d in ds]
-            end
-            if !isempty(dd)
-                _write_json(joinpath(dir, "synonym_distances.json"), dd)
-                manifest["synonym_distances_file"] = "synonym_distances.json"
-            end
-        end
-    end
-
-    if !isempty(lemmas)
-        _write_json(joinpath(dir, "lemmas.json"), Dict(lemmas))
-        manifest["lemmas_file"] = "lemmas.json"
-    end
-
-    if !isempty(stopword_candidates)
-        _write_json(joinpath(dir, "stopword_candidates.json"), collect(stopword_candidates))
-        manifest["stopword_candidates_file"] = "stopword_candidates.json"
-    end
-
-    if encoder !== nothing
-        manifest["encoder"] = Dict(String(k) => (v isa Symbol ? String(v) : v) for (k, v) in pairs(encoder))
-    end
-
-    _write_json(joinpath(dir, _PROFILE_MANIFEST_NAME), manifest)
     dir
 end
 
 """
-    load_profile(path::AbstractString)
-        -> (; model, synonyms, synonym_distances, lemmas, stopword_candidates, encoder)
+    load_profile(path::AbstractString) -> TextProfile
 
-Reads back a profile written by [`save_profile`](@ref) -- `path` may be either the
-directory `save_profile` produced, or a `.zip` archive of it (see [`zip_profile`](@ref));
-this is auto-detected via `isdir(path)`, and a `.zip` is read directly from memory, no
-extraction to disk needed. Reconstructs the `Vocabulary` (rebuilding `token2id` from the
-stored `tokens` list) and `VectorModel`, and returns a `NamedTuple`:
+Reads back a profile written by [`save_profile`](@ref). `path` may be the directory it
+produced or a `.zip` archive of it (see [`zip_profile`](@ref)); this is auto-detected via
+`isdir(path)`, and a `.zip` is read directly from memory with no extraction.
 
-- `model::VectorModel`
-- `synonyms::Dict{String,Vector{String}}` -- neighbor tokens in rank order (empty if none saved)
-- `synonym_distances::Union{Nothing,Dict{String,Vector{Float32}}}` -- parallel distances
-  (`nothing` if the profile carries none, which is normal: they are optional side data)
-- `lemmas::Dict{String,String}` (empty if none saved)
-- `stopword_candidates::Vector{String}` (empty if none saved)
-- `encoder::Union{Nothing,Dict{String,Any}}` (`nothing` if none saved)
+The returned [`TextProfile`](@ref) rebuilds its own `TextConfig` from the stored policy and
+the artifacts marked applied, so what it tokenizes with always matches what it carries.
 
-`model`/`synonyms` are ready to pass straight into e.g. `TextInvertedFile(model;
-synonyms, ...)`.
-
-A profile written before synonyms were split into two files stores them interleaved, as
-`[[neighbor, distance], ...]`. Such a file is detected by shape and split on load, so older
-profiles keep working; nothing about them needs rewriting, and the format version does not
-move for it.
-
-Errors if the profile's `transformation` needs `Snowball`/`Languages` to reconstruct (a
-`"snowball"` tagged-union entry) and those packages aren't loaded yet.
+A profile written by an older format version is refused by name rather than half-parsed:
+there is no compatibility path, since carrying two layouts is what let the applied and saved
+copies of an artifact drift apart in the first place.
 """
 function load_profile(path::AbstractString)
     read_file = _profile_reader(path)
     manifest = read_file(_PROFILE_MANIFEST_NAME)
-    manifest[:format_version] == _PROFILE_FORMAT_VERSION ||
-        error("unsupported profile format_version: $(manifest[:format_version]) (expected $_PROFILE_FORMAT_VERSION)")
+    version = String(get(manifest, :format_version, "(missing)"))
+    version == _PROFILE_FORMAT_VERSION ||
+        error("unsupported profile format_version: $version (this build reads " *
+              "$_PROFILE_FORMAT_VERSION only, and has no conversion path). Refit the profile.")
 
-    tc = manifest[:textconfig]
-    textconfig = TextConfig(
-        normalization=_decode_normalization(tc[:normalization]),
-        tokenization=_decode_tokenization(tc[:tokenization]),
-        transformation=_decode_transformation(tc[:transformation], read_file),
-        expand_query_synonyms=Bool(get(tc, :expand_query_synonyms, false)),
-    )
+    pol = _decode_policy(manifest[:policy])
 
     vocd = read_file(String(manifest[:vocabulary_file]))
     tokens = String.(vocd[:tokens])
     tok2id = Dict{String,UInt32}(tok => UInt32(i) for (i, tok) in enumerate(tokens))
     voc = Vocabulary(
-        textconfig,
+        pol,
         tokens,
         Int32.(vocd[:occs]),
         Int32.(vocd[:ndocs]),
@@ -445,41 +262,43 @@ function load_profile(path::AbstractString)
     weightd = read_file(String(wd[:weight_file]))
     model = VectorModel(gw, lw, voc, Int32(wd[:maxoccs]), Float32.(weightd[:weight]))
 
-    synonyms, legacy_distances = if haskey(manifest, :synonyms_file)
-        _decode_synonyms(read_file(String(manifest[:synonyms_file])))
+    art = manifest[:artifacts]
+
+    stopwords, sw_applied = if haskey(art, :stopwords)
+        e = art[:stopwords]
+        Set{String}(String(w) for w in read_file(String(e[:file]))), Bool(e[:applied])
     else
-        Dict{String,Vector{String}}(), nothing
+        Set{String}(), false
     end
 
-    synonym_distances = if haskey(manifest, :synonym_distances_file)
-        dd = read_file(String(manifest[:synonym_distances_file]))
-        Dict{String,Vector{Float32}}(
-            String(tok) => Float32[Float32(d) for d in ds] for (tok, ds) in dd
-        )
+    lemmas, lem_applied = if haskey(art, :lemmas)
+        e = art[:lemmas]
+        d = read_file(String(e[:file]))
+        Dict{String,String}(String(k) => String(v) for (k, v) in pairs(d)), Bool(e[:applied])
     else
-        legacy_distances   # nothing, unless an old interleaved file supplied them
+        Dict{String,String}(), false
     end
 
-    lemmas = if haskey(manifest, :lemmas_file)
-        lemd = read_file(String(manifest[:lemmas_file]))
-        Dict{String,String}(String(tok) => String(lemma) for (tok, lemma) in lemd)
+    synonyms, syndists, syn_applied = if haskey(art, :synonyms)
+        e = art[:synonyms]
+        net = read_file(String(e[:file]))
+        words = Dict{String,Vector{String}}(
+            String(tok) => String[String(s) for s in syns] for (tok, syns) in pairs(net))
+        dists = if haskey(e, :distances_file)
+            dd = read_file(String(e[:distances_file]))
+            Dict{String,Vector{Float32}}(
+                String(tok) => Float32[Float32(d) for d in ds] for (tok, ds) in pairs(dd))
+        else
+            nothing
+        end
+        words, dists, Bool(e[:applied])
     else
-        Dict{String,String}()
+        Dict{String,Vector{String}}(), nothing, false
     end
 
-    stopword_candidates = if haskey(manifest, :stopword_candidates_file)
-        String.(read_file(String(manifest[:stopword_candidates_file])))
-    else
-        String[]
-    end
-
-    encoder = if haskey(manifest, :encoder)
-        Dict{String,Any}(String(k) => v for (k, v) in pairs(manifest[:encoder]))
-    else
-        nothing
-    end
-
-    (; model, synonyms, synonym_distances, lemmas, stopword_candidates, encoder)
+    TextProfile(model, stopwords, lemmas, synonyms, syndists,
+                AppliedArtifacts(stopwords=sw_applied, lemmas=lem_applied, synonyms=syn_applied),
+                _decode_lineage(manifest[:lineage]))
 end
 
 """

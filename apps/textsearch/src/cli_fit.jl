@@ -93,9 +93,9 @@ function _fit_textconfig(cfg)
 end
 
 """
-    _build_vocabulary(textconfig, docs, min_ndocs; label="") -> Vocabulary
+    _build_vocabulary(tc, docs, min_ndocs; label="") -> Vocabulary
 
-Tokenizes `docs` under `textconfig` into a `Vocabulary`, then drops tokens appearing in
+Tokenizes `docs` under `tc` into a `Vocabulary`, then drops tokens appearing in
 fewer than `min_ndocs` documents.
 
 Pruning happens before anything expensive touches the vocabulary: the synonym network is an
@@ -103,8 +103,8 @@ all-pairs search over it, so this is a quadratic saving, and a token seen in one
 documents has no usable embedding to begin with. `label` distinguishes the passes in the
 progress output.
 """
-function _build_vocabulary(textconfig, docs::Vector{String}, min_ndocs::Int; label::AbstractString="")
-    voc = Vocabulary(textconfig, docs; verbose=false)
+function _build_vocabulary(tc, docs::Vector{String}, min_ndocs::Int; label::AbstractString="")
+    voc = Vocabulary(tc, docs; verbose=false)
     min_ndocs > 1 || return voc
 
     before = vocsize(voc)
@@ -188,14 +188,14 @@ function _fit_one_batch(docs::Vector{String}, cfg, batch_dir::AbstractString)
     if sw["enabled"]
         voc0 = Vocabulary(base_textconfig, docs; verbose=false)
         candidates = stopword_candidates(voc0, Float64(sw["doc_freq_threshold"]))
-        textconfig = TextConfig(base_textconfig; transformation=IgnoreStopwords(Set(candidates)))
+        fit_tc = TextConfig(base_textconfig; transformation=IgnoreStopwords(Set(candidates)))
     else
-        textconfig = base_textconfig
+        fit_tc = base_textconfig
         candidates = String[]
     end
 
     min_ndocs = Int(get(get(cfg, "vocabulary", Dict()), "min_ndocs", 1))
-    voc = _build_vocabulary(textconfig, docs, min_ndocs)
+    voc = _build_vocabulary(fit_tc, docs, min_ndocs)
     model = VectorModel(IdfWeighting(), TfWeighting(), voc)
 
     kind = Symbol(enc["kind"])
@@ -244,18 +244,16 @@ function _fit_one_batch(docs::Vector{String}, cfg, batch_dir::AbstractString)
     # is deliberately NOT redone on the lemmatized vocabulary -- the embeddings' job was to
     # discover the families, and they have; re-deriving them would only shift synonym
     # neighbours slightly for the cost of a full factorization.
-    if Bool(get(lem, "apply", false)) && !isempty(lemmas)
-        lt = LemmaTransformation(lemmas)
-        # Lemmas run BEFORE the stopword filter. The reverse order silently reintroduces
-        # stopwords: a form not in the stopword set survives the filter and is only then
-        # rewritten into one ("las" -> "la"). This order works because a lemma is always one
-        # of its family's own surface forms, so a set collected from unlemmatized text
-        # already contains the lemma of any family that is a stopword family.
-        transformation = sw["enabled"] ?
-            ChainTransformation([lt, IgnoreStopwords(Set(candidates))]) : lt
-        final_textconfig = TextConfig(base_textconfig; transformation)
+    apply_lemmas = Bool(get(lem, "apply", false)) && !isempty(lemmas)
+    stopwords = Set(candidates)
+    applied = AppliedArtifacts(stopwords=sw["enabled"], lemmas=apply_lemmas)
 
-        voc = _build_vocabulary(final_textconfig, docs, min_ndocs; label="lemmatized ")
+    if apply_lemmas
+        # Rebuild the vocabulary under the lemma map. The chain order (lemmas before the
+        # stopword filter) is not decided here: a TextProfile materializes its own config, so
+        # this asks a profile for the config rather than assembling one.
+        probe = TextProfile(model; stopwords, lemmas, applied)
+        voc = _build_vocabulary(textconfig(probe), docs, min_ndocs; label="lemmatized ")
         model = VectorModel(IdfWeighting(), TfWeighting(), voc)
         # the network's entries name unlemmatized forms, which are no longer vocabulary
         # tokens; left alone, every inflected entry would be silently dropped at query time
@@ -265,9 +263,12 @@ function _fit_one_batch(docs::Vector{String}, cfg, batch_dir::AbstractString)
         flush(stdout)
     end
 
-    save_profile(batch_dir, model;
-        synonyms=synmap, synonym_distances=syndists, lemmas, stopword_candidates=candidates,
-        encoder=(; kind, outdim, scaling, source_path=external_path))
+    profile = TextProfile(model; stopwords, lemmas,
+                          synonyms=synmap, synonym_distances=syndists, applied,
+                          lineage=[LineageStep(:fit; encoder=String(kind), outdim, scaling=String(scaling),
+                                                     source_path=external_path,
+                                                     trainsize=trainsize(model.voc))])
+    save_profile(batch_dir, profile)
 
     vocsize(voc), model
 end

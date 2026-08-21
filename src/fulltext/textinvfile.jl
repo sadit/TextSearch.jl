@@ -13,7 +13,7 @@ An inverted-file index (built on top of `SimilaritySearch.InvertedFiles`) that p
 - `model`: the [`VectorModel`](@ref) used to vectorize documents and queries.
 - `invfile`: the underlying `SimilaritySearch.InvertedFiles.InvertedFile`.
 - `synonyms`: `nothing`, or a synonym network (e.g. as produced by `LSI.synonyms`) used to expand
-  queries -- only when `model.voc.textconfig.expand_query_synonyms` is also `true` -- via
+  queries -- never documents -- via
   [`expand_synonyms!`](@ref). Never applied to documents, only to queries, and only under vector
   distances (not set distances).
 
@@ -70,7 +70,8 @@ SimilaritySearch.distance(idx::TextInvertedFile) = distance(idx.invfile)
 
 Creates an empty [`TextInvertedFile`](@ref) backed by `model` and `dist`. Pass `synonyms` (e.g. as
 produced by `LSI.synonyms`) to enable query-time synonym expansion (also requires
-`model.voc.textconfig.expand_query_synonyms = true`; see [`expand_synonyms!`](@ref)).
+see [`expand_synonyms!`](@ref)). Handing a network over IS the request to expand with it;
+whether a profile wants that is recorded as its `applied.synonyms`.
 """
 function TextInvertedFile(model::VectorModel; dist=Dist.NormCosine(), synonyms=nothing, kwargs...)
     invfile = InvertedFile(vocsize(model.voc), dist; kwargs...)
@@ -134,7 +135,7 @@ function SimilaritySearch.search(idx::TextInvertedFile, ctx::InvertedFileContext
         q = bagofwords(idx.model.voc, qtext)
     else
         q = vectorize(idx.model, qtext; normalize=false)
-        if idx.synonyms !== nothing && idx.model.voc.textconfig.expand_query_synonyms
+        if idx.synonyms !== nothing
             expand_synonyms!(q, idx.model.voc, idx.synonyms)
         else
             normalize!(q)

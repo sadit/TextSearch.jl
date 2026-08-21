@@ -1,5 +1,4 @@
 using Test, TextSearch, SimilaritySearch, JSON3
-using Snowball, Languages
 
 @testset "save_profile / load_profile / zip_profile" begin
     corpus = [
@@ -8,265 +7,181 @@ using Snowball, Languages
         "la manzana roja",
         "la pera verde esta rica",
     ]
-    synonyms = Dict(
-        "casa" => ["hogar", "vivienda"],
-        "pera" => ["manzana"],
-    )
-    synonym_distances = Dict(
-        "casa" => Float32[0.12, 0.20],
-        "pera" => Float32[0.1],
-    )
+    synonyms = Dict("casa" => ["hogar", "vivienda"], "pera" => ["manzana"])
+    synonym_distances = Dict("casa" => Float32[0.12, 0.20], "pera" => Float32[0.1])
     lemmas = Dict("casas" => "casa", "peras" => "pera")
-    stopword_candidates = ["la", "esta"]
-    encoder = (; kind=:lsi, outdim=8, scaling=:none, source_path="")
+    stopwords = Set(["la", "esta"])
+    lineage = [LineageStep(:fit; trainsize=4, outdim=8)]
 
-    @testset "default TextConfig: directory layout and round-trip" begin
-        textconfig = TextConfig(tokenization=TokenizationConfig(nlist=[1]))
-        voc = Vocabulary(textconfig, corpus)
-        model = VectorModel(IdfWeighting(), TfWeighting(), voc)
+    tc = TextConfig(tokenization=TokenizationConfig(nlist=[1]))
+    mkmodel(docs=corpus; textconfig=tc) =
+        VectorModel(IdfWeighting(), TfWeighting(), Vocabulary(textconfig, docs; verbose=false))
+
+    @testset "directory layout and round-trip" begin
+        p = TextProfile(mkmodel(); stopwords, lemmas, synonyms, synonym_distances, lineage,
+                        applied=AppliedArtifacts(stopwords=true, synonyms=true))
 
         dir = tempname()
         try
-            save_profile(dir, model; synonyms, synonym_distances, lemmas, stopword_candidates, encoder)
+            save_profile(dir, p)
 
-            # one file per "large" variable, not a single big JSON blob
-            @test isfile(joinpath(dir, "manifest.json"))
-            @test isfile(joinpath(dir, "vocabulary.json"))
-            @test isfile(joinpath(dir, "weights.json"))
+            # one file per "large" variable, not a single big JSON blob -- and each artifact
+            # appears exactly ONCE, which is the point of the layout
+            for f in ("manifest.json", "vocabulary.json", "weights.json", "stopwords.json",
+                      "lemmas.json", "synonyms.json", "synonym_distances.json")
+                @test isfile(joinpath(dir, f))
+            end
+            @test !isfile(joinpath(dir, "lemma_map.json"))            # no second lemma copy
+            @test !isfile(joinpath(dir, "stopword_candidates.json"))  # no second stopword copy
+
+            q = load_profile(dir)
+
+            @test q.model.voc.token == p.model.voc.token
+            @test q.model.voc.occs == p.model.voc.occs
+            @test q.model.voc.ndocs == p.model.voc.ndocs
+            @test q.model.voc.trainsize[] == p.model.voc.trainsize[]
+            @test q.model.voc.numtokens[] == p.model.voc.numtokens[]
+            @test q.model.global_weighting isa IdfWeighting
+            @test q.model.local_weighting isa TfWeighting
+            @test q.model.maxoccs == p.model.maxoccs
+            @test q.model.weight == p.model.weight
+
+            @test q.stopwords == stopwords
+            @test q.lemmas == lemmas
+            @test q.synonyms == synonyms
+            @test q.synonym_distances == synonym_distances
+            @test q.applied == p.applied
+            @test length(q.lineage) == 1
+            @test q.lineage[1].stage === :fit
+            @test q.lineage[1].params["trainsize"] == 4
+
+            @test vectorize(q.model, "la casa roja") == vectorize(p.model, "la casa roja")
+        finally
+            rm(dir; force=true, recursive=true)
+        end
+    end
+
+    @testset "no artifacts: files and manifest keys omitted" begin
+        p = TextProfile(mkmodel())
+        dir = tempname()
+        try
+            save_profile(dir, p)
+            for f in ("stopwords.json", "lemmas.json", "synonyms.json", "synonym_distances.json")
+                @test !isfile(joinpath(dir, f))
+            end
+
+            q = load_profile(dir)
+            @test isempty(q.stopwords)
+            @test isempty(q.lemmas)
+            @test isempty(q.synonyms)
+            @test q.synonym_distances === nothing
+            @test q.applied == AppliedArtifacts()
+            @test isempty(q.lineage)
+        finally
+            rm(dir; force=true, recursive=true)
+        end
+    end
+
+    @testset "the applied marker survives the round-trip, per artifact" begin
+        # what makes a base profile a base: artifacts carried but not in the pipeline
+        for (sw, lem, syn) in Iterators.product((false, true), (false, true), (false, true))
+            p = TextProfile(mkmodel(); stopwords, lemmas, synonyms,
+                            applied=AppliedArtifacts(stopwords=sw, lemmas=lem, synonyms=syn))
+            dir = tempname()
+            try
+                save_profile(dir, p)
+                q = load_profile(dir)
+                @test q.applied == AppliedArtifacts(stopwords=sw, lemmas=lem, synonyms=syn)
+                # and the config it tokenizes with follows the marker, not the mere presence
+                # of the artifact
+                @test has_lemma_transformation(textconfig(q).transformation) == lem
+            finally
+                rm(dir; force=true, recursive=true)
+            end
+        end
+    end
+
+    @testset "synonym distances are optional and can be dropped" begin
+        p = TextProfile(mkmodel(); synonyms)   # ranking only
+        dir = tempname()
+        try
+            save_profile(dir, p)
             @test isfile(joinpath(dir, "synonyms.json"))
-            @test isfile(joinpath(dir, "synonym_distances.json"))
-            @test isfile(joinpath(dir, "lemmas.json"))
-            @test isfile(joinpath(dir, "stopword_candidates.json"))
-            @test !isfile(joinpath(dir, "stopwords.json"))  # no stopwords transformation here
-
-            p = load_profile(dir)
-
-            @test p.model.voc.token == model.voc.token
-            @test p.model.voc.occs == model.voc.occs
-            @test p.model.voc.ndocs == model.voc.ndocs
-            @test p.model.voc.trainsize[] == model.voc.trainsize[]
-            @test p.model.voc.numtokens[] == model.voc.numtokens[]
-            @test p.model.global_weighting isa IdfWeighting
-            @test p.model.local_weighting isa TfWeighting
-            @test p.model.maxoccs == model.maxoccs
-            @test p.model.weight == model.weight
-            @test p.synonyms == synonyms
-            @test p.synonym_distances == synonym_distances
-            @test p.lemmas == lemmas
-            @test sort(p.stopword_candidates) == sort(stopword_candidates)
-            @test p.encoder["kind"] == "lsi"
-            @test p.encoder["outdim"] == 8
-            @test p.encoder["scaling"] == "none"
-
-            q = "la casa roja"
-            @test vectorize(p.model, q) == vectorize(model, q)
-        finally
-            rm(dir; force=true, recursive=true)
-        end
-    end
-
-    @testset "none of synonyms/lemmas/stopword_candidates/encoder: files+keys omitted" begin
-        textconfig = TextConfig(tokenization=TokenizationConfig(nlist=[1]))
-        voc = Vocabulary(textconfig, corpus)
-        model = VectorModel(IdfWeighting(), TfWeighting(), voc)
-
-        dir = tempname()
-        try
-            save_profile(dir, model)
-            @test !isfile(joinpath(dir, "synonyms.json"))
             @test !isfile(joinpath(dir, "synonym_distances.json"))
-            @test !isfile(joinpath(dir, "lemmas.json"))
-            @test !isfile(joinpath(dir, "stopword_candidates.json"))
-
-            p = load_profile(dir)
-            @test p.synonyms isa Dict{String,Vector{String}} && isempty(p.synonyms)
-            @test p.synonym_distances === nothing
-            @test p.lemmas isa Dict{String,String} && isempty(p.lemmas)
-            @test p.stopword_candidates isa Vector{String} && isempty(p.stopword_candidates)
-            @test p.encoder === nothing
+            q = load_profile(dir)
+            @test q.synonyms == synonyms
+            @test q.synonym_distances === nothing
         finally
             rm(dir; force=true, recursive=true)
         end
     end
 
-    @testset "legacy interleaved synonyms.json still loads" begin
-        # Profiles written before synonyms were split store [[neighbor, distance], ...] in
-        # one file. They must keep loading, distances included, without a format bump --
-        # the payload identifies itself by shape. This is what keeps already-published
-        # profiles usable.
-        textconfig = TextConfig(tokenization=TokenizationConfig(nlist=[1]))
-        voc = Vocabulary(textconfig, corpus)
-        model = VectorModel(IdfWeighting(), TfWeighting(), voc)
-
+    @testset "an older format version is refused by name, not half-parsed" begin
+        p = TextProfile(mkmodel())
         dir = tempname()
         try
-            save_profile(dir, model; synonyms, synonym_distances)
-            # rewrite synonyms.json in the old layout and drop the separate distances file
-            open(joinpath(dir, "synonyms.json"), "w") do io
-                JSON3.write(io, Dict(
-                    tok => [[syn, synonym_distances[tok][i]] for (i, syn) in enumerate(syns)]
-                    for (tok, syns) in synonyms))
-            end
-            rm(joinpath(dir, "synonym_distances.json"))
+            save_profile(dir, p)
             man = JSON3.read(read(joinpath(dir, "manifest.json"), String), Dict{String,Any})
-            delete!(man, "synonym_distances_file")
-            open(joinpath(dir, "manifest.json"), "w") do io
-                JSON3.write(io, man)
-            end
+            man["format_version"] = "1.0"
+            open(io -> JSON3.write(io, man), joinpath(dir, "manifest.json"), "w")
 
-            p = load_profile(dir)
-            @test p.synonyms == synonyms
-            @test p.synonym_distances == synonym_distances   # recovered from the interleaved file
+            err = try
+                load_profile(dir); nothing
+            catch e
+                sprint(showerror, e)
+            end
+            @test err !== nothing
+            @test occursin("1.0", err)          # says which version it found
+            @test occursin("Refit", err)        # and what to do about it
         finally
             rm(dir; force=true, recursive=true)
         end
     end
 
-    @testset "ChainTransformation with Snowball + IgnoreStopwords: stopwords.json + round-trip" begin
-        lang = Languages.Spanish()
-        textconfig = TextConfig(
-            tokenization=TokenizationConfig(nlist=[1]),
-            transformation=ChainTransformation([IgnoreStopwords(lang), SnowballTokenTransformation(lang)]),
-        )
-        voc = Vocabulary(textconfig, corpus)
-        model = VectorModel(IdfWeighting(), TfWeighting(), voc)
-
+    @testset "custom tokenization generators are refused rather than mis-saved" begin
+        cfg = TextConfig(tokenization=TokenizationConfig(nlist=[1],
+                                                         generators=[UnigramGenerator()]))
+        p = TextProfile(mkmodel(; textconfig=cfg))
         dir = tempname()
         try
-            save_profile(dir, model)
-            @test isfile(joinpath(dir, "stopwords.json"))
-
-            p = load_profile(dir)
-
-            @test isempty(p.synonyms)
-            @test p.model.voc.token == model.voc.token
-
-            q = "la casa roja"
-            @test collect(tokenize(p.model.voc.textconfig, q)) == collect(tokenize(textconfig, q))
-            @test vectorize(p.model, q) == vectorize(model, q)
+            @test_throws ErrorException save_profile(dir, p)
         finally
             rm(dir; force=true, recursive=true)
         end
-    end
-
-    @testset "ChainTransformation with LemmaTransformation + IgnoreStopwords" begin
-        # A lemma map baked into the TextConfig, which is what makes the mapping apply to
-        # documents and queries alike without either side having to remember to do it.
-        lemmacorpus = ["la casa roja", "las casas rojas", "la pera verde"]
-        lt = LemmaTransformation(Dict("casas" => "casa", "rojas" => "roja", "las" => "la"))
-        textconfig = TextConfig(
-            tokenization=TokenizationConfig(nlist=[1]),
-            transformation=ChainTransformation([lt, IgnoreStopwords(Set(["la"]))]),
-        )
-        voc = Vocabulary(textconfig, lemmacorpus)
-        model = VectorModel(IdfWeighting(), TfWeighting(), voc)
-
-        # the vocabulary itself is lemmatized: the inflected forms are gone, and the lemma
-        # carries the whole family's counts (this is the point of doing it here rather than
-        # in each consumer -- idf now covers the family, not one of its forms)
-        @test token2id(voc, "casas") == 0
-        @test token2id(voc, "rojas") == 0
-        @test ndocs(voc, token2id(voc, "casa")) == 2
-        @test ndocs(voc, token2id(voc, "roja")) == 2
-        # lemmas run BEFORE the stopword filter, so a form that lemmatizes into a stopword
-        # is dropped rather than smuggling it back in ("las" -> "la", filtered)
-        @test token2id(voc, "las") == 0
-        @test token2id(voc, "la") == 0
-
-        # the reverse order is what that guards against, and it is observably wrong
-        wrong = TextConfig(
-            tokenization=TokenizationConfig(nlist=[1]),
-            transformation=ChainTransformation([IgnoreStopwords(Set(["la"])), lt]),
-        )
-        @test collect(tokenize(wrong, "las casas rojas")) == ["la", "casa", "roja"]
-        @test collect(tokenize(textconfig, "las casas rojas")) == ["casa", "roja"]
-
-        dir = tempname()
-        try
-            save_profile(dir, model)
-            # per-kind file naming: both steps carry bulk data, and neither gets a "_2"
-            # suffix that would imply a second map of its own kind
-            @test isfile(joinpath(dir, "stopwords.json"))
-            @test isfile(joinpath(dir, "lemma_map.json"))
-            @test !isfile(joinpath(dir, "lemma_map_2.json"))
-
-            p = load_profile(dir)
-            @test p.model.voc.token == model.voc.token
-
-            for q in ("las casas rojas", "la casa roja", "una pera")
-                @test collect(tokenize(p.model.voc.textconfig, q)) == collect(tokenize(textconfig, q))
-                @test vectorize(p.model, q) == vectorize(model, q)
-            end
-            # a query in the inflected form reaches the lemma, on both sides
-            @test collect(tokenize(p.model.voc.textconfig, "casas")) == ["casa"]
-        finally
-            rm(dir; force=true, recursive=true)
-        end
-    end
-
-    @testset "LemmaTransformation propagates into n-grams" begin
-        lt = LemmaTransformation(Dict("casas" => "casa"))
-        @test TextSearch.Tokenizer.transform_unigram(lt, "casas") == "casa"
-        @test TextSearch.Tokenizer.transform_unigram(lt, "perro") == "perro"
-
-        # Only transform_unigram is defined, but n-gram generators consume the already
-        # transformed word stream, so the lemma reaches each n-gram word by word rather
-        # than leaving n-grams on unlemmatized forms.
-        cfg = TextConfig(tokenization=TokenizationConfig(nlist=[2]), transformation=lt)
-        bigrams = collect(tokenize(cfg, "las casas rojas"))
-        @test any(t -> occursin("las casa", t), bigrams)
-        @test any(t -> occursin("casa rojas", t), bigrams)
-        @test !any(t -> occursin("casas", t), bigrams)
-
-        # constructing from a non-concrete dict type works (the JSON decode path)
-        @test LemmaTransformation(Dict{SubString{String},SubString{String}}()).lemmas isa Dict{String,String}
     end
 
     @testset "zip_profile packages a directory, load_profile reads it back directly" begin
-        textconfig = TextConfig(tokenization=TokenizationConfig(nlist=[1]))
-        voc = Vocabulary(textconfig, corpus)
-        model = VectorModel(IdfWeighting(), TfWeighting(), voc)
-
+        p = TextProfile(mkmodel(); stopwords, lemmas, synonyms, synonym_distances,
+                        applied=AppliedArtifacts(stopwords=true, lemmas=true))
         dir = tempname()
-        zippath = dir * ".zip"
         try
-            save_profile(dir, model; synonyms, synonym_distances, lemmas, stopword_candidates, encoder)
-            out = zip_profile(dir, zippath)
-            @test out == zippath
-            @test isfile(zippath)
-
-            p = load_profile(zippath)
-            @test p.model.voc.token == model.voc.token
-            @test p.model.weight == model.weight
-            @test p.synonyms == synonyms
-            @test p.synonym_distances == synonym_distances
-            @test p.lemmas == lemmas
-            @test sort(p.stopword_candidates) == sort(stopword_candidates)
-            @test p.encoder["kind"] == "lsi"
-
-            q = "la casa roja"
-            @test vectorize(p.model, q) == vectorize(model, q)
+            save_profile(dir, p)
+            zippath = zip_profile(dir)
+            try
+                @test isfile(zippath)
+                q = load_profile(zippath)
+                @test q.model.voc.token == p.model.voc.token
+                @test q.stopwords == stopwords
+                @test q.lemmas == lemmas
+                @test q.applied.lemmas
+                # the zip and the directory are the same profile
+                d = load_profile(dir)
+                @test q.model.weight == d.model.weight
+            finally
+                rm(zippath; force=true)
+            end
         finally
             rm(dir; force=true, recursive=true)
-            rm(zippath; force=true)
         end
     end
 
     @testset "zip_profile default zippath is dir * \".zip\"" begin
-        textconfig = TextConfig(tokenization=TokenizationConfig(nlist=[1]))
-        voc = Vocabulary(textconfig, corpus)
-        model = VectorModel(IdfWeighting(), TfWeighting(), voc)
-
+        p = TextProfile(mkmodel())
         dir = tempname()
         try
-            save_profile(dir, model)
-            out = zip_profile(dir)
-            try
-                @test out == dir * ".zip"
-                @test isfile(out)
-            finally
-                rm(out; force=true)
-            end
+            save_profile(dir, p)
+            @test zip_profile(dir) == dir * ".zip"
+            rm(dir * ".zip"; force=true)
         finally
             rm(dir; force=true, recursive=true)
         end

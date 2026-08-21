@@ -46,7 +46,7 @@ end
         voc = Vocabulary(textconfig, docs; verbose=false)
         model = VectorModel(IdfWeighting(), TfWeighting(), voc)
         dir = tempname()
-        save_profile(dir, model; kwargs...)
+        save_profile(dir, TextProfile(model; kwargs...))
         p = load_profile(dir)
         rm(dir; recursive=true, force=true)
         p
@@ -146,7 +146,7 @@ end
         # a tiny prior cannot keep base-only tokens: they round to zero and fall out
         @test vocsize(small.model.voc) < vocsize(big.model.voc)
         @test trainsize(small.model.voc) < trainsize(big.model.voc)
-        @test big.encoder.kappa == 10_000
+        @test last(big.lineage).params["kappa"] == 10_000.0
     end
 
     # Vocabulary construction is threaded and merges per-thread partials, so token ORDER is
@@ -204,7 +204,7 @@ end
             r = refit_profile(lbase, lsample; verbose=false)
             voc = r.model.voc
             @test has_lemma_transformation(voc.textconfig.transformation)
-            @test r.encoder.lemmas_applied
+            @test r.applied.lemmas
             # the inflected form is gone; the lemma carries the family
             @test token2id(voc, "perros") == 0
             @test token2id(voc, "perro") != 0
@@ -231,7 +231,7 @@ end
         @testset "apply_lemmas=false leaves the map as an artifact only" begin
             r = refit_profile(lbase, lsample; apply_lemmas=false, verbose=false)
             @test !has_lemma_transformation(r.model.voc.textconfig.transformation)
-            @test !r.encoder.lemmas_applied
+            @test !r.applied.lemmas
             @test token2id(r.model.voc, "perros") != 0   # still its own token
             @test !isempty(r.lemmas)                      # still carried
         end
@@ -401,12 +401,12 @@ end
         r = refit_profile(base, sampledocs; verbose=false)
         dir = tempname()
         try
-            save_profile(dir, r.model; r.synonyms, r.synonym_distances, r.lemmas,
-                         r.stopword_candidates, r.encoder)
+            save_profile(dir, r)
             q = load_profile(dir)
             @test q.model.voc.token == r.model.voc.token
             @test q.model.weight == r.model.weight
-            @test q.encoder["kind"] == "refit"
+            @test istuned(q)
+            @test last(q.lineage).stage === :refit
             # nothing in the saved profile refers back to the base
             @test vectorize(q.model, "perro") == vectorize(r.model, "perro")
         finally
@@ -419,9 +419,7 @@ end
         voc = Vocabulary(tc, basedocs; verbose=false)
         w = ones(Float32, vocsize(voc))
         emodel = VectorModel(EntropyWeighting(), TfWeighting(), voc; weight=w)
-        ebase = (; model=emodel, synonyms=Dict{String,Vector{String}}(),
-                   synonym_distances=nothing, lemmas=Dict{String,String}(),
-                   stopword_candidates=String[], encoder=nothing)
+        ebase = TextProfile(emodel)
         @test_throws ErrorException refit_profile(ebase, sampledocs; verbose=false)
     end
 end

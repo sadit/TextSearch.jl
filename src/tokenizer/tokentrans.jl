@@ -1,7 +1,7 @@
 # This file is a part of TextSearch.jl
 
 export AbstractTokenTransformation, IdentityTokenTransformation, transform
-export IgnoreStopwords, LemmaTransformation, ChainTransformation, SnowballTokenTransformation
+export IgnoreStopwords, LemmaTransformation, ChainTransformation
 export has_lemma_transformation, with_lemma_transformation, without_lemma_transformation
 
 """
@@ -197,20 +197,6 @@ function transform(ct::ChainTransformation, gen::AbstractTokenGenerator, tok)
     end
 
     tok
-end
-
-"""
-    SnowballTokenTransformation(stemmer)
-
-An [`AbstractTokenTransformation`](@ref) that stems unigrams using `stemmer` (typically
-a `Snowball.Stemmer`). The struct itself has no dependency on the `Snowball`/`Languages`
-packages; loading them (`using Snowball, Languages`) activates the
-`TextSearchSnowballExt` package extension, which implements the actual stemming
-(`transform_unigram`) and adds the `SnowballTokenTransformation(lang::Languages.Language)`
-convenience constructor.
-"""
-struct SnowballTokenTransformation{S} <: AbstractTokenTransformation
-    stemmer::S
 end
 
 """

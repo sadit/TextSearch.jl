@@ -10,6 +10,12 @@ export merge_profiles
 # `NormalizationConfig`s compare EQUAL only by the accident of sharing the same
 # module-level default Regex/Set objects. Merging therefore compares what the fields mean,
 # field by field, rather than trusting `==` on the structs.
+#
+# Only POLICY is compared, and only for equality. There used to be a `_merge_transformations`
+# here that had to special-case "these differ only in their stopword set" and union them --
+# an artifact-combining rule wedged into an equality check, because artifacts lived inside the
+# transformation. The union now happens below with the other artifact rules, where combining
+# is the whole point.
 
 function _same_normalization(a::NormalizationConfig, b::NormalizationConfig)
     for f in (:del_diac, :del_dup, :del_punc, :group_num, :group_url, :group_usr, :group_emo, :lc)
@@ -27,47 +33,6 @@ function _same_tokenization(a::TokenizationConfig, b::TokenizationConfig)
     # `save_profile` refuses to serialize custom generators, so any *loaded* profile has
     # none; a non-empty list here means someone built the config in-process.
     isempty(a.generators) && isempty(b.generators)
-end
-
-_same_transformation(::IdentityTokenTransformation, ::IdentityTokenTransformation) = true
-_same_transformation(a::IgnoreStopwords, b::IgnoreStopwords) = a.stopwords == b.stopwords
-_same_transformation(a::LemmaTransformation, b::LemmaTransformation) = a.lemmas == b.lemmas
-
-function _same_transformation(a::SnowballTokenTransformation, b::SnowballTokenTransformation)
-    (hasproperty(a.stemmer, :alg) && hasproperty(b.stemmer, :alg)) || return false
-    a.stemmer.alg == b.stemmer.alg && a.stemmer.enc == b.stemmer.enc
-end
-
-_same_transformation(a::ChainTransformation, b::ChainTransformation) =
-    length(a.list) == length(b.list) && all(_same_transformation(x, y) for (x, y) in zip(a.list, b.list))
-
-_same_transformation(_, _) = false
-
-"""
-    _merge_transformations(tts) -> AbstractTokenTransformation
-
-Resolves the token transformation of a merged profile. Identical transformations are kept
-as-is. Transformations that differ *only* in their stopword set -- the normal case when
-each batch detected its own stopwords from its own slice -- collapse to the union of those
-sets, since a token any batch removed is absent from that batch's vocabulary and so is
-already excluded from the merged counts. Anything else (differing stemmers, differing
-chains) cannot be reconciled and is an error.
-"""
-function _merge_transformations(tts)
-    tt1 = first(tts)
-    all(t -> _same_transformation(tt1, t), tts) && return tt1
-
-    if all(t -> t isa IgnoreStopwords || t isa IdentityTokenTransformation, tts)
-        u = Set{String}()
-        for t in tts
-            t isa IgnoreStopwords && union!(u, t.stopwords)
-        end
-        return IgnoreStopwords(u)
-    end
-
-    error("cannot merge profiles with incompatible token transformations: " *
-          "$(unique(typeof.(tts))). Only identical transformations, or ones differing " *
-          "solely in their IgnoreStopwords set, can be merged.")
 end
 
 # ── synonym fusion ───────────────────────────────────────────────────────────
@@ -98,7 +63,7 @@ function _fuse_synonyms(profiles, voc::Vocabulary, k::Integer, rrf_k::Real)
     widest = 0
 
     for p in profiles
-        pd = get(p, :synonym_distances, nothing)
+        pd = p.synonym_distances
         for (tok, neighbors) in p.synonyms
             token2id(voc, tok) == 0 && continue
             widest = max(widest, length(neighbors))
@@ -213,16 +178,13 @@ end
 # ── merge_profiles ───────────────────────────────────────────────────────────
 
 """
-    merge_profiles(profiles; doc_freq_threshold=0.5, synonyms_k=0, rrf_k=60)
-        -> (; model, synonyms, synonym_distances, lemmas, stopword_candidates, encoder)
+    merge_profiles(profiles; doc_freq_threshold=0.5, synonyms_k=0, rrf_k=60) -> TextProfile
 
-Merges several profiles (each a [`load_profile`](@ref) result) into one, returning exactly
-the pieces [`save_profile`](@ref) takes as keywords, so a merged profile is written with
+Merges several [`TextProfile`](@ref)s of one corpus into a single corpus-wide profile:
 
 ```julia
 p = merge_profiles(load_profile.(paths))
-save_profile(dir, p.model; p.synonyms, p.synonym_distances, p.lemmas,
-             p.stopword_candidates, p.encoder)
+save_profile(dir, p)
 ```
 
 This is what makes `fit`'s batching usable: batching a large corpus produces one
@@ -240,14 +202,16 @@ profile.
   exactly would need the corpus, or a persisted projection, neither of which a profile
   carries.
 - **Lemmas are a plurality vote** over the inputs' clusterings (see [`_vote_lemmas`](@ref)).
-- **Stopword candidates** are recomputed from the merged counters at `doc_freq_threshold`,
-  then unioned with the inputs' recorded candidates -- a token every input already removed
-  is absent from the merged vocabulary and could not be re-derived, but is still a stopword
-  and stays recorded as one.
+- **Stopwords** are recomputed from the merged counters at `doc_freq_threshold`, then
+  unioned with the inputs' own sets -- a token every input already removed is absent from the
+  merged vocabulary and could not be re-derived, but is still a stopword. An artifact counts
+  as applied in the merge if any input applied it.
 
-Inputs must share their normalization and tokenization settings, and their weighting
-scheme; transformations may differ only in their stopword set. `EntropyWeighting` cannot be
-merged, since recomputing it needs the labeled corpus.
+Inputs must share their **policy** -- normalization and tokenization -- and their weighting
+scheme. Nothing about their artifacts has to match: differing stopword sets union, differing
+lemma maps vote, differing networks fuse. That asymmetry is the reason policy and artifacts
+are separate concepts. `EntropyWeighting` cannot be merged, since recomputing it needs the
+labeled corpus.
 
 `synonyms_k = 0` keeps as many neighbors per token as the richest input had.
 """
@@ -257,15 +221,14 @@ function merge_profiles(profiles; doc_freq_threshold::Real=0.5, synonyms_k::Inte
     length(profiles) == 1 && @warn "merge_profiles: only one profile given; nothing to merge"
 
     vocs = [p.model.voc for p in profiles]
-    tc1 = first(vocs).textconfig
+    pol = policy(first(profiles))
 
-    for (i, voc) in enumerate(vocs)
-        _same_normalization(tc1.normalization, voc.textconfig.normalization) ||
-            error("profile $i has different normalization settings; profiles must be fit with the same TextConfig to be merged")
-        _same_tokenization(tc1.tokenization, voc.textconfig.tokenization) ||
-            error("profile $i has different tokenization settings; profiles must be fit with the same TextConfig to be merged")
-        tc1.expand_query_synonyms === voc.textconfig.expand_query_synonyms ||
-            error("profile $i has a different expand_query_synonyms setting than the first profile")
+    for (i, p) in enumerate(profiles)
+        q = policy(p)
+        _same_normalization(pol.normalization, q.normalization) ||
+            error("profile $i has different normalization settings; profiles must share a policy to be merged")
+        _same_tokenization(pol.tokenization, q.tokenization) ||
+            error("profile $i has different tokenization settings; profiles must share a policy to be merged")
     end
 
     gw, lw = first(profiles).model.global_weighting, first(profiles).model.local_weighting
@@ -277,11 +240,8 @@ function merge_profiles(profiles; doc_freq_threshold::Real=0.5, synonyms_k::Inte
         error("cannot merge EntropyWeighting profiles: its weights are supervised and would " *
               "have to be recomputed from the labeled corpus, which a profile does not carry")
 
-    transformation = _merge_transformations([voc.textconfig.transformation for voc in vocs])
-    textconfig = TextConfig(tc1; transformation)
-
     # counts are additive over disjoint batches -- this part of a merge is exact
-    voc = Vocabulary(textconfig, sum(trainsize, vocs), sum(numtokens, vocs))
+    voc = Vocabulary(pol, sum(trainsize, vocs), sum(numtokens, vocs))
     for v in vocs
         update_voc!(voc, v)
     end
@@ -291,18 +251,26 @@ function merge_profiles(profiles; doc_freq_threshold::Real=0.5, synonyms_k::Inte
     fused = _fuse_synonyms(profiles, voc, synonyms_k, rrf_k)
     lemmas = _vote_lemmas(profiles, voc)
 
-    candidates = Set{String}(stopword_candidates(voc, doc_freq_threshold))
+    # Stopwords union, as they always did -- a token any batch removed is absent from that
+    # batch's vocabulary and so already excluded from the merged counts -- plus whatever the
+    # merged counters now flag. The inputs' own sets are kept even when they cannot be
+    # re-derived from the merged vocabulary, since they are still stopwords.
+    stopwords = Set{String}(stopword_candidates(voc, doc_freq_threshold))
     for p in profiles
-        union!(candidates, p.stopword_candidates)
+        union!(stopwords, p.stopwords)
     end
 
-    source_kinds = unique(String[
-        p.encoder === nothing ? "unknown" : String(get(p.encoder, "kind", "unknown"))
-        for p in profiles
-    ])
-    encoder = (; kind=:merged, n_sources=length(profiles), source_kinds=join(sort(source_kinds), ","))
+    # an artifact is applied in the merge if any input applied it
+    applied = AppliedArtifacts(
+        stopwords = any(p -> p.applied.stopwords, profiles),
+        lemmas    = any(p -> p.applied.lemmas, profiles),
+        synonyms  = any(p -> p.applied.synonyms, profiles),
+    )
 
-    (; model, synonyms=fused.synonyms,
-       synonym_distances=(isempty(fused.distances) ? nothing : fused.distances),
-       lemmas, stopword_candidates=sort!(collect(candidates)), encoder)
+    lineage = LineageStep[LineageStep(:merge; n_sources=length(profiles),
+                                             trainsize=trainsize(voc))]
+
+    TextProfile(model, stopwords, lemmas, fused.synonyms,
+                (isempty(fused.distances) ? nothing : fused.distances),
+                applied, lineage)
 end

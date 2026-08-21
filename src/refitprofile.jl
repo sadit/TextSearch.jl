@@ -44,12 +44,16 @@ identical.
 
 See also [`refit_profile`](@ref), [`fold_lemmas`](@ref).
 """
-function refit_textconfig(base; apply_lemmas::Bool=true, lemmas=nothing)
-    tc = base.model.voc.textconfig
-    apply_lemmas || return tc
-    map = lemmas === nothing ? base.lemmas : lemmas
-    TextConfig(tc; transformation=with_lemma_transformation(tc.transformation, map))
+function refit_textconfig(base::TextProfile; apply_lemmas::Bool=true, lemmas=nothing)
+    p = lemmas === nothing ? base : _with_lemmas(base, lemmas)
+    textconfig(with_applied(p; lemmas=apply_lemmas))
 end
+
+# a profile with a different lemma map, for the extension path (Part: extend_lemmas)
+_with_lemmas(p::TextProfile, lemmas) =
+    TextProfile(p.model; stopwords=p.stopwords, lemmas,
+                synonyms=p.synonyms, synonym_distances=p.synonym_distances,
+                applied=p.applied, lineage=p.lineage)
 
 """
     fold_lemmas(voc::Vocabulary, lemmas) -> (; voc, folded, capped, dropped)
@@ -307,7 +311,7 @@ be re-derived from a profile's contents.
 Set `verbose` to see the vocabulary sizes, how much of the result the base accounts for, and
 the fold/cap counts from any lemma folding.
 """
-function refit_profile(base, sample_voc::Vocabulary;
+function refit_profile(base::TextProfile, sample_voc::Vocabulary;
                         kappa::Real=0, apply_lemmas::Bool=true, lemmas=nothing,
                         keep_rate::Real=1e-5, keep_floor::Integer=3, avgdoclen=:blend,
                         doc_freq_threshold::Real=0.5, verbose::Bool=true)
@@ -322,9 +326,9 @@ function refit_profile(base, sample_voc::Vocabulary;
 
     base_voc = base.model.voc
     # Fold only when the refit ADDS a lemma step the base did not have. If the base already
-    # lemmatized, its counters are exact and folding again would be wrong.
-    if apply_lemmas && !isempty(lemmamap) &&
-            !has_lemma_transformation(base_voc.textconfig.transformation)
+    # lemmatized, its counters are exact and folding again would be wrong. The marker says
+    # this directly now, instead of being inferred from the shape of the pipeline.
+    if apply_lemmas && !isempty(lemmamap) && !base.applied.lemmas
         f = fold_lemmas(base_voc, lemmamap)
         base_voc = f.voc
         verbose && println(stderr,
@@ -336,41 +340,28 @@ function refit_profile(base, sample_voc::Vocabulary;
 
     voc = blend_vocabularies(base_voc, sample_voc; kappa, keep_rate, keep_floor, avgdoclen)
 
-    syn, sdist = _restrict_synonyms(base.synonyms, get(base, :synonym_distances, nothing), voc)
+    syn, sdist = _restrict_synonyms(base.synonyms, base.synonym_distances, voc)
+    # Restricted to entries whose target survived the prune. No reconciliation step follows:
+    # the profile constructor materializes the TextConfig from THIS map, so the applied map
+    # and the saved map are the same object by construction. (They used to be assembled
+    # separately, and shipped at 110,393 versus 40,320 entries on a real profile.)
     kept_lemmas = Dict{String,String}(
         tok => lemma for (tok, lemma) in lemmamap if token2id(voc, lemma) != 0)
 
-    # The TextConfig still carries the base's FULL lemma map -- it had to, to tokenize the
-    # sample before the vocabulary existed -- but the prune has since removed most of its
-    # targets. Rebuild it from the restricted map so the map the profile APPLIES and the map
-    # it SAVES are the same thing, instead of shipping two of different sizes and reporting
-    # the smaller one.
-    #
-    # This cannot change the vocabulary, which is why it is safe to do after the fact: an
-    # entry is dropped only when its target is absent from `voc`, and a target the sample
-    # exercises always survives (the sample lemmatizes onto it, giving it ndocs >= 1, and the
-    # prune keeps anything the sample saw). So no dropped entry could have affected a
-    # surviving token.
-    if has_lemma_transformation(voc.textconfig.transformation)
-        bare = without_lemma_transformation(voc.textconfig.transformation)
-        tc2 = TextConfig(voc.textconfig;
-                         transformation=with_lemma_transformation(bare, kept_lemmas))
-        voc = Vocabulary(tc2, voc.token, voc.occs, voc.ndocs, voc.token2id,
-                         voc.trainsize, voc.numtokens)
-    end
-
     model = VectorModel(gw, lw, voc)
 
-    candidates = Set{String}(stopword_candidates(voc, doc_freq_threshold))
-    union!(candidates, base.stopword_candidates)
+    stopwords = Set{String}(stopword_candidates(voc, doc_freq_threshold))
+    union!(stopwords, base.stopwords)
 
     κ = kappa <= 0 ? Float64(trainsize(sample_voc)) : Float64(kappa)
-    encoder = (; kind=:refit,
-                 base_kind=(base.encoder === nothing ? "unknown" :
-                            String(get(base.encoder, "kind", "unknown"))),
-                 kappa=κ,
-                 sample_trainsize=trainsize(sample_voc),
-                 lemmas_applied=has_lemma_transformation(tc.transformation))
+    applied = AppliedArtifacts(stopwords=base.applied.stopwords,
+                               lemmas=(apply_lemmas && !isempty(kept_lemmas)),
+                               synonyms=base.applied.synonyms)
+    lineage = LineageStep[base.lineage...,
+                          LineageStep(:refit; kappa=κ,
+                                              sample_trainsize=trainsize(sample_voc),
+                                              trainsize=trainsize(voc),
+                                              lemmas_applied=applied.lemmas)]
 
     if verbose
         fromsample = count(id -> token2id(sample_voc, token(voc, id)) != 0, eachindex(voc))
@@ -385,14 +376,13 @@ function refit_profile(base, sample_voc::Vocabulary;
             "refit: kappa=$(round(κ; digits=1)) documents of prior against a " *
             "$(trainsize(sample_voc))-document sample -> trainsize=$(trainsize(voc)), " *
             "avgdoclen=$(round(TextSearch.avgdoclen(voc); digits=2)), " *
-            "lemmas=$(encoder.lemmas_applied ? "applied" : "carried only")")
+            "lemmas=$(applied.lemmas ? "applied" : "carried only")")
     end
 
-    (; model, synonyms=syn, synonym_distances=sdist, lemmas=kept_lemmas,
-       stopword_candidates=sort!(collect(candidates)), encoder)
+    TextProfile(model, stopwords, kept_lemmas, syn, sdist, applied, lineage)
 end
 
-function refit_profile(base, sample_docs; apply_lemmas::Bool=true, extend_lemmas::Bool=false,
+function refit_profile(base::TextProfile, sample_docs; apply_lemmas::Bool=true, extend_lemmas::Bool=false,
                         morphology::Symbol=:jaccard, morphology_threshold::Real=0.3,
                         qgram::Integer=2, min_common_prefix::Integer=3,
                         lemma_selector::Symbol=:most_frequent,
@@ -433,7 +423,7 @@ merged counts also make `:most_frequent` prefer the established form over the ne
 Only the new tokens get entries (see [`extend_lemmas_morphological`](@ref)), so the base's
 own clustering decisions are never overruled.
 """
-function _extend_lemmas_from_sample(base, sample_voc::Vocabulary, lemmamap; kwargs...)
+function _extend_lemmas_from_sample(base::TextProfile, sample_voc::Vocabulary, lemmamap; kwargs...)
     bvoc = base.model.voc
     new = String[token(sample_voc, id) for id in eachindex(sample_voc)
                  if token2id(bvoc, token(sample_voc, id)) == 0]
@@ -459,11 +449,38 @@ function _check_refit_textconfig(expected::TextConfig, got::TextConfig)
     _same_tokenization(expected.tokenization, got.tokenization) ||
         error("the sample vocabulary was built with different tokenization settings than " *
               "the refit requires; build it with refit_textconfig(base; apply_lemmas)")
-    _same_transformation(expected.transformation, got.transformation) ||
-        error("the sample vocabulary was built with a different token transformation " *
-              "(stopwords/lemmas/stemming) than the refit requires; build it with " *
-              "refit_textconfig(base; apply_lemmas)")
+    # The transformation is compared by its ARTIFACTS, which is all it can hold now: a lemma
+    # map and a stopword set. Both come from one place -- `textconfig(profile)` -- so the only
+    # way to fail this is to have tokenized the sample under some other config entirely, which
+    # is exactly the mistake worth catching loudly.
+    _same_artifacts(expected.transformation, got.transformation) ||
+        error("the sample vocabulary was built with a different lemma map or stopword set " *
+              "than the refit requires; build it with refit_textconfig(base; apply_lemmas)")
     nothing
+end
+
+"""
+    _same_artifacts(a, b) -> Bool
+
+Whether two materialized transformations apply the same artifacts. Compares the lemma map and
+the stopword set by value, ignoring how the chain happens to be nested -- a lone
+`IgnoreStopwords` and a one-element chain around it are the same pipeline.
+"""
+_same_artifacts(a::AbstractTokenTransformation, b::AbstractTokenTransformation) =
+    _artifact_pair(a) == _artifact_pair(b)
+
+_artifact_pair(::IdentityTokenTransformation) = (nothing, nothing)
+_artifact_pair(t::LemmaTransformation) = (t.lemmas, nothing)
+_artifact_pair(t::IgnoreStopwords) = (nothing, t.stopwords)
+function _artifact_pair(t::ChainTransformation)
+    lem = nothing
+    sw = nothing
+    for s in t.list
+        l, w = _artifact_pair(s)
+        l === nothing || (lem = l)
+        w === nothing || (sw = w)
+    end
+    (lem, sw)
 end
 
 """

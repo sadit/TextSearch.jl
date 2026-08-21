@@ -206,9 +206,10 @@ function cmd_refit(args::Vector{String})
     mkpath(dirname(abspath(out)))
     tmpdir = out * ".tmpdir"
     try
-        save_profile(tmpdir, r.model;
-                     r.synonyms, synonym_distances=syndists, r.lemmas,
-                     r.stopword_candidates, r.encoder)
+        # --drop-distances is applied by rebuilding the profile without them
+        save_profile(tmpdir, syndists === r.synonym_distances ? r :
+                             TextProfile(r.model; r.stopwords, r.lemmas, r.synonyms,
+                                         synonym_distances=syndists, r.applied, r.lineage))
         zip_profile(tmpdir, out)
     finally
         rm(tmpdir; recursive=true, force=true)
@@ -220,7 +221,8 @@ function cmd_refit(args::Vector{String})
     println("  synonyms=$(length(r.synonyms)) tokens  " *
             "distances=$(syndists === nothing ? "dropped" : "$(length(syndists)) tokens")  " *
             "lemmas=$(length(r.lemmas)) remapped " *
-            "($(r.encoder.lemmas_applied ? "applied" : "carried only"))  " *
-            "stopword_candidates=$(length(r.stopword_candidates))")
+            "($(r.applied.lemmas ? "applied" : "carried only"))  " *
+            "stopwords=$(length(r.stopwords))")
+    println("  lineage: ", lineage_summary(r))
     0
 end

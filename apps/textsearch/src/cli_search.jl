@@ -65,33 +65,6 @@ function _resolve_profile_path(spec::AbstractString)
 end
 
 """
-    _strip_lemmas(tt) -> AbstractTokenTransformation
-
-Returns `tt` with every `LemmaTransformation` step removed, for `--no-lemmas`.
-
-Lemmas live in the profile's `TextConfig` (a lemma is a normalization, so the tokenizer
-applies it to documents and queries alike), which means turning them off is a matter of
-taking that step out of the pipeline rather than declining to apply it afterwards.
-"""
-_strip_lemmas(tt::AbstractTokenTransformation) = tt
-_strip_lemmas(::LemmaTransformation) = IdentityTokenTransformation()
-function _strip_lemmas(tt::ChainTransformation)
-    kept = AbstractTokenTransformation[s for s in tt.list if !(s isa LemmaTransformation)]
-    length(kept) == 1 ? only(kept) : ChainTransformation(kept)
-end
-
-"""
-    _has_lemmas(tt) -> Bool
-
-Whether `tt` applies a lemma map, so the stderr summary can report what the profile is
-actually doing rather than what was asked for (`--no-lemmas` on a profile fitted with
-`[lemmas] apply = false` changes nothing, and saying so is the point of a probe command).
-"""
-_has_lemmas(tt::AbstractTokenTransformation) = false
-_has_lemmas(::LemmaTransformation) = true
-_has_lemmas(tt::ChainTransformation) = any(_has_lemmas, tt.list)
-
-"""
     _query_tokens(p, query, tc, usesynonyms, synk) -> (Set{String}, report)
 
 Builds the query's token set by running it through the same `tc` a document goes through --
@@ -175,15 +148,13 @@ function cmd_search(args::Vector{String})
     o["threshold"] >= 1 || error("--threshold must be >= 1, got $(o["threshold"])")
     o["chunk"] >= 1 || error("--chunk must be >= 1, got $(o["chunk"])")
 
-    p = load_profile(_resolve_profile_path(o["profile"]))
-    # Lemmas are part of the profile's TextConfig, so the tokenizer applies them to
-    # documents and queries alike and there is nothing for this command to apply itself.
-    # A profile fitted with [lemmas] apply = false simply has no such step.
-    profile_tc = p.model.voc.textconfig
-    tc = o["no-lemmas"] ?
-        TextConfig(profile_tc; transformation=_strip_lemmas(profile_tc.transformation)) :
-        profile_tc
-    lemmas_on = _has_lemmas(tc.transformation)
+    base = load_profile(_resolve_profile_path(o["profile"]))
+    # `--no-lemmas` means "do not apply the lemma map", which is a marker on the profile, not
+    # surgery on a pipeline: flipping it re-materializes the TextConfig from the artifacts the
+    # profile still carries. A profile that never applied them is unaffected.
+    p = o["no-lemmas"] ? with_applied(base; lemmas=false) : base
+    tc = textconfig(p)
+    lemmas_on = p.applied.lemmas
 
     qtokens, rep = _query_tokens(p, o["query"], tc, !o["no-synonyms"], o["synonyms-k"])
     isempty(qtokens) && error("the query has no tokens under this profile's TextConfig " *
@@ -196,10 +167,11 @@ function cmd_search(args::Vector{String})
     isempty(rep.expanded) ||
         println(stderr, "  + $(length(rep.expanded)) synonym(s) -> $expstr")
     # report what the profile actually carries, not what was requested: --no-lemmas on a
-    # profile that never had them changes nothing, and a probe command should say so
+    # profile that never applied them changes nothing, and a probe command should say so
     println(stderr, "  matching with threshold=$(o["threshold"]) over $(length(qtokens)) token(s), " *
-                    "lemmas=$(lemmas_on ? "on" : "off") (profile " *
-                    "$(_has_lemmas(profile_tc.transformation) ? "carries" : "has no") lemma map), " *
+                    "lemmas=$(lemmas_on ? "on" : "off") " *
+                    "(profile carries $(length(base.lemmas)), " *
+                    "$(base.applied.lemmas ? "applied" : "not applied")), " *
                     "threads=$(Threads.nthreads())")
 
     t = o["threshold"]
