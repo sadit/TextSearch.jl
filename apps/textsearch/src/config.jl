@@ -19,7 +19,10 @@ resume = false
 [normalization]
 del_diac = true
 del_dup = false
-del_punc = false
+# Punctuation is only ~0.5% of a real vocabulary but over half of all token *occurrences*,
+# so keeping it inflates numtokens/avgdoclen (which BM25 normalizes by) roughly 2x and
+# spends the stopword detector's budget on "." and ",".
+del_punc = true
 group_num = true
 group_url = true
 group_usr = false
@@ -43,7 +46,7 @@ doc_freq_threshold = 0.5
 
 [encoder]
 kind = "lsi"                # "lsi" | "external"
-outdim = 128
+outdim = 256
 scaling = "none"            # "none" | "inv_singular_values" | "singular_values"
 external_path = ""          # kind="external": path to a token->vector JSON mapping
 # How LSI's truncated SVD is computed. Both options are exact, so this is purely a cost

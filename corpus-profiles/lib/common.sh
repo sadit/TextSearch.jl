@@ -78,10 +78,12 @@ ts_render_fit_config() {
   local min_ndocs="${TS_MIN_NDOCS:-5}"
   local sw_enabled="${TS_STOPWORDS:-true}"
   local sw_thresh="${TS_DOC_FREQ_THRESHOLD:-0.5}"
-  local outdim="${TS_OUTDIM:-128}"
+  local outdim="${TS_OUTDIM:-256}"
   local syn_k="${TS_SYN_K:-8}"
   local lem_alg="${TS_LEMMA_ALG:-fft}"
   local lem_sel="${TS_LEMMA_SEL:-most_frequent}"
+  local del_diac="${TS_DEL_DIAC:-false}"
+  local del_punc="${TS_DEL_PUNC:-true}"
 
   mkdir -p "$(dirname "$out")"
   cat > "$out" << EOF
@@ -100,9 +102,9 @@ batch_size = $TS_BATCH
 resume = $resume
 
 [normalization]
-del_diac = true
+del_diac = $del_diac
 del_dup = false
-del_punc = false
+del_punc = $del_punc
 group_num = true
 group_url = true
 group_usr = false

@@ -32,7 +32,12 @@ LIMIT=0
 PARTS=16
 BATCH_SIZE=""      # empty: derived from PARTS once the document count is known
 RESUME=false
-OUTDIM=128
+OUTDIM=256
+# Wikipedia is edited prose, so its diacritics are trustworthy and worth keeping: "año" and
+# "ano" are different words. (Queries typed without accents are a query-side problem, to be
+# handled by spelling correction rather than by destroying the distinction in the profile.)
+DEL_DIAC=false
+DEL_PUNC=true
 SYN_K=8
 MIN_CHARS=200
 MIN_NDOCS=5
@@ -58,7 +63,11 @@ Options:
                          interrupted run keeps the completed ones
   --batch-size N         articles per part, overriding --parts (0 = one single profile)
   --resume               skip parts whose .zip already exists instead of refitting them
-  --outdim N             LSI dimension (default 128)
+  --outdim N             LSI dimension (default 256)
+  --del-diac B           strip diacritics: true|false (default false -- Wikipedia's accents
+                         are reliable, so "año" is kept distinct from "ano")
+  --del-punc B           drop punctuation: true|false (default true -- it is ~half of all
+                         token occurrences and only ~0.5% of the vocabulary)
   --syn-k N              synonyms per token (default 8)
   --min-chars N          skip articles shorter than this (default 200, drops stubs)
   --min-ndocs N          drop tokens in fewer than N documents (default 5; 1 keeps all).
@@ -83,6 +92,8 @@ while [[ $# -gt 0 ]]; do
     --batch-size)           BATCH_SIZE="$2"; shift 2 ;;
     --resume)               RESUME=true; shift ;;
     --outdim)               OUTDIM="$2"; shift 2 ;;
+    --del-diac)             DEL_DIAC="$2"; shift 2 ;;
+    --del-punc)             DEL_PUNC="$2"; shift 2 ;;
     --syn-k)                SYN_K="$2"; shift 2 ;;
     --min-chars)            MIN_CHARS="$2"; shift 2 ;;
     --min-ndocs)            MIN_NDOCS="$2"; shift 2 ;;
@@ -212,6 +223,7 @@ if has_step fit; then
   TS_RESUME="$RESUME" TS_MIN_NDOCS="$MIN_NDOCS" TS_STOPWORDS="$STOPWORDS" \
   TS_DOC_FREQ_THRESHOLD="$DOC_FREQ_THRESHOLD" TS_OUTDIM="$OUTDIM" TS_SYN_K="$SYN_K" \
   TS_LEMMA_ALG="$LEMMA_ALG" TS_LEMMA_SEL="$LEMMA_SEL" \
+  TS_DEL_DIAC="$DEL_DIAC" TS_DEL_PUNC="$DEL_PUNC" \
     ts_render_fit_config "$FIT_CFG"
   ts_fit "$FIT_CFG"
   log "profiles in $OUT_DIR:"
