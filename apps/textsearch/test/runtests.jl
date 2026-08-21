@@ -178,22 +178,57 @@ end
 
             zippath = joinpath(dir, "profiles1", "corpus-0001.zip")
 
-            @testset "search: token-intersection matching" begin
+            # Runs cmd_search and returns the matched documents' texts, in output order.
+            function search_texts(args...)
                 out = capture_stdout() do
-                    TextSearchApp.cmd_search([zippath, "casa roja", "--collection", corpus_path, "--format", "jsonl"])
+                    TextSearchApp.cmd_search([zippath, args...,
+                                              "--collection", corpus_path, "--format", "jsonl"])
                 end
-                lines = filter(!isempty, split(out, '\n'))
-                texts = [JSON3.read(l)[:text] for l in lines]
+                [JSON3.read(l)[:text] for l in filter(!isempty, split(out, '\n'))]
+            end
+
+            @testset "search: token-intersection matching" begin
+                # The threshold is about set intersection, so it is asserted with both
+                # artifacts off: this 7-document corpus has ~10 tokens, and an LSI over
+                # that few tokens makes everything everything else's synonym, which would
+                # swamp the very thing under test. The full pipe gets its own testset.
+                texts = search_texts("casa roja", "--no-synonyms", "--no-lemmas")
                 @test "la casa roja" in texts   # shares both "casa" and "roja"
                 @test "la casa verde" in texts  # shares "casa" (t=1 default: any shared token)
                 @test !("la pera verde esta rica" in texts)
 
-                out2 = capture_stdout() do
-                    TextSearchApp.cmd_search([zippath, "casa roja", "--collection", corpus_path, "--format", "jsonl", "-t", "2"])
-                end
-                lines2 = filter(!isempty, split(out2, '\n'))
-                texts2 = [JSON3.read(l)[:text] for l in lines2]
+                texts2 = search_texts("casa roja", "--no-synonyms", "--no-lemmas", "-t", "2")
                 @test texts2 == ["la casa roja"]  # t=2: must share BOTH tokens
+            end
+
+            @testset "search: the full pipe expands the query" begin
+                # What the artifacts contribute is corpus-dependent (and on a corpus this
+                # small, arbitrary), so assert the invariant instead of specific synonyms:
+                # expansion only ever adds query tokens, so at t=1 it can only add hits.
+                narrow = search_texts("casa", "--no-synonyms", "--no-lemmas")
+                wide = search_texts("casa")
+                @test narrow ⊆ wide
+                @test length(wide) > length(narrow)   # this corpus does expand "casa"
+
+                # --synonyms-k bounds the expansion, so it sits between the two.
+                capped = search_texts("casa", "--synonyms-k", "1")
+                @test narrow ⊆ capped ⊆ wide
+            end
+
+            @testset "search: output is in corpus order, independent of chunking" begin
+                # The matching loop is threaded but each task writes only its own slot and
+                # printing happens afterwards in index order, so neither the thread count
+                # nor the chunk boundaries may affect the output. Chunk 1 forces a flush
+                # per document; 999 puts the whole corpus in one chunk.
+                reference = search_texts("casa roja", "--no-synonyms", "--no-lemmas")
+                for chunk in ("1", "2", "3", "999")
+                    @test search_texts("casa roja", "--no-synonyms", "--no-lemmas",
+                                       "--chunk", chunk) == reference
+                end
+                # hits come out as a subsequence of the corpus, never reordered
+                @test reference == filter(in(Set(reference)), docs)
+                Threads.nthreads() > 1 ||
+                    @info "single-threaded run: the ordering assertions above cannot fail here"
             end
 
             @testset "install / list / info / uninstall" begin
