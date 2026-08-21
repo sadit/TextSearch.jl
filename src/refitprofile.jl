@@ -280,11 +280,31 @@ function refit_profile(base, sample_voc::Vocabulary;
     end
 
     voc = blend_vocabularies(base_voc, sample_voc; kappa, keep_rate, keep_floor)
-    model = VectorModel(gw, lw, voc)
 
     syn, sdist = _restrict_synonyms(base.synonyms, get(base, :synonym_distances, nothing), voc)
     lemmas = Dict{String,String}(
         tok => lemma for (tok, lemma) in base.lemmas if token2id(voc, lemma) != 0)
+
+    # The TextConfig still carries the base's FULL lemma map -- it had to, to tokenize the
+    # sample before the vocabulary existed -- but the prune has since removed most of its
+    # targets. Rebuild it from the restricted map so the map the profile APPLIES and the map
+    # it SAVES are the same thing, instead of shipping two of different sizes and reporting
+    # the smaller one.
+    #
+    # This cannot change the vocabulary, which is why it is safe to do after the fact: an
+    # entry is dropped only when its target is absent from `voc`, and a target the sample
+    # exercises always survives (the sample lemmatizes onto it, giving it ndocs >= 1, and the
+    # prune keeps anything the sample saw). So no dropped entry could have affected a
+    # surviving token.
+    if has_lemma_transformation(voc.textconfig.transformation)
+        bare = without_lemma_transformation(voc.textconfig.transformation)
+        tc2 = TextConfig(voc.textconfig;
+                         transformation=with_lemma_transformation(bare, lemmas))
+        voc = Vocabulary(tc2, voc.token, voc.occs, voc.ndocs, voc.token2id,
+                         voc.trainsize, voc.numtokens)
+    end
+
+    model = VectorModel(gw, lw, voc)
 
     candidates = Set{String}(stopword_candidates(voc, doc_freq_threshold))
     union!(candidates, base.stopword_candidates)

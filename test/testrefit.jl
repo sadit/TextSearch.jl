@@ -2,6 +2,18 @@ using Test, TextSearch, SimilaritySearch
 
 # These are library tests on purpose: a refit is an operation of TextSearch itself, so the
 # whole thing must be exercisable without the CLI app.
+# Digs the lemma mapping out of a transformation pipeline, so a test can compare what a
+# profile APPLIES against what it saves.
+_find_lemma_map(tt::LemmaTransformation) = tt.lemmas
+_find_lemma_map(::AbstractTokenTransformation) = nothing
+function _find_lemma_map(tt::ChainTransformation)
+    for s in tt.list
+        m = _find_lemma_map(s)
+        m === nothing || return m
+    end
+    nothing
+end
+
 @testset "refit_profile" begin
     tc = TextConfig(tokenization=TokenizationConfig(nlist=[1]))
 
@@ -169,6 +181,22 @@ using Test, TextSearch, SimilaritySearch
             @test token2id(voc, "perro") != 0
             # and a query in the inflected form reaches it through the TextConfig alone
             @test collect(tokenize(voc.textconfig, "perros")) == ["perro"]
+        end
+
+        @testset "the applied map and the saved map are the same map" begin
+            # The TextConfig starts out carrying the base's FULL map (it must, to tokenize
+            # the sample before the vocabulary exists), but the prune then removes most of
+            # its targets. Shipping the full map while saving and reporting the restricted
+            # one means the profile applies something other than what it says it does -- and
+            # on the real Wikipedia-es profile the dead entries were 47% of the output file.
+            r = refit_profile(lbase, lsample; verbose=false)
+            voc = r.model.voc
+            applied = _find_lemma_map(voc.textconfig.transformation)
+
+            @test applied == r.lemmas
+            # nothing in the applied map can point at a token the vocabulary lacks, so no
+            # entry is dead weight
+            @test all(lemma -> token2id(voc, lemma) != 0, values(applied))
         end
 
         @testset "apply_lemmas=false leaves the map as an artifact only" begin
