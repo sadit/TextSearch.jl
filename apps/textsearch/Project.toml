@@ -19,3 +19,8 @@ TextSearch = {path = "../.."}
 julia = "1.12"
 
 [apps.textsearch]
+# Threads cannot be set after Julia starts, so the thread count has to come from the shim
+# Pkg generates. Every stage of `fit` (tokenization, LSI, the synonym search) is threaded
+# through @BATCHES, so a single-threaded default would silently run the expensive work on
+# one core.
+julia_flags = ["--startup-file=no", "--history-file=no", "--threads=auto"]

@@ -43,7 +43,8 @@ require_cmd() {
 
 ts_cli() {
   if command -v textsearch >/dev/null 2>&1; then
-    JULIA_NUM_THREADS="${JULIA_NUM_THREADS:-auto}" textsearch "$@"
+    # the installed shim already carries --threads=auto (see [apps.textsearch].julia_flags)
+    textsearch "$@"
   else
     julia --project="$APP_DIR" -t "${JULIA_NUM_THREADS:-auto}" "$APP_DIR/src/main.jl" "$@"
   fi
