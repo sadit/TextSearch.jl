@@ -9,12 +9,12 @@ using SimilaritySearch
 using SimilaritySearch: @BATCHES, getminbatch, MatrixDatabase, AbstractDatabase, ParallelExhaustiveSearch
 using SimilaritySearch.Special.Sparse: SparseVecView, SparseVectorLike
 
-using ..TextSearch: TextModel, VectorModel, Vocabulary, TextConfig, token,
+using ..TextSearch: TextModel, VectorModel, Vocabulary, TextConfig, gettoken,
                     GlobalWeighting, LocalWeighting, IdfWeighting, TfWeighting,
                     VECTORIZE_CACHES, VectorizeBuffer
-import ..TextSearch: vectorize, vectorize!, vectorize_corpus, vocsize, trainsize
+import ..TextSearch: vectorize, vectorize!, vectorize_corpus, vocsize, gettrainsize
 
-export LatentSemanticIndexing, LSIModel, indim, outdim, vocsize, trainsize,
+export LatentSemanticIndexing, LSIModel, indim, outdim, vocsize, gettrainsize,
        vectorize, vectorize!, vectorize_corpus, wordvectors, synonyms
 
 """
@@ -375,7 +375,7 @@ end
     wordvectors(lsi::LatentSemanticIndexing; normalize::Bool=true) -> MatrixDatabase{Matrix{Float32}}
 
 Returns the LSI embedding of every vocabulary token, as a `(outdim(lsi), vocsize(lsi))` matrix
-database -- column `t` is the embedding of `token(lsi.model, t)`. This is exactly `lsi.P`
+database -- column `t` is the embedding of `gettoken(lsi.model, t)`. This is exactly `lsi.P`
 (optionally column-normalized): a document's LSI vector (via [`vectorize`](@ref)/
 [`vectorize_corpus`](@ref)) is a weighted sum of its tokens' columns of `lsi.P`, so these
 per-token vectors live in the same projected space and are directly comparable to each other and
@@ -385,7 +385,7 @@ the raw (`scaling`-adjusted) `lsi.P` columns instead of unit-normalizing them.
 # Example
 ```julia
 X = wordvectors(lsi)   # (outdim(lsi), vocsize(lsi)) MatrixDatabase
-X[5]                   # the embedding of token(lsi.model, 5)
+X[5]                   # the embedding of gettoken(lsi.model, 5)
 ```
 """
 function wordvectors(lsi::LatentSemanticIndexing; normalize::Bool=true)
@@ -411,7 +411,7 @@ const SYNONYMS_APPROX_THRESHOLD = 4096
         -> (; synonyms::Dict{String,Vector{String}}, distances::Dict{String,Vector{Float32}})
 
 Builds a synonym network from `voc`'s token embeddings in `wordvecs` (column `t` =
-embedding of `token(voc, t)`, e.g. from [`wordvectors`](@ref) or an externally supplied
+embedding of `gettoken(voc, t)`, e.g. from [`wordvectors`](@ref) or an externally supplied
 matrix): for every vocabulary token, finds its `k` nearest neighbors (by `dist`, cosine by
 default) among all *other* tokens' embeddings, via `SimilaritySearch.allknn`. The token
 itself is always excluded from its own neighbor list.
@@ -483,11 +483,11 @@ function synonyms(voc::Vocabulary, wordvecs::AbstractDatabase, k::Integer=8;
             # it gets no synonyms and is never anyone else's synonym, rather than poisoning
             # the network (and downstream JSON serialization, which rejects NaN) with NaN.
             (nb == 0 || nb == t || isnan(d)) && continue
-            push!(words, token(voc, nb))
+            push!(words, gettoken(voc, nb))
             push!(wdists, d)
             length(words) >= k && break
         end
-        tok = token(voc, t)
+        tok = gettoken(voc, t)
         net[tok] = words
         netdist[tok] = wdists
     end
@@ -521,7 +521,7 @@ end
 indim(lsi::LatentSemanticIndexing) = vocsize(lsi.model)
 outdim(lsi::LatentSemanticIndexing) = lsi.k
 vocsize(lsi::LatentSemanticIndexing) = vocsize(lsi.model)
-trainsize(lsi::LatentSemanticIndexing) = trainsize(lsi.model)
+gettrainsize(lsi::LatentSemanticIndexing) = gettrainsize(lsi.model)
 
 function Base.show(io::IO, lsi::LatentSemanticIndexing)
     println(io, "LatentSemanticIndexing: (indim=$(indim(lsi)) -> outdim=$(outdim(lsi)))")

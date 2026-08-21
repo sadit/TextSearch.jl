@@ -45,7 +45,7 @@ using Test, TextSearch, SimilaritySearch, LinearAlgebra, SparseArrays
 
         # 5. Accessors and show
         @test vocsize(lsi1) == vocsize(vmodel)
-        @test trainsize(lsi1) == trainsize(vmodel)
+        @test gettrainsize(lsi1) == gettrainsize(vmodel)
         io = IOBuffer()
         show(io, lsi1)
         str = String(take!(io))

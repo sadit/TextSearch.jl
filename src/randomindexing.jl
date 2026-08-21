@@ -14,9 +14,9 @@ import SimilaritySearch.Projections: bitsketch
 using ..TextSearch: TextModel, VectorModel, Vocabulary, TextConfig,
                     GlobalWeighting, LocalWeighting, IdfWeighting, TfWeighting,
                     VECTORIZE_CACHES, VectorizeBuffer
-import ..TextSearch: vectorize, vectorize!, vectorize_corpus, vocsize, trainsize, indim, outdim
+import ..TextSearch: vectorize, vectorize!, vectorize_corpus, vocsize, gettrainsize, indim, outdim
 
-export RandomIndexing, RIModel, indim, outdim, vocsize, trainsize,
+export RandomIndexing, RIModel, indim, outdim, vocsize, gettrainsize,
        vectorize, vectorize!, vectorize_corpus, bitsketch, bitsketch_corpus, BitSketch
 
 """
@@ -361,7 +361,7 @@ end
 indim(ri::RandomIndexing) = vocsize(ri.model)
 outdim(ri::RandomIndexing) = ri.k
 vocsize(ri::RandomIndexing) = vocsize(ri.model)
-trainsize(ri::RandomIndexing) = trainsize(ri.model)
+gettrainsize(ri::RandomIndexing) = gettrainsize(ri.model)
 
 function Base.show(io::IO, ri::RandomIndexing)
     println(io, "RandomIndexing: (indim=$(indim(ri)) -> outdim=$(outdim(ri)))")

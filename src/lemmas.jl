@@ -10,11 +10,11 @@ order the selector would elect them and its seed is already the lemma.
 """
 function _selector_key(selector::Symbol)
     if selector === :shortest
-        (voc, tid) -> (length(token(voc, tid)), token(voc, tid))
+        (voc, tid) -> (length(gettoken(voc, tid)), gettoken(voc, tid))
     elseif selector === :most_frequent
-        (voc, tid) -> (-occs(voc, tid), token(voc, tid))
+        (voc, tid) -> (-getoccs(voc, tid), gettoken(voc, tid))
     elseif selector === :shortest_then_most_frequent
-        (voc, tid) -> (length(token(voc, tid)), -occs(voc, tid), token(voc, tid))
+        (voc, tid) -> (length(gettoken(voc, tid)), -getoccs(voc, tid), gettoken(voc, tid))
     else
         error("unknown lemma selector: $selector; supported: shortest, most_frequent, shortest_then_most_frequent")
     end
@@ -23,18 +23,18 @@ end
 function _lemma_pick(selector::Symbol)
     if selector === :shortest
         (voc, group) -> begin
-            best, best_len = group[1], length(token(voc, group[1]))
+            best, best_len = group[1], length(gettoken(voc, group[1]))
             for tid in group
-                len = length(token(voc, tid))
+                len = length(gettoken(voc, tid))
                 len < best_len && ((best, best_len) = (tid, len))
             end
             best
         end
     elseif selector === :most_frequent
         (voc, group) -> begin
-            best, best_occs = group[1], occs(voc, group[1])
+            best, best_occs = group[1], getoccs(voc, group[1])
             for tid in group
-                o = occs(voc, tid)
+                o = getoccs(voc, tid)
                 o > best_occs && ((best, best_occs) = (tid, o))
             end
             best
@@ -42,9 +42,9 @@ function _lemma_pick(selector::Symbol)
     elseif selector === :shortest_then_most_frequent
         (voc, group) -> begin
             best = group[1]
-            best_key = (length(token(voc, best)), -occs(voc, best))
+            best_key = (length(gettoken(voc, best)), -getoccs(voc, best))
             for tid in group
-                key = (length(token(voc, tid)), -occs(voc, tid))
+                key = (length(gettoken(voc, tid)), -getoccs(voc, tid))
                 key < best_key && ((best, best_key) = (tid, key))
             end
             best
@@ -239,7 +239,7 @@ function _prefix_blocks(voc::Vocabulary, ids, prefix_len::Int)
     prefix_len <= 0 && return [collect(UInt32, ids)]
     blocks = Dict{String,Vector{UInt32}}()
     for tid in ids
-        cs = collect(token(voc, tid))
+        cs = collect(gettoken(voc, tid))
         key = length(cs) >= prefix_len ? String(@view cs[1:prefix_len]) : String(cs)
         push!(get!(() -> UInt32[], blocks, key), UInt32(tid))
     end
@@ -257,7 +257,7 @@ end
 Derives a `token => lemma` map by combining two signals:
 
 1. **Semantic clustering** of `voc`'s tokens by their embeddings in `wordvecs` (column `t` =
-   embedding of `token(voc, t)`, e.g. from [`LSI.wordvectors`](@ref)), via one of
+   embedding of `gettoken(voc, t)`, e.g. from [`LSI.wordvectors`](@ref)), via one of
    `SimilaritySearch`'s `fft`/`dnet`/`randsel`/`multirandsel`. `num_clusters = 0` defaults
    to `ceil(sqrt(vocsize(voc)))`.
 2. **Morphological subclustering** inside each semantic cluster (`morphology`,
@@ -318,7 +318,7 @@ function lemma_clusters(voc::Vocabulary, wordvecs::AbstractDatabase;
 
     # morphological grouping is leader-based, not single-linkage: see `_leader_groups`
     morphgroups(ids) = begin
-        toks = [token(voc, tid) for tid in ids]
+        toks = [gettoken(voc, tid) for tid in ids]
         reps = [prepare(t) for t in toks]
         order = sortperm(eachindex(ids); by=i -> keyof(voc, ids[i]))
         _leader_groups(ids, order, (i, j) -> morphdist(reps[i], reps[j]) <= morphology_threshold)
@@ -373,9 +373,9 @@ function lemma_clusters(voc::Vocabulary, wordvecs::AbstractDatabase;
     lemmas = Dict{String,String}()
     for group in finalgroups
         length(group) <= 1 && continue
-        chosen_tok = token(voc, pick(voc, group))
+        chosen_tok = gettoken(voc, pick(voc, group))
         for tid in group
-            tok = token(voc, tid)
+            tok = gettoken(voc, tid)
             tok == chosen_tok || (lemmas[tok] = chosen_tok)
         end
     end
@@ -448,7 +448,7 @@ function extend_lemmas_morphological(voc::Vocabulary, lemmas::AbstractDict;
     keyof = _selector_key(selector)
     mp = Int(min_common_prefix)
 
-    ids = UInt32[UInt32(tid) for tid in eachindex(voc) if !haskey(lemmas, token(voc, tid))]
+    ids = UInt32[UInt32(tid) for tid in eachindex(voc) if !haskey(lemmas, gettoken(voc, tid))]
     length(ids) <= 1 && return Dict{String,String}()
 
     want = candidates === nothing ? nothing : Set{String}(String(c) for c in candidates)
@@ -456,18 +456,18 @@ function extend_lemmas_morphological(voc::Vocabulary, lemmas::AbstractDict;
 
     for blk in _prefix_blocks(voc, ids, mp)
         length(blk) <= 1 && continue
-        want === nothing || any(tid -> token(voc, tid) in want, blk) || continue
+        want === nothing || any(tid -> gettoken(voc, tid) in want, blk) || continue
 
-        reps = [prepare(token(voc, tid)) for tid in blk]
+        reps = [prepare(gettoken(voc, tid)) for tid in blk]
         order = sortperm(eachindex(blk); by=i -> keyof(voc, blk[i]))
         groups = _leader_groups(blk, order,
                                 (i, j) -> morphdist(reps[i], reps[j]) <= morphology_threshold)
 
         for fam in groups
             length(fam) <= 1 && continue
-            chosen = token(voc, pick(voc, fam))
+            chosen = gettoken(voc, pick(voc, fam))
             for tid in fam
-                tok = token(voc, tid)
+                tok = gettoken(voc, tid)
                 tok == chosen && continue
                 want === nothing || tok in want || continue
                 out[tok] = chosen

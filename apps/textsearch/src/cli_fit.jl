@@ -55,7 +55,7 @@ function _load_external_embeddings(path::AbstractString, voc)
     X = zeros(Float32, dim, m)
     oov = 0
     for tid in 1:m
-        key = Symbol(token(voc, tid))
+        key = Symbol(gettoken(voc, tid))
         if haskey(mapping, key)
             X[:, tid] .= Float32.(mapping[key])
         else
@@ -253,7 +253,7 @@ function _fit_one_batch(docs::Vector{String}, cfg, batch_dir::AbstractString)
         # stopword filter) is not decided here: a TextProfile materializes its own config, so
         # this asks a profile for the config rather than assembling one.
         probe = TextProfile(model; stopwords, lemmas, applied)
-        voc = _build_vocabulary(textconfig(probe), docs, min_ndocs; label="lemmatized ")
+        voc = _build_vocabulary(gettextconfig(probe), docs, min_ndocs; label="lemmatized ")
         model = VectorModel(IdfWeighting(), TfWeighting(), voc)
         # the network's entries name unlemmatized forms, which are no longer vocabulary
         # tokens; left alone, every inflected entry would be silently dropped at query time
@@ -267,7 +267,7 @@ function _fit_one_batch(docs::Vector{String}, cfg, batch_dir::AbstractString)
                           synonyms=synmap, synonym_distances=syndists, applied,
                           lineage=[LineageStep(:fit; encoder=String(kind), outdim, scaling=String(scaling),
                                                      source_path=external_path,
-                                                     trainsize=trainsize(model.voc))])
+                                                     trainsize=gettrainsize(model.voc))])
     save_profile(batch_dir, profile)
 
     vocsize(voc), model

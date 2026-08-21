@@ -261,6 +261,13 @@ what it saves, because there is only one copy.
   conversion path: carrying two layouts is what let the copies drift. Refit or refit-from-fit
   instead.
 
+- **Field accessors are now `get<field>`**: `gettoken`, `getoccs`, `getndocs`, `gettrainsize`,
+  `getnumtokens`, `getweight`, `gettextconfig`, `getpolicy`. The bare names were shadowable --
+  a local variable or keyword argument called `trainsize` or `textconfig` silently hid the
+  function, and the failure surfaced far away as `objects of type X are not callable`. That
+  happened twice in one sitting, so it is designed out rather than remembered. **The old names
+  still work**, with a deprecation warning naming the replacement.
+
 **Removed:**
 
 - **Snowball stemming and the package extension**, along with `Languages`' curated stopword

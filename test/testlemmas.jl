@@ -18,7 +18,7 @@ using Test, TextSearch, SimilaritySearch
     )
     X = Matrix{Float32}(undef, 2, m)
     for tid in 1:m
-        X[:, tid] = coords[token(voc, tid)]
+        X[:, tid] = coords[gettoken(voc, tid)]
     end
     wordvecs = MatrixDatabase(X)
 
@@ -64,10 +64,10 @@ using Test, TextSearch, SimilaritySearch
         voc2 = Vocabulary(textconfig, corpus2)
         X2 = Matrix{Float32}(undef, 2, vocsize(voc2))
         for tid in 1:vocsize(voc2)
-            X2[:, tid] = coords[token(voc2, tid)]
+            X2[:, tid] = coords[gettoken(voc2, tid)]
         end
         lemmas = lemma_clusters(voc2, MatrixDatabase(X2); num_clusters=1, selector=:most_frequent, dist=Dist.L2(), morphology=:none, order=:semantic_first)
-        @test lemmas["cat"] == "cats"  # occs("cats")=3 > occs("cat")=1
+        @test lemmas["cat"] == "cats"  # getoccs("cats")=3 > getoccs("cat")=1
     end
 
     @testset "shortest_then_most_frequent breaks length ties by occs" begin
@@ -76,10 +76,10 @@ using Test, TextSearch, SimilaritySearch
         coords3 = Dict("ax" => Float32[0.0, 0.0], "by" => Float32[0.01, 0.0])
         X3 = Matrix{Float32}(undef, 2, vocsize(voc3))
         for tid in 1:vocsize(voc3)
-            X3[:, tid] = coords3[token(voc3, tid)]
+            X3[:, tid] = coords3[gettoken(voc3, tid)]
         end
         lemmas = lemma_clusters(voc3, MatrixDatabase(X3); num_clusters=1, selector=:shortest_then_most_frequent, dist=Dist.L2(), morphology=:none, order=:semantic_first)
-        @test lemmas["by"] == "ax"  # same length, occs("ax")=3 > occs("by")=1
+        @test lemmas["by"] == "ax"  # same length, getoccs("ax")=3 > getoccs("by")=1
     end
 
     @testset "order=:morphology_first groups families the semantic partition splits apart" begin
@@ -90,7 +90,7 @@ using Test, TextSearch, SimilaritySearch
         voc6 = Vocabulary(textconfig, words)
         X6 = Matrix{Float32}(undef, 2, vocsize(voc6))
         for tid in 1:vocsize(voc6)
-            t = token(voc6, tid)
+            t = gettoken(voc6, tid)
             # spread members of the same family far apart in embedding space
             X6[:, tid] = startswith(t, "cant") ? Float32[10.0 * length(t), 0.0] :
                                                   Float32[0.0, 10.0 * length(t)]
@@ -157,7 +157,7 @@ using Test, TextSearch, SimilaritySearch
             # Dist.Seqs.Levenshtein does on a String) throws StringIndexError on them, so
             # this also guards the Char-vector conversion in _morphology_metric.
             voc5 = Vocabulary(textconfig, ["mañana", "mañanas", "»", "—"])
-            @test "»" in [token(voc5, i) for i in eachindex(voc5)]
+            @test "»" in [gettoken(voc5, i) for i in eachindex(voc5)]
             X5 = zeros(Float32, 2, vocsize(voc5))
             L5 = lemma_clusters(voc5, MatrixDatabase(X5); num_clusters=1, order=:semantic_first,
                                  morphology=:levenshtein, morphology_threshold=0.3,

@@ -99,7 +99,7 @@ julia> BM25Scorer(voc).trainsize
 3
 ```
 """
-BM25Scorer(voc::Vocabulary; k1=1.2f0, b=0.75f0, δ=1f0) = BM25Scorer(trainsize(voc), avgdoclen(voc); k1, b, δ)
+BM25Scorer(voc::Vocabulary; k1=1.2f0, b=0.75f0, δ=1f0) = BM25Scorer(gettrainsize(voc), avgdoclen(voc); k1, b, δ)
 
 """
     bm25doclen(doc::SparseVectorLike)
@@ -152,7 +152,7 @@ function bm25score(bm25::BM25Scorer, voc::Vocabulary, query::SparseVectorLike, d
     @inbounds while i <= nq && j <= nd
         a, b = qi[i], di[j]
         if a == b
-            s += tokenscore(bm25, ndocs(voc, a), doclen, dv[j])
+            s += tokenscore(bm25, getndocs(voc, a), doclen, dv[j])
             i += 1
             j += 1
         elseif a < b

@@ -117,9 +117,9 @@ end
 function _pick_canonical(tokens, voc::Vocabulary)
     # most frequent wins; ties go to the shorter, then lexicographically smaller token
     best = first(tokens)
-    bestkey = (-occs(voc, token2id(voc, best)), length(best), best)
+    bestkey = (-getoccs(voc, token2id(voc, best)), length(best), best)
     for t in tokens
-        key = (-occs(voc, token2id(voc, t)), length(t), t)
+        key = (-getoccs(voc, token2id(voc, t)), length(t), t)
         key < bestkey && ((best, bestkey) = (t, key))
     end
     best
@@ -221,10 +221,10 @@ function merge_profiles(profiles; doc_freq_threshold::Real=0.5, synonyms_k::Inte
     length(profiles) == 1 && @warn "merge_profiles: only one profile given; nothing to merge"
 
     vocs = [p.model.voc for p in profiles]
-    pol = policy(first(profiles))
+    pol = getpolicy(first(profiles))
 
     for (i, p) in enumerate(profiles)
-        q = policy(p)
+        q = getpolicy(p)
         _same_normalization(pol.normalization, q.normalization) ||
             error("profile $i has different normalization settings; profiles must share a policy to be merged")
         _same_tokenization(pol.tokenization, q.tokenization) ||
@@ -268,7 +268,7 @@ function merge_profiles(profiles; doc_freq_threshold::Real=0.5, synonyms_k::Inte
     )
 
     lineage = LineageStep[LineageStep(:merge; n_sources=length(profiles),
-                                             trainsize=trainsize(voc))]
+                                             trainsize=gettrainsize(voc))]
 
     TextProfile(model, stopwords, lemmas, fused.synonyms,
                 (isempty(fused.distances) ? nothing : fused.distances),

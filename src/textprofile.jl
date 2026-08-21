@@ -1,6 +1,6 @@
 # This file is a part of TextSearch.jl
 
-export TextProfile, AppliedArtifacts, LineageStep, textconfig, policy, with_applied, isbase, istuned,
+export TextProfile, AppliedArtifacts, LineageStep, gettextconfig, getpolicy, with_applied, isbase, istuned,
        lineage_summary
 
 # ── the policy / artifact cut ────────────────────────────────────────────────
@@ -132,19 +132,19 @@ function TextProfile(model::VectorModel;
 end
 
 """
-    policy(p::TextProfile) -> TextConfig
-    policy(tc::TextConfig) -> TextConfig
+    getpolicy(p::TextProfile) -> TextConfig
+    getpolicy(tc::TextConfig) -> TextConfig
 
 The corpus-independent half of a text configuration: normalization and tokenization, with no
 transformation. This is what two profiles must share exactly to be merged, and what a user can
 write by hand without any data.
 """
-policy(p::TextProfile) = _policy(p.model.voc.textconfig)
-policy(tc::TextConfig) = _policy(tc)
+getpolicy(p::TextProfile) = _policy(p.model.voc.textconfig)
+getpolicy(tc::TextConfig) = _policy(tc)
 _policy(tc::TextConfig) = TextConfig(tc; transformation=IdentityTokenTransformation())
 
 """
-    textconfig(p::TextProfile) -> TextConfig
+    gettextconfig(p::TextProfile) -> TextConfig
 
 The `TextConfig` this profile tokenizes with: its policy plus the artifacts it applies.
 
@@ -154,7 +154,7 @@ survives it and is only then rewritten into one (`"las"` → `"la"`), smuggling 
 back into the vocabulary. Having exactly one function that knows this is most of the reason
 the artifacts moved out of `TextConfig`.
 """
-textconfig(p::TextProfile) = p.model.voc.textconfig
+gettextconfig(p::TextProfile) = p.model.voc.textconfig
 
 function _materialize(pol::TextConfig, stopwords, lemmas, applied::AppliedArtifacts)
     tt = AbstractTokenTransformation[]

@@ -70,7 +70,7 @@ end
 
         # trainsize is sample-sized plus the prior's weight in documents, NOT base-sized:
         # this is what makes a refitted profile lighter than the generic one
-        @test trainsize(voc) == 2 * length(sampledocs)
+        @test gettrainsize(voc) == 2 * length(sampledocs)
         # the result is base-survivors plus the sample, so it is smaller than their union:
         # some of the base was pruned rather than carried
         svoc = Vocabulary(refit_textconfig(base), sampledocs; verbose=false)
@@ -78,11 +78,11 @@ end
 
         # every count stays within its corpus: this is the guard against a negative idf and
         # a negative BM25 numerator, both of which a folded/blended ndocs could produce
-        @test all(id -> ndocs(voc, id) <= trainsize(voc), eachindex(voc))
+        @test all(id -> getndocs(voc, id) <= gettrainsize(voc), eachindex(voc))
         @test all(w -> w >= 0, r.model.weight)
 
         # numtokens describes what actually shipped
-        @test numtokens(voc) == sum(voc.occs)
+        @test getnumtokens(voc) == sum(voc.occs)
         @test avgdoclen(voc) > 0
 
         # The result must describe a POSSIBLE corpus: a token present in n documents occurs
@@ -90,8 +90,8 @@ end
         # total tokens while scaling ndocs per document made the two round against different
         # denominators, so carried tokens landed with ndocs >= 1 and occs == 0 (and a
         # numtokens below the vocabulary size).
-        @test all(id -> occs(voc, id) >= ndocs(voc, id), eachindex(voc))
-        @test numtokens(voc) >= vocsize(voc)
+        @test all(id -> getoccs(voc, id) >= getndocs(voc, id), eachindex(voc))
+        @test getnumtokens(voc) >= vocsize(voc)
     end
 
     @testset "the verbose report runs" begin
@@ -120,8 +120,8 @@ end
 
         for tok in ("wikipedia", "gato")
             @test token2id(voc, tok) != 0
-            rate_base = ndocs(bvoc, token2id(bvoc, tok)) / trainsize(bvoc)
-            rate_refit = ndocs(voc, token2id(voc, tok)) / trainsize(voc)
+            rate_base = getndocs(bvoc, token2id(bvoc, tok)) / gettrainsize(bvoc)
+            rate_refit = getndocs(voc, token2id(voc, tok)) / gettrainsize(voc)
             @test rate_refit < rate_base    # importance reduced, presence kept
         end
     end
@@ -138,22 +138,22 @@ end
         big = refit_profile(base, sampledocs; kappa=10_000, verbose=false)
 
         # with a huge prior the blended rates approach the base's; with a tiny one they do not
-        rate(v, t) = ndocs(v, token2id(v, t)) / trainsize(v)
+        rate(v, t) = getndocs(v, token2id(v, t)) / gettrainsize(v)
         base_rate = rate(bvoc, "wikipedia")
         @test abs(rate(big.model.voc, "wikipedia") - base_rate) <
               abs(rate(small.model.voc, "wikipedia") - base_rate)
 
         # a tiny prior cannot keep base-only tokens: they round to zero and fall out
         @test vocsize(small.model.voc) < vocsize(big.model.voc)
-        @test trainsize(small.model.voc) < trainsize(big.model.voc)
+        @test gettrainsize(small.model.voc) < gettrainsize(big.model.voc)
         @test last(big.lineage).params["kappa"] == 10_000.0
     end
 
     # Vocabulary construction is threaded and merges per-thread partials, so token ORDER is
     # not part of its contract -- two identical corpora can yield the same counts in a
     # different order. Compare vocabularies by content.
-    counts(v) = Dict(token(v, id) => (occs(v, id), ndocs(v, id)) for id in eachindex(v))
-    weights(m) = Dict(token(m.voc, id) => m.weight[id] for id in eachindex(m.voc))
+    counts(v) = Dict(gettoken(v, id) => (getoccs(v, id), getndocs(v, id)) for id in eachindex(v))
+    weights(m) = Dict(gettoken(m.voc, id) => m.weight[id] for id in eachindex(m.voc))
 
     @testset "layer 3 (caller-built Vocabulary) == layer 4 (corpus)" begin
         # the seam that makes a refit usable from any program: build the sample vocabulary
@@ -170,8 +170,8 @@ end
             # this is the streaming / grow-over-time path
             v1 = Vocabulary(rtc, sampledocs[1:2]; verbose=false)
             v2 = Vocabulary(rtc, sampledocs[3:end]; verbose=false)
-            acc = Vocabulary(rtc, Int64(trainsize(v1) + trainsize(v2)),
-                             Int64(numtokens(v1) + numtokens(v2)))
+            acc = Vocabulary(rtc, Int64(gettrainsize(v1) + gettrainsize(v2)),
+                             Int64(getnumtokens(v1) + getnumtokens(v2)))
             update_voc!(acc, v1)
             update_voc!(acc, v2)
 
@@ -242,17 +242,17 @@ end
         # overestimate is real and the cap has to catch it
         docs = ["casa casas", "casa", "casas", "otro"]
         voc = Vocabulary(tc, docs; verbose=false)
-        occs_before = occs(voc, token2id(voc, "casa")) + occs(voc, token2id(voc, "casas"))
+        occs_before = getoccs(voc, token2id(voc, "casa")) + getoccs(voc, token2id(voc, "casas"))
 
         f = fold_lemmas(voc, Dict("casas" => "casa"))
         @test f.folded == 1
         @test token2id(f.voc, "casas") == 0
         # occurrences are additive, so this is exact
-        @test occs(f.voc, token2id(f.voc, "casa")) == occs_before
+        @test getoccs(f.voc, token2id(f.voc, "casa")) == occs_before
         # documents are not: 2 + 2 = 4 would exceed the 4-document corpus only if all four
         # matched, so assert the invariant that matters rather than a magic number
-        @test all(id -> ndocs(f.voc, id) <= trainsize(f.voc), eachindex(f.voc))
-        @test numtokens(f.voc) == numtokens(voc)
+        @test all(id -> getndocs(f.voc, id) <= gettrainsize(f.voc), eachindex(f.voc))
+        @test getnumtokens(f.voc) == getnumtokens(voc)
 
         @testset "a lemma missing from the vocabulary drops rather than resurrecting" begin
             # "casa" is deliberately not a token here, so folding onto it must not create it
@@ -268,7 +268,7 @@ end
             v3 = Vocabulary(tc, ["casa casas", "casa casas", "casa casas"]; verbose=false)
             f3 = fold_lemmas(v3, Dict("casas" => "casa"))
             @test f3.capped >= 1
-            @test ndocs(f3.voc, token2id(f3.voc, "casa")) == trainsize(v3)
+            @test getndocs(f3.voc, token2id(f3.voc, "casa")) == gettrainsize(v3)
         end
     end
 
@@ -300,8 +300,8 @@ end
             @test token2id(voc, "audifonos") == 0
             @test token2id(voc, "audifono") != 0
             # and the family's counts are now together
-            @test ndocs(voc, token2id(voc, "audifono")) >=
-                  ndocs(refit_profile(ebase, esample; verbose=false).model.voc,
+            @test getndocs(voc, token2id(voc, "audifono")) >=
+                  getndocs(refit_profile(ebase, esample; verbose=false).model.voc,
                         token2id(refit_profile(ebase, esample; verbose=false).model.voc, "audifono"))
             # the base's own map is carried through untouched
             @test r.lemmas["gatos"] == "gato"
@@ -359,7 +359,7 @@ end
 
         # the base fixture is deliberately token-rich, so the pinned corpus has FEWER
         # occurrences than the vocabulary has tokens -- the case a floor would have masked
-        @test numtokens(pinned.model.voc) < vocsize(pinned.model.voc)
+        @test getnumtokens(pinned.model.voc) < vocsize(pinned.model.voc)
         @test avgdoclen(blended.model.voc) > avgdoclen(pinned.model.voc)
         @test isapprox(avgdoclen(pinned.model.voc), avgdoclen(svoc); rtol=0.05)
 

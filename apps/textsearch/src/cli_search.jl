@@ -153,7 +153,7 @@ function cmd_search(args::Vector{String})
     # surgery on a pipeline: flipping it re-materializes the TextConfig from the artifacts the
     # profile still carries. A profile that never applied them is unaffected.
     p = o["no-lemmas"] ? with_applied(base; lemmas=false) : base
-    tc = textconfig(p)
+    tc = gettextconfig(p)
     lemmas_on = p.applied.lemmas
 
     qtokens, rep = _query_tokens(p, o["query"], tc, !o["no-synonyms"], o["synonyms-k"])
@@ -163,12 +163,12 @@ function cmd_search(args::Vector{String})
     # what the pipeline actually did with the query -- on stderr, so stdout stays pure JSONL
     basestr = join(sort(collect(rep.base)), " ")
     expstr = join(sort(collect(rep.expanded)), " ")
-    println(stderr, "query: $(length(rep.raw)) token(s) -> $basestr")
+    println(stderr, "query: $(length(rep.raw)) gettoken(s) -> $basestr")
     isempty(rep.expanded) ||
         println(stderr, "  + $(length(rep.expanded)) synonym(s) -> $expstr")
     # report what the profile actually carries, not what was requested: --no-lemmas on a
     # profile that never applied them changes nothing, and a probe command should say so
-    println(stderr, "  matching with threshold=$(o["threshold"]) over $(length(qtokens)) token(s), " *
+    println(stderr, "  matching with threshold=$(o["threshold"]) over $(length(qtokens)) gettoken(s), " *
                     "lemmas=$(lemmas_on ? "on" : "off") " *
                     "(profile carries $(length(base.lemmas)), " *
                     "$(base.applied.lemmas ? "applied" : "not applied")), " *

@@ -58,7 +58,7 @@ function cmd_merge(args::Vector{String})
     println("merging $(length(paths)) profiles:")
     profiles = map(paths) do path
         p = load_profile(path)
-        println("  $path  (trainsize=$(trainsize(p.model.voc)), vocsize=$(vocsize(p.model.voc)))")
+        println("  $path  (trainsize=$(gettrainsize(p.model.voc)), vocsize=$(vocsize(p.model.voc)))")
         flush(stdout)
         p
     end
@@ -79,7 +79,7 @@ function cmd_merge(args::Vector{String})
 
     voc = merged.model.voc
     println("merged -> $out")
-    println("  trainsize=$(trainsize(voc))  vocsize=$(vocsize(voc))  numtokens=$(numtokens(voc))")
+    println("  trainsize=$(gettrainsize(voc))  vocsize=$(vocsize(voc))  numtokens=$(getnumtokens(voc))")
     println("  synonyms=$(length(merged.synonyms)) tokens  lemmas=$(length(merged.lemmas)) remapped  " *
             "stopwords=$(length(merged.stopwords))")
     println("  lineage: ", lineage_summary(merged))

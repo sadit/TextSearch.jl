@@ -1,6 +1,6 @@
 # This file is a part of TextSearch.jl
 
-export Vocabulary, occs, ndocs, token, vocsize, trainsize, numtokens, avgdoclen, filter_tokens, tokenize_and_append!, merge_voc, update_voc!, vocabulary_from_thesaurus, token2id, encode, decode, table
+export Vocabulary, getoccs, getndocs, gettoken, vocsize, gettrainsize, getnumtokens, avgdoclen, filter_tokens, tokenize_and_append!, merge_voc, update_voc!, vocabulary_from_thesaurus, token2id, encode, decode, table
 
 """
     Vocabulary
@@ -45,8 +45,8 @@ function Base.show(io::IO, voc::Vocabulary; prefix="", indent="  ")
     println(io, prefix, "Vocabulary:")
     prefix = indent * prefix
     println(io, prefix, "vocsize: ", vocsize(voc))
-    println(io, prefix, "trainsize: ", trainsize(voc))
-    println(io, prefix, "numtokens: ", numtokens(voc))
+    println(io, prefix, "trainsize: ", gettrainsize(voc))
+    println(io, prefix, "numtokens: ", getnumtokens(voc))
     println(io, prefix, "avgdoclen: ", avgdoclen(voc))
     show(io, voc.textconfig; prefix, indent)
 end
@@ -220,7 +220,7 @@ in the generator case, documents are consumed and tokenized in batches of `buffs
 ```julia
 julia> voc = Vocabulary(TextConfig(), ["hello world", "hello there"]; verbose=false);
 
-julia> vocsize(voc), trainsize(voc)
+julia> vocsize(voc), gettrainsize(voc)
 (3, 2)
 ```
 """
@@ -344,29 +344,29 @@ Number of unique tokens in `voc`.
 vocsize(voc::Vocabulary) = length(voc)
 
 """
-    trainsize(voc::Vocabulary)
+    gettrainsize(voc::Vocabulary)
 
 Number of documents used to build `voc`.
 """
-trainsize(voc::Vocabulary) = voc.trainsize[]
+gettrainsize(voc::Vocabulary) = voc.trainsize[]
 
 """
-    numtokens(voc::Vocabulary)
+    getnumtokens(voc::Vocabulary)
 
 Total number of (non-unique) tokens seen while building `voc`.
 """
-numtokens(voc::Vocabulary) = voc.numtokens[]
+getnumtokens(voc::Vocabulary) = voc.numtokens[]
 
 """
     avgdoclen(voc::Vocabulary)
 
-Average document length in tokens (`numtokens(voc) / trainsize(voc)`), used by [`BM25Scorer`](@ref).
+Average document length in tokens (`getnumtokens(voc) / gettrainsize(voc)`), used by [`BM25Scorer`](@ref).
 """
-avgdoclen(voc::Vocabulary) = numtokens(voc) / trainsize(voc)
+avgdoclen(voc::Vocabulary) = getnumtokens(voc) / gettrainsize(voc)
 
 """
-    ndocs(voc::Vocabulary, tokenID::Integer)
-    ndocs(voc::Vocabulary)
+    getndocs(voc::Vocabulary, tokenID::Integer)
+    getndocs(voc::Vocabulary)
 
 Number of documents containing the token `tokenID` (`0` is out-of-vocabulary and yields
 `0` instead of erroring), or the whole per-token vector when called without a `tokenID`.
@@ -376,15 +376,15 @@ Number of documents containing the token `tokenID` (`0` is out-of-vocabulary and
 ```julia
 julia> voc = Vocabulary(TextConfig(), ["hello world", "hello there"]; verbose=false);
 
-julia> ndocs(voc, token2id(voc, "hello"))
+julia> getndocs(voc, token2id(voc, "hello"))
 2
 ```
 """
-ndocs(voc::Vocabulary, tokenID::Integer) = tokenID == 0 ? zero(eltype(voc.ndocs)) : voc.ndocs[tokenID]
+getndocs(voc::Vocabulary, tokenID::Integer) = tokenID == 0 ? zero(eltype(voc.ndocs)) : voc.ndocs[tokenID]
 
 """
-    occs(voc::Vocabulary, tokenID::Integer)
-    occs(voc::Vocabulary)
+    getoccs(voc::Vocabulary, tokenID::Integer)
+    getoccs(voc::Vocabulary)
 
 Total occurrences of the token `tokenID` across the corpus (`0` is out-of-vocabulary and
 yields `0` instead of erroring), or the whole per-token vector when called without a `tokenID`.
@@ -394,15 +394,15 @@ yields `0` instead of erroring), or the whole per-token vector when called witho
 ```julia
 julia> voc = Vocabulary(TextConfig(), ["hello world", "hello there"]; verbose=false);
 
-julia> occs(voc, token2id(voc, "hello"))
+julia> getoccs(voc, token2id(voc, "hello"))
 2
 ```
 """
-occs(voc::Vocabulary, tokenID::Integer) = tokenID == 0 ? zero(eltype(voc.occs)) : voc.occs[tokenID]
+getoccs(voc::Vocabulary, tokenID::Integer) = tokenID == 0 ? zero(eltype(voc.occs)) : voc.occs[tokenID]
 
 """
-    token(voc::Vocabulary, tokenID::Integer)
-    token(voc::Vocabulary)
+    gettoken(voc::Vocabulary, tokenID::Integer)
+    gettoken(voc::Vocabulary)
 
 The token string for `tokenID` (`0` is out-of-vocabulary and yields `""` instead of
 erroring), or the whole token vector when called without a `tokenID`.
@@ -412,15 +412,15 @@ erroring), or the whole token vector when called without a `tokenID`.
 ```julia
 julia> voc = Vocabulary(TextConfig(), ["hello world", "hello there"]; verbose=false);
 
-julia> token(voc, token2id(voc, "hello"))
+julia> gettoken(voc, token2id(voc, "hello"))
 "hello"
 ```
 """
-token(voc::Vocabulary, tokenID::Integer) = tokenID == 0 ? "" : voc.token[tokenID]
+gettoken(voc::Vocabulary, tokenID::Integer) = tokenID == 0 ? "" : voc.token[tokenID]
 
-@inline occs(voc::Vocabulary) = voc.occs
-@inline ndocs(voc::Vocabulary) = voc.ndocs
-@inline token(voc::Vocabulary) = voc.token
+@inline getoccs(voc::Vocabulary) = voc.occs
+@inline getndocs(voc::Vocabulary) = voc.ndocs
+@inline gettoken(voc::Vocabulary) = voc.token
 
 """
     push_token!(voc::Vocabulary, token, occs::Integer, ndocs::Integer)

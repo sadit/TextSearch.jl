@@ -31,22 +31,22 @@ using Test, TextSearch, SimilaritySearch
         wholemodel = VectorModel(IdfWeighting(), TfWeighting(), whole)
         mvoc = merged.model.voc
 
-        @test trainsize(mvoc) == trainsize(whole) == 6
-        @test numtokens(mvoc) == numtokens(whole)
+        @test gettrainsize(mvoc) == gettrainsize(whole) == 6
+        @test getnumtokens(mvoc) == getnumtokens(whole)
         @test vocsize(mvoc) == vocsize(whole)
 
         # token order need not match (merged order follows insertion), so compare by token
         for id in eachindex(whole)
-            t = token(whole, id)
+            t = gettoken(whole, id)
             mid = token2id(mvoc, t)
             @test mid != 0
-            @test occs(mvoc, mid) == occs(whole, id)
-            @test ndocs(mvoc, mid) == ndocs(whole, id)
+            @test getoccs(mvoc, mid) == getoccs(whole, id)
+            @test getndocs(mvoc, mid) == getndocs(whole, id)
         end
 
         # weights are RECOMPUTED from the merged counters, so they equal a single global fit
         for id in eachindex(whole)
-            mid = token2id(mvoc, token(whole, id))
+            mid = token2id(mvoc, gettoken(whole, id))
             @test merged.model.weight[mid] ≈ wholemodel.weight[id]
         end
         @test merged.model.maxoccs == wholemodel.maxoccs
@@ -151,12 +151,12 @@ using Test, TextSearch, SimilaritySearch
                                  applied=applied_lem)
         merged = merge_profiles([a, b])
 
-        @test trainsize(merged.model.voc) == 6
+        @test gettrainsize(merged.model.voc) == 6
         @test merged.stopwords ⊇ Set(["la", "una"])         # sets union
         @test merged.lemmas["roja"] == "casa"                # maps vote
         @test merged.applied.lemmas                          # applied if any input applied
         # and the merged profile applies exactly the map it carries
-        @test has_lemma_transformation(textconfig(merged).transformation)
+        @test has_lemma_transformation(gettextconfig(merged).transformation)
     end
 
     @testset "a disagreeing lemma map votes rather than erroring" begin
@@ -193,6 +193,6 @@ using Test, TextSearch, SimilaritySearch
         tc2 = TextConfig(tokenization=TokenizationConfig(nlist=[1]))
         @test tc.tokenization != tc2.tokenization          # documents the trap
         merged = merge_profiles([roundtrip(docs[1:3]), roundtrip(docs[4:6]; textconfig=tc2)])
-        @test trainsize(merged.model.voc) == 6
+        @test gettrainsize(merged.model.voc) == 6
     end
 end

@@ -78,7 +78,7 @@ end
         @info "====== weight:"
         @info model.weight
         @info model_.weight
-        @test trainsize(model) == trainsize(model_)
+        @test gettrainsize(model) == gettrainsize(model_)
         @test vocsize(model) > vocsize(model_)
         @info "====== token:", model_.voc.token
         @info sentiment_corpus[3], sentiment_corpus[4]

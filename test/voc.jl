@@ -6,7 +6,7 @@
     @test Set(voc1.token) == Set(voc2.token)
     @test sum(voc1.ndocs) == sum(voc2.ndocs)
     @test sum(voc1.occs) == sum(voc2.occs)
-    @test trainsize(voc1) == trainsize(voc2)
+    @test gettrainsize(voc1) == gettrainsize(voc2)
 end
 
 @testset "Vocabulary and BOW" begin

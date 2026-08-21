@@ -49,7 +49,7 @@ using SimilaritySearch.ScalarQuant: SQu8, SQgu8
 
         # 6. Accessors and show
         @test vocsize(ri1) == vocsize(vmodel)
-        @test trainsize(ri1) == trainsize(vmodel)
+        @test gettrainsize(ri1) == gettrainsize(vmodel)
         io = IOBuffer()
         show(io, ri1)
         str = String(take!(io))

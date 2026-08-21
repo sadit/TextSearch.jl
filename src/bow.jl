@@ -74,7 +74,7 @@ used to `sizehint!` it up front and avoid rehashing while it's filled. Uses `voc
 [`avgdoclen`](@ref) (average tokens per document across its training corpus) as the
 estimate, falling back to a small default before `voc` has seen any training documents.
 """
-_bow_sizehint(voc::Vocabulary) = trainsize(voc) > 0 ? ceil(Int, avgdoclen(voc)) : 16
+_bow_sizehint(voc::Vocabulary) = gettrainsize(voc) > 0 ? ceil(Int, avgdoclen(voc)) : 16
 
 """
     bagofwords(voc::Vocabulary, messages; isnormalized::Bool=false)

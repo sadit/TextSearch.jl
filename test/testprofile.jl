@@ -94,7 +94,7 @@ using Test, TextSearch, SimilaritySearch, JSON3
                 @test q.applied == AppliedArtifacts(stopwords=sw, lemmas=lem, synonyms=syn)
                 # and the config it tokenizes with follows the marker, not the mere presence
                 # of the artifact
-                @test has_lemma_transformation(textconfig(q).transformation) == lem
+                @test has_lemma_transformation(gettextconfig(q).transformation) == lem
             finally
                 rm(dir; force=true, recursive=true)
             end

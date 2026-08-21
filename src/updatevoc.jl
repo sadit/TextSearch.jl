@@ -112,7 +112,7 @@ function merge_voc(pred::Function, voc1::Vocabulary, voc2::Vocabulary, voclist..
     end
 
     sort!(L, by=vocsize, rev=true)
-    voc = Vocabulary(voc1.textconfig, sum(trainsize(v) for v in L), sum(numtokens(v) for v in L))
+    voc = Vocabulary(voc1.textconfig, sum(gettrainsize(v) for v in L), sum(getnumtokens(v) for v in L))
 
     for v in L
         update_voc!(pred, voc, v)
@@ -138,7 +138,7 @@ julia> vocsize(voc2)
 ```
 """
 function filter_tokens(pred::Function, voc::Vocabulary)
-    V = Vocabulary(voc.textconfig, trainsize(voc), numtokens(voc))
+    V = Vocabulary(voc.textconfig, gettrainsize(voc), getnumtokens(voc))
 
     for i in eachindex(voc)
         v = voc[i]

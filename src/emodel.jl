@@ -43,7 +43,7 @@ combine_weight(::NormalizedEntropy, model, tokenID, entropy, maxent)::Float32 = 
 # the term w.r.t the available evidency. The current form tries to equalize the
 # scales
 struct PenalizeFewSamples <: CombineWeighting end
-combine_weight(::PenalizeFewSamples, model, tokenID, entropy, maxent)::Float32 = (maxent - entropy) * log2(ndocs(model, tokenID))
+combine_weight(::PenalizeFewSamples, model, tokenID, entropy, maxent)::Float32 = (maxent - entropy) * log2(getndocs(model, tokenID))
 
 """
     SigmoidPenalizeFewSamples()
@@ -70,7 +70,7 @@ julia> vectorize(model, "me gusta")
 ```
 """
 struct SigmoidPenalizeFewSamples <: CombineWeighting end
-combine_weight(::SigmoidPenalizeFewSamples, model, tokenID, entropy, maxent)::Float32 = (1 - entropy/maxent) * (1-1/(1+log2(ndocs(model, tokenID))))
+combine_weight(::SigmoidPenalizeFewSamples, model, tokenID, entropy, maxent)::Float32 = (1 - entropy/maxent) * (1-1/(1+log2(getndocs(model, tokenID))))
 
 """
     EntropyWeighting()
@@ -209,7 +209,7 @@ function _compute_entropy(comb, model, D, weights, mindocs)
     maxent = log2(length(weights))
 
     @inbounds for tokenID in eachindex(model)
-        m = ndocs(model, tokenID)
+        m = getndocs(model, tokenID)
         if m < mindocs
             model.weight[tokenID] = 0.0
         else
@@ -220,4 +220,4 @@ function _compute_entropy(comb, model, D, weights, mindocs)
     end
 end
 
-@inline global_weighting(model::VectorModel{EntropyWeighting}, tokenID) = weight(model, tokenID)
+@inline global_weighting(model::VectorModel{EntropyWeighting}, tokenID) = getweight(model, tokenID)

@@ -117,7 +117,7 @@ that vocabulary into a weighting scheme — here, classic TF-IDF — and
 
 ```@example gutenberg
 voc = Vocabulary(TextConfig(), CASK_OF_AMONTILLADO; verbose=false)
-vocsize(voc), trainsize(voc)
+vocsize(voc), gettrainsize(voc)
 ```
 
 ```@example gutenberg
@@ -350,7 +350,7 @@ length(all_sentences), all_sentences[1]
 
 ```@example gutenberg
 sentence_voc = Vocabulary(TextConfig(), all_sentences; verbose=false)
-vocsize(sentence_voc), trainsize(sentence_voc)
+vocsize(sentence_voc), gettrainsize(sentence_voc)
 ```
 
 You can also use external sentence segmenters like `WordTokenizers.split_sentences` as a preprocessing step:

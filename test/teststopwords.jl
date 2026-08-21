@@ -23,7 +23,7 @@ using Test, TextSearch, SimilaritySearch
 
     @testset "sorted by decreasing document-frequency ratio" begin
         candidates = stopword_candidates(voc, 0.1)
-        ratios = [ndocs(voc, token2id(voc, t)) / trainsize(voc) for t in candidates]
+        ratios = [getndocs(voc, token2id(voc, t)) / gettrainsize(voc) for t in candidates]
         @test issorted(ratios; rev=true)
     end
 

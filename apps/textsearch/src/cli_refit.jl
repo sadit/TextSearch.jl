@@ -119,8 +119,8 @@ function _stream_sample_vocabulary(textconfig, format::Symbol, path::AbstractStr
     _each_batch(each_record(format, path, text_key), chunk) do _, docs
         v = Vocabulary(textconfig, docs; verbose=false)
         update_voc!(acc, v)
-        ndocs_total += trainsize(v)
-        ntokens_total += numtokens(v)
+        ndocs_total += gettrainsize(v)
+        ntokens_total += getnumtokens(v)
     end
 
     acc.trainsize[] = ndocs_total
@@ -159,7 +159,7 @@ function cmd_refit(args::Vector{String})
     extend_lemmas && !apply_lemmas &&
         error("--extend-lemmas needs lemmas applied; it cannot be combined with --no-lemmas")
 
-    println("base: vocsize=$(vocsize(base.model.voc)) trainsize=$(trainsize(base.model.voc)) " *
+    println("base: vocsize=$(vocsize(base.model.voc)) trainsize=$(gettrainsize(base.model.voc)) " *
             "lemmas=$(length(base.lemmas)) synonyms=$(length(base.synonyms))")
     flush(stdout)
 
@@ -169,7 +169,7 @@ function cmd_refit(args::Vector{String})
     textconfig = refit_textconfig(base; apply_lemmas, lemmas=lemmamap)
     sample_voc = _stream_sample_vocabulary(textconfig, Symbol(o["format"]), o["sample"],
                                            o["text-key"], o["chunk"])
-    trainsize(sample_voc) > 0 || error("the sample at '$(o["sample"])' yielded no documents")
+    gettrainsize(sample_voc) > 0 || error("the sample at '$(o["sample"])' yielded no documents")
 
     if extend_lemmas
         # The extension changes how the sample must be tokenized, so the sample is streamed
@@ -193,7 +193,7 @@ function cmd_refit(args::Vector{String})
     end
 
     # --base-weight is expressed relative to the sample, so it needs the sample's size first
-    bw != 0.0 && (kappa = trainsize(sample_voc) * bw / (1 - bw))
+    bw != 0.0 && (kappa = gettrainsize(sample_voc) * bw / (1 - bw))
 
     r = refit_profile(base, sample_voc;
                       kappa, apply_lemmas, lemmas=lemmamap,
@@ -216,8 +216,8 @@ function cmd_refit(args::Vector{String})
     end
 
     println("refit -> $out")
-    println("  vocsize=$(vocsize(r.model.voc))  trainsize=$(trainsize(r.model.voc))  " *
-            "numtokens=$(numtokens(r.model.voc))")
+    println("  vocsize=$(vocsize(r.model.voc))  trainsize=$(gettrainsize(r.model.voc))  " *
+            "numtokens=$(getnumtokens(r.model.voc))")
     println("  synonyms=$(length(r.synonyms)) tokens  " *
             "distances=$(syndists === nothing ? "dropped" : "$(length(syndists)) tokens")  " *
             "lemmas=$(length(r.lemmas)) remapped " *

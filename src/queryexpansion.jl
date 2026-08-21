@@ -28,7 +28,7 @@ depend on how many tokens the query had, not on the intended per-synonym weighti
 
 `synonyms` maps a token to its neighbor tokens **in rank order** (nearest first). For each of
 `vec`'s original nonzero `(tokenID, weight)` pairs (captured once, before any appending), looks up
-its string via `token(voc, tokenID)`; if it's a key of `synonyms`, appends `weight * weight_fn(...)`
+its string via `gettoken(voc, tokenID)`; if it's a key of `synonyms`, appends `weight * weight_fn(...)`
 at `token2id(voc, synonym)` for every neighbor (an OOV synonym -- `token2id` returning `0` -- is
 silently skipped, matching `bagofwords!`/`vectorize!`'s existing convention). The appended entries
 are then merged into `vec`'s existing nonzeros: the combined `(nzind, nzval)` arrays are heap-sorted
@@ -61,7 +61,7 @@ function expand_synonyms!(vec::SparseVector, voc::Vocabulary, synonyms;
     wf = weight_fn === nothing ? (bydist ? _dist_weight : _rank_weight) : weight_fn
 
     for i in 1:m0
-        tok = token(voc, nzind[i])
+        tok = gettoken(voc, nzind[i])
         haskey(synonyms, tok) || continue
         v = nzval[i]
         neighbors = synonyms[tok]
@@ -127,7 +127,7 @@ existing convention.
 """
 function expand_synonyms!(bow::AbstractDict{K,V}, voc::Vocabulary, synonyms) where {K<:Integer,V<:Real}
     for (tokenID, _) in collect(bow)
-        tok = token(voc, tokenID)
+        tok = gettoken(voc, tokenID)
         haskey(synonyms, tok) || continue
         for syn in synonyms[tok]
             sid = token2id(voc, syn)

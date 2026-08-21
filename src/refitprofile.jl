@@ -46,7 +46,7 @@ See also [`refit_profile`](@ref), [`fold_lemmas`](@ref).
 """
 function refit_textconfig(base::TextProfile; apply_lemmas::Bool=true, lemmas=nothing)
     p = lemmas === nothing ? base : _with_lemmas(base, lemmas)
-    textconfig(with_applied(p; lemmas=apply_lemmas))
+    gettextconfig(with_applied(p; lemmas=apply_lemmas))
 end
 
 # a profile with a different lemma map, for the extension path (Part: extend_lemmas)
@@ -84,8 +84,8 @@ and resurrecting it here would smuggle back a token the pipeline deliberately ex
 function fold_lemmas(voc::Vocabulary, lemmas)
     isempty(lemmas) && return (; voc, folded=0, capped=0, dropped=0)
 
-    N = trainsize(voc)
-    out = Vocabulary(voc.textconfig, Int64(N), Int64(numtokens(voc)))
+    N = gettrainsize(voc)
+    out = Vocabulary(voc.textconfig, Int64(N), Int64(getnumtokens(voc)))
     folded = 0
     dropped = 0
 
@@ -136,7 +136,7 @@ trainsize = N_s + κ
 numtokens = sum(occs)                    # recomputed from the survivors
 ```
 
-`kappa <= 0` defaults to `trainsize(voc_sample)`, which weights the two sides equally; halve
+`kappa <= 0` defaults to `gettrainsize(voc_sample)`, which weights the two sides equally; halve
 it for 1/3 base, double it for 2/3. Expressing the base's authority in documents rather than
 as a fraction is what makes the output sample-sized -- so a refitted profile is naturally
 lighter than the generic one it came from -- and makes the knob mean something concrete.
@@ -187,8 +187,8 @@ Lowering importance is arithmetic; dropping is the only part that needs a decisi
 function blend_vocabularies(voc_base::Vocabulary, voc_sample::Vocabulary;
                              kappa::Real=0, keep_rate::Real=1e-5, keep_floor::Integer=3,
                              avgdoclen=:blend)
-    N_s = trainsize(voc_sample)
-    N_b = trainsize(voc_base)
+    N_s = gettrainsize(voc_sample)
+    N_b = gettrainsize(voc_base)
     N_s > 0 || throw(ArgumentError("blend_vocabularies: the sample vocabulary has trainsize 0"))
 
     κ = kappa <= 0 ? Float64(N_s) : Float64(kappa)
@@ -263,7 +263,7 @@ function _blended_numtokens(avgdoclen, voc::Vocabulary, voc_sample::Vocabulary)
     # 9.16 on Wikipedia-es. What describes the corpus is `occs`, which is untouched; in
     # override mode `numtokens` is purely the number `avgdoclen` divides, i.e. a BM25
     # length-normalization parameter, and it is only useful if it is obeyed.
-    max(Int64(1), round(Int64, trainsize(voc) * target))
+    max(Int64(1), round(Int64, gettrainsize(voc) * target))
 end
 
 """
@@ -332,7 +332,7 @@ function refit_profile(base::TextProfile, sample_voc::Vocabulary;
         f = fold_lemmas(base_voc, lemmamap)
         base_voc = f.voc
         verbose && println(stderr,
-            "refit: folded $(f.folded) base token(s) into their lemmas " *
+            "refit: folded $(f.folded) base gettoken(s) into their lemmas " *
             "($(vocsize(base.model.voc)) -> $(vocsize(base_voc)) tokens; " *
             "$(f.dropped) dropped whose lemma was not in the base vocabulary; " *
             "ndocs capped at trainsize for $(f.capped))")
@@ -353,28 +353,28 @@ function refit_profile(base::TextProfile, sample_voc::Vocabulary;
     stopwords = Set{String}(stopword_candidates(voc, doc_freq_threshold))
     union!(stopwords, base.stopwords)
 
-    κ = kappa <= 0 ? Float64(trainsize(sample_voc)) : Float64(kappa)
+    κ = kappa <= 0 ? Float64(gettrainsize(sample_voc)) : Float64(kappa)
     applied = AppliedArtifacts(stopwords=base.applied.stopwords,
                                lemmas=(apply_lemmas && !isempty(kept_lemmas)),
                                synonyms=base.applied.synonyms)
     lineage = LineageStep[base.lineage...,
                           LineageStep(:refit; kappa=κ,
-                                              sample_trainsize=trainsize(sample_voc),
-                                              trainsize=trainsize(voc),
+                                              sample_trainsize=gettrainsize(sample_voc),
+                                              trainsize=gettrainsize(voc),
                                               lemmas_applied=applied.lemmas)]
 
     if verbose
-        fromsample = count(id -> token2id(sample_voc, token(voc, id)) != 0, eachindex(voc))
+        fromsample = count(id -> token2id(sample_voc, gettoken(voc, id)) != 0, eachindex(voc))
         println(stderr,
             "refit: vocsize $(vocsize(base.model.voc)) (base) + $(vocsize(sample_voc)) (sample) " *
-            "-> $(vocsize(voc)); $fromsample token(s) seen in the sample, " *
+            "-> $(vocsize(voc)); $fromsample gettoken(s) seen in the sample, " *
             "$(vocsize(voc) - fromsample) carried from the base alone")
         # TextSearch.avgdoclen, qualified deliberately: the `avgdoclen` KEYWORD shadows the
         # function of that name throughout this body, and calling it bare is a MethodError
         # ("objects of type Symbol are not callable") that only fires when verbose is on.
         println(stderr,
             "refit: kappa=$(round(κ; digits=1)) documents of prior against a " *
-            "$(trainsize(sample_voc))-document sample -> trainsize=$(trainsize(voc)), " *
+            "$(gettrainsize(sample_voc))-document sample -> trainsize=$(gettrainsize(voc)), " *
             "avgdoclen=$(round(TextSearch.avgdoclen(voc); digits=2)), " *
             "lemmas=$(applied.lemmas ? "applied" : "carried only")")
     end
@@ -404,7 +404,7 @@ function refit_profile(base::TextProfile, sample_docs; apply_lemmas::Bool=true, 
             sample_voc = Vocabulary(tc, sample_docs; verbose=false)
             verbose && println(stderr,
                 "refit: extended the lemma map with $(length(ext)) morphological entr" *
-                "$(length(ext) == 1 ? "y" : "ies") for token(s) the base had not seen")
+                "$(length(ext) == 1 ? "y" : "ies") for gettoken(s) the base had not seen")
         end
     end
 
@@ -425,8 +425,8 @@ own clustering decisions are never overruled.
 """
 function _extend_lemmas_from_sample(base::TextProfile, sample_voc::Vocabulary, lemmamap; kwargs...)
     bvoc = base.model.voc
-    new = String[token(sample_voc, id) for id in eachindex(sample_voc)
-                 if token2id(bvoc, token(sample_voc, id)) == 0]
+    new = String[gettoken(sample_voc, id) for id in eachindex(sample_voc)
+                 if token2id(bvoc, gettoken(sample_voc, id)) == 0]
     isempty(new) && return Dict{String,String}()
     extend_lemmas_morphological(merge_voc(bvoc, sample_voc), lemmamap; candidates=new, kwargs...)
 end
@@ -450,7 +450,7 @@ function _check_refit_textconfig(expected::TextConfig, got::TextConfig)
         error("the sample vocabulary was built with different tokenization settings than " *
               "the refit requires; build it with refit_textconfig(base; apply_lemmas)")
     # The transformation is compared by its ARTIFACTS, which is all it can hold now: a lemma
-    # map and a stopword set. Both come from one place -- `textconfig(profile)` -- so the only
+    # map and a stopword set. Both come from one place -- `gettextconfig(profile)` -- so the only
     # way to fail this is to have tokenized the sample under some other config entirely, which
     # is exactly the mistake worth catching loudly.
     _same_artifacts(expected.transformation, got.transformation) ||

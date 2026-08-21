@@ -1,9 +1,9 @@
 # This file is part of TextSearch.jl
 
-export TextModel, VectorModel, trainsize, vocsize,
+export TextModel, VectorModel, gettrainsize, vocsize,
     TfWeighting, IdfWeighting, TpWeighting,
     FreqWeighting, BinaryLocalWeighting, BinaryGlobalWeighting,
-    LocalWeighting, GlobalWeighting, weight, fit, vectorize, vectorize!, vectorize_corpus
+    LocalWeighting, GlobalWeighting, getweight, fit, vectorize, vectorize!, vectorize_corpus
 
 #####
 ##
@@ -170,19 +170,19 @@ function VectorModel(gw::GlobalWeighting, lw::LocalWeighting, voc::Vocabulary; w
     model
 end
 
-@inline trainsize(model::VectorModel) = trainsize(model.voc)
+@inline gettrainsize(model::VectorModel) = gettrainsize(model.voc)
 @inline vocsize(model::VectorModel) = vocsize(model.voc)
 
 @inline Base.length(model::VectorModel) = length(model.voc)
-@inline occs(model::VectorModel, tokenID::Integer) = occs(model.voc, tokenID)
-@inline ndocs(model::VectorModel, tokenID::Integer) = ndocs(model.voc, tokenID)
-@inline token(model::VectorModel, tokenID::Integer) = token(model.voc, tokenID)
+@inline getoccs(model::VectorModel, tokenID::Integer) = getoccs(model.voc, tokenID)
+@inline getndocs(model::VectorModel, tokenID::Integer) = getndocs(model.voc, tokenID)
+@inline gettoken(model::VectorModel, tokenID::Integer) = gettoken(model.voc, tokenID)
 @inline Base.eachindex(model::VectorModel) = eachindex(model.voc)
-@inline weight(model::VectorModel, tokenID::Integer) = tokenID == 0 ? zero(eltype(model.weight)) : model.weight[tokenID]
-@inline weight(model::VectorModel) = model.weight
-@inline occs(model::VectorModel) = occs(model.voc)
-@inline ndocs(model::VectorModel) = ndocs(model.voc)
-@inline token(model::VectorModel) = token(model.voc)
+@inline getweight(model::VectorModel, tokenID::Integer) = tokenID == 0 ? zero(eltype(model.weight)) : model.weight[tokenID]
+@inline getweight(model::VectorModel) = model.weight
+@inline getoccs(model::VectorModel) = getoccs(model.voc)
+@inline getndocs(model::VectorModel) = getndocs(model.voc)
+@inline gettoken(model::VectorModel) = gettoken(model.voc)
 
 """
     table(model::VectorModel, TableConstructor)
@@ -216,7 +216,7 @@ julia> table(model, DataFrame)
 ```
 """
 function table(model::VectorModel, TableConstructor)
-    TableConstructor(; token=token(model), ndocs=ndocs(model), occs=occs(model), weight=weight(model))
+    TableConstructor(; token=gettoken(model), ndocs=getndocs(model), occs=getoccs(model), weight=getweight(model))
 end
 
 Base.getindex(model::VectorModel, token::AbstractString) = model[token2id(model.voc, token)]
@@ -253,7 +253,7 @@ julia> vocsize(filter_tokens(t -> t.ndocs >= 2, model))
 """
 function filter_tokens(pred::Function, model::VectorModel)
     voc = model.voc
-    V = Vocabulary(voc.textconfig, trainsize(voc), numtokens(voc))
+    V = Vocabulary(voc.textconfig, gettrainsize(voc), getnumtokens(voc))
     W = Vector{Float32}(undef, 0)
     
     for i in eachindex(voc)
@@ -379,7 +379,7 @@ function vectorize!(buff::VectorizeBuffer, model::VectorModel, text; normalize=t
         end
         tokenID = ids[i]
         occs = j - i + 1
-        w = local_weighting(model.local_weighting, occs, maxoccs, numtokens) * weight(model, tokenID)
+        w = local_weighting(model.local_weighting, occs, maxoccs, numtokens) * getweight(model, tokenID)
         if w >= minweight
             k += 1
             nnzidx[k] = tokenID
@@ -470,5 +470,5 @@ end
 @inline local_weighting(::FreqWeighting, occs, maxoccs, numtokens) = occs
 @inline local_weighting(::TpWeighting, occs, maxoccs, numtokens) = occs / numtokens
 @inline local_weighting(::BinaryLocalWeighting, occs, maxoccs, numtokens) = 1.0
-@inline global_weighting(model::VectorModel{IdfWeighting}, tokenID) = @inbounds log2((0.5 + trainsize(model)) / (0.5 + ndocs(model, tokenID)))
+@inline global_weighting(model::VectorModel{IdfWeighting}, tokenID) = @inbounds log2((0.5 + gettrainsize(model)) / (0.5 + getndocs(model, tokenID)))
 @inline global_weighting(model::VectorModel{BinaryGlobalWeighting}, tokenID) = 1.0

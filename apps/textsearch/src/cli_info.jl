@@ -18,9 +18,9 @@ function cmd_info(args::Vector{String})
 
     println("nickname:  ", o["nickname"])
     println("path:      ", path)
-    println("trainsize: ", trainsize(voc))
+    println("trainsize: ", gettrainsize(voc))
     println("vocsize:   ", vocsize(voc))
-    println("numtokens: ", numtokens(voc))
+    println("numtokens: ", getnumtokens(voc))
     println("avgdoclen: ", avgdoclen(voc))
     println("kind:      ", istuned(p) ? "tuned" : "base")
     println("lineage:   ", lineage_summary(p))
@@ -35,5 +35,5 @@ function cmd_info(args::Vector{String})
             p.synonym_distances === nothing ? ", ranking only" :
             ", with $(length(p.synonym_distances)) distance lists")
     println()
-    show(stdout, textconfig(p))
+    show(stdout, gettextconfig(p))
 end

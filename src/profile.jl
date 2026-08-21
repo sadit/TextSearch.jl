@@ -204,7 +204,7 @@ function save_profile(dir::AbstractString, p::TextProfile)
 
     _write_json(joinpath(dir, _PROFILE_MANIFEST_NAME), Dict(
         "format_version" => _PROFILE_FORMAT_VERSION,
-        "policy" => _encode_policy(policy(p)),
+        "policy" => _encode_policy(getpolicy(p)),
         "artifacts" => artifacts,
         "vocabulary_file" => "vocabulary.json",
         "weighting" => Dict(

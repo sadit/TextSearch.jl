@@ -33,7 +33,7 @@ using Test, TextSearch, SimilaritySearch
             end
             nothing
         end
-        find(textconfig(p).transformation)
+        find(gettextconfig(p).transformation)
     end
 
     @testset "what a profile applies IS what it carries" begin
@@ -43,14 +43,14 @@ using Test, TextSearch, SimilaritySearch
         @test applied_lemma_map(p) == p.lemmas
         # and there is no way to construct one where they differ: the config is derived, not
         # accepted as an input
-        @test textconfig(p) === p.model.voc.textconfig
+        @test gettextconfig(p) === p.model.voc.textconfig
     end
 
     @testset "carried but not applied leaves the pipeline alone" begin
         p = TextProfile(mkmodel(); stopwords, lemmas)   # applied defaults to all false
         @test !isempty(p.lemmas)                        # carried
         @test applied_lemma_map(p) === nothing          # but not in the pipeline
-        @test textconfig(p).transformation isa IdentityTokenTransformation
+        @test gettextconfig(p).transformation isa IdentityTokenTransformation
         # so the vocabulary is NOT lemmatized
         @test token2id(p.model.voc, "casas") != 0
     end
@@ -72,24 +72,24 @@ using Test, TextSearch, SimilaritySearch
         # the back door. One function knows this order now.
         p = TextProfile(mkmodel(); stopwords, lemmas,
                         applied=AppliedArtifacts(stopwords=true, lemmas=true))
-        @test collect(tokenize(textconfig(p), "las casas rojas")) == ["casa", "roja"]
+        @test collect(tokenize(gettextconfig(p), "las casas rojas")) == ["casa", "roja"]
 
         # and the vocabulary built under it agrees
-        voc = Vocabulary(textconfig(p), corpus; verbose=false)
+        voc = Vocabulary(gettextconfig(p), corpus; verbose=false)
         @test token2id(voc, "la") == 0
         @test token2id(voc, "las") == 0
         @test token2id(voc, "casas") == 0
-        @test ndocs(voc, token2id(voc, "casa")) == 2
+        @test getndocs(voc, token2id(voc, "casa")) == 2
     end
 
     @testset "policy is the corpus-independent half" begin
         p = TextProfile(mkmodel(); stopwords, lemmas,
                         applied=AppliedArtifacts(stopwords=true, lemmas=true))
-        pol = policy(p)
+        pol = getpolicy(p)
 
         @test pol.transformation isa IdentityTokenTransformation
-        @test pol.normalization === textconfig(p).normalization
-        @test pol.tokenization === textconfig(p).tokenization
+        @test pol.normalization === gettextconfig(p).normalization
+        @test pol.tokenization === gettextconfig(p).tokenization
         # a policy tokenizes like a bare config: no artifact leaks into it
         @test collect(tokenize(pol, "las casas rojas")) == ["las", "casas", "rojas"]
     end
@@ -123,6 +123,6 @@ using Test, TextSearch, SimilaritySearch
     @testset "an empty artifact never enters the pipeline, even marked applied" begin
         # asking to apply nothing is not an error, it is a no-op
         p = TextProfile(mkmodel(); applied=AppliedArtifacts(stopwords=true, lemmas=true))
-        @test textconfig(p).transformation isa IdentityTokenTransformation
+        @test gettextconfig(p).transformation isa IdentityTokenTransformation
     end
 end
