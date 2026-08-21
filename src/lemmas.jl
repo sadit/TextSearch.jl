@@ -178,11 +178,68 @@ function _morph_subclusters(voc::Vocabulary, group::Vector{UInt32}, prepare, dis
 end
 
 """
+    _link_subclusters(items, close) -> Vector{Vector{T}}
+
+Single-linkage grouping of `items` under the predicate `close(i, j)` (indices into `items`),
+by union-find. `O(length(items)^2)` predicate calls, so callers must keep the input small
+(by blocking, or by having partitioned already).
+"""
+function _link_subclusters(items::Vector{T}, close) where {T}
+    n = length(items)
+    n <= 1 && return [items]
+
+    parent = collect(1:n)
+    find(x) = begin
+        while parent[x] != x
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        end
+        x
+    end
+
+    @inbounds for i in 1:(n - 1), j in (i + 1):n
+        if close(i, j)
+            ri, rj = find(i), find(j)
+            ri != rj && (parent[ri] = rj)
+        end
+    end
+
+    subs = Dict{Int,Vector{T}}()
+    @inbounds for i in 1:n
+        push!(get!(() -> T[], subs, find(i)), items[i])
+    end
+    collect(values(subs))
+end
+
+"""
+    _prefix_blocks(voc, ids, prefix_len) -> Vector{Vector{UInt32}}
+
+Buckets `ids` by their tokens' first `prefix_len` characters. When linking *requires* a
+shared prefix of that length, this blocking is exact -- two tokens in different buckets can
+never link -- and it is what makes morphology-first clustering affordable: comparing the
+whole vocabulary pairwise is `O(vocsize^2)` (10^10 pairs at 143k tokens), while the sum over
+buckets is smaller by orders of magnitude.
+
+`prefix_len <= 0` cannot block, so everything lands in a single bucket.
+"""
+function _prefix_blocks(voc::Vocabulary, ids, prefix_len::Int)
+    prefix_len <= 0 && return [collect(UInt32, ids)]
+    blocks = Dict{String,Vector{UInt32}}()
+    for tid in ids
+        cs = collect(token(voc, tid))
+        key = length(cs) >= prefix_len ? String(@view cs[1:prefix_len]) : String(cs)
+        push!(get!(() -> UInt32[], blocks, key), UInt32(tid))
+    end
+    collect(values(blocks))
+end
+
+"""
     lemma_clusters(voc::Vocabulary, wordvecs::AbstractDatabase;
                    algorithm::Symbol=:fft, num_clusters::Integer=0,
                    selector::Symbol=:shortest, dist=Dist.Cosine(),
                    morphology::Symbol=:jaccard, morphology_threshold::Real=0.3,
-                   qgram::Integer=2, min_common_prefix::Integer=3) -> Dict{String,String}
+                   qgram::Integer=2, min_common_prefix::Integer=3,
+                   order::Symbol=:semantic_first, semantic_threshold::Real=0.5) -> Dict{String,String}
 
 Derives a `token => lemma` map by combining two signals:
 
@@ -216,11 +273,82 @@ function lemma_clusters(voc::Vocabulary, wordvecs::AbstractDatabase;
                          algorithm::Symbol=:fft, num_clusters::Integer=0,
                          selector::Symbol=:shortest, dist=Dist.Cosine(),
                          morphology::Symbol=:jaccard, morphology_threshold::Real=0.3,
-                         qgram::Integer=2, min_common_prefix::Integer=3)
+                         qgram::Integer=2, min_common_prefix::Integer=3,
+                         order::Symbol=:semantic_first, semantic_threshold::Real=0.5)
     m = vocsize(voc)
-    k = num_clusters > 0 ? num_clusters : max(1, ceil(Int, sqrt(m)))
+    pick = _lemma_pick(selector)
+    mp = Int(min_common_prefix)
 
-    R = if algorithm === :fft
+    prepare, morphdist = morphology === :none ? (identity, nothing) :
+                         _morphology_metric(morphology, Int(qgram))
+
+    # a token whose embedding collapsed to zero has no direction to compare (cosine gives
+    # NaN), so it is treated as far from everything rather than silently linking
+    semclose(a, b) = begin
+        d = Dist.evaluate(dist, a, b)
+        !isnan(d) && d <= semantic_threshold
+    end
+
+    finalgroups = Vector{Vector{UInt32}}()
+
+    if order === :semantic_first
+        R = _semantic_clustering(algorithm, dist, wordvecs, num_clusters, m)
+        groups = Dict{UInt32,Vector{UInt32}}()
+        for tid in 1:m
+            push!(get!(() -> UInt32[], groups, R.nn[tid]), UInt32(tid))
+        end
+        for group in values(groups)
+            length(group) <= 1 && continue
+            if morphdist === nothing
+                push!(finalgroups, group)
+            else
+                for blk in _prefix_blocks(voc, group, mp)
+                    length(blk) <= 1 && continue
+                    reps = [prepare(token(voc, tid)) for tid in blk]
+                    append!(finalgroups, _link_subclusters(blk, (i, j) -> morphdist(reps[i], reps[j]) <= morphology_threshold))
+                end
+            end
+        end
+    elseif order === :morphology_first
+        morphdist === nothing &&
+            error("order=:morphology_first needs a morphology (:jaccard or :levenshtein), got :none")
+        # 1. morphological families over the WHOLE vocabulary, made affordable by blocking
+        for blk in _prefix_blocks(voc, 1:m, mp)
+            length(blk) <= 1 && continue
+            reps = [prepare(token(voc, tid)) for tid in blk]
+            for fam in _link_subclusters(blk, (i, j) -> morphdist(reps[i], reps[j]) <= morphology_threshold)
+                length(fam) <= 1 && continue
+                # 2. embeddings then only *split* a family, keeping homographs apart
+                vecs = [wordvecs[tid] for tid in fam]
+                append!(finalgroups, _link_subclusters(fam, (i, j) -> semclose(vecs[i], vecs[j])))
+            end
+        end
+    else
+        error("unknown order: $order; supported: semantic_first, morphology_first")
+    end
+
+    lemmas = Dict{String,String}()
+    for group in finalgroups
+        length(group) <= 1 && continue
+        chosen_tok = token(voc, pick(voc, group))
+        for tid in group
+            tok = token(voc, tid)
+            tok == chosen_tok || (lemmas[tok] = chosen_tok)
+        end
+    end
+
+    lemmas
+end
+
+"""
+    _semantic_clustering(algorithm, dist, wordvecs, num_clusters, m)
+
+Runs the requested `SimilaritySearch` clustering over the token embeddings, defaulting
+`num_clusters` to `ceil(sqrt(m))`.
+"""
+function _semantic_clustering(algorithm::Symbol, dist, wordvecs, num_clusters::Integer, m::Integer)
+    k = num_clusters > 0 ? num_clusters : max(1, ceil(Int, sqrt(m)))
+    if algorithm === :fft
         fft(dist, wordvecs, k; verbose=false)
     elseif algorithm === :dnet
         dnet(dist, wordvecs, k; verbose=false)
@@ -231,31 +359,4 @@ function lemma_clusters(voc::Vocabulary, wordvecs::AbstractDatabase;
     else
         error("unknown lemma clustering algorithm: $algorithm; supported: fft, dnet, randsel, multirandsel")
     end
-
-    groups = Dict{UInt32,Vector{UInt32}}()
-    for tid in 1:m
-        push!(get!(() -> UInt32[], groups, R.nn[tid]), UInt32(tid))
-    end
-
-    pick = _lemma_pick(selector)
-    prepare, distance = morphology === :none ? (identity, nothing) :
-                        _morphology_metric(morphology, Int(qgram))
-
-    lemmas = Dict{String,String}()
-    for group in values(groups)
-        length(group) <= 1 && continue
-        subclusters = distance === nothing ? (group,) :
-                      _morph_subclusters(voc, group, prepare, distance, morphology_threshold,
-                                          Int(min_common_prefix))
-        for sub in subclusters
-            length(sub) <= 1 && continue
-            chosen_tok = token(voc, pick(voc, sub))
-            for tid in sub
-                tok = token(voc, tid)
-                tok == chosen_tok || (lemmas[tok] = chosen_tok)
-            end
-        end
-    end
-
-    lemmas
 end

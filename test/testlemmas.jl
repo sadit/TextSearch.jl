@@ -59,6 +59,43 @@ using Test, TextSearch, SimilaritySearch
         @test lemmas["by"] == "ax"  # same length, occs("ax")=3 > occs("by")=1
     end
 
+    @testset "order=:morphology_first groups families the semantic partition splits apart" begin
+        # two inflection families whose embeddings are deliberately far apart: a
+        # semantic-first pass partitions them by embedding and can never reunite them,
+        # while morphology-first groups by surface form and only then consults embeddings.
+        words = ["cantar", "cantara", "cantaba", "volar", "volara"]
+        voc6 = Vocabulary(textconfig, words)
+        X6 = Matrix{Float32}(undef, 2, vocsize(voc6))
+        for tid in 1:vocsize(voc6)
+            t = token(voc6, tid)
+            # spread members of the same family far apart in embedding space
+            X6[:, tid] = startswith(t, "cant") ? Float32[10.0 * length(t), 0.0] :
+                                                  Float32[0.0, 10.0 * length(t)]
+        end
+        wv6 = MatrixDatabase(X6)
+
+        L = lemma_clusters(voc6, wv6; order=:morphology_first, semantic_threshold=99.0,
+                            morphology=:jaccard, morphology_threshold=0.5, min_common_prefix=3,
+                            selector=:shortest, dist=Dist.L2())
+        @test L["cantara"] == "cantar"
+        @test L["cantaba"] == "cantar"
+        @test L["volara"] == "volar"
+        # the two families must stay separate: no "cant*" maps to a "vol*" lemma
+        @test !any(startswith(l, "vol") for (t, l) in L if startswith(t, "cant"))
+
+        @testset "a tight semantic threshold splits a morphological family" begin
+            # embeddings are far apart by construction, so requiring closeness must prevent
+            # the merges above -- this is the knob that keeps homographs apart
+            L2 = lemma_clusters(voc6, wv6; order=:morphology_first, semantic_threshold=0.001,
+                                 morphology=:jaccard, morphology_threshold=0.5,
+                                 min_common_prefix=3, dist=Dist.L2())
+            @test length(L2) < length(L)
+        end
+
+        @test_throws ErrorException lemma_clusters(voc6, wv6; order=:bogus)
+        @test_throws ErrorException lemma_clusters(voc6, wv6; order=:morphology_first, morphology=:none)
+    end
+
     @testset "unknown algorithm/selector/morphology error clearly" begin
         @test_throws ErrorException lemma_clusters(voc, wordvecs; algorithm=:bogus)
         @test_throws ErrorException lemma_clusters(voc, wordvecs; selector=:bogus)
