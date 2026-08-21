@@ -91,14 +91,18 @@ min_common_prefix = 3
 # inflections rather than adding precision.
 order = "morphology_first"   # "morphology_first" | "semantic_first"
 semantic_threshold = 1.0
-# Whether to bake the lemma map into the profile's TextConfig, so every consumer applies it
-# to documents and queries alike and the idf counts an inflection family together instead
-# of splitting it across its forms. This costs one extra tokenization pass over the batch
-# (the map is derived from embeddings over the vocabulary it rewrites, so it cannot be known
-# any earlier) and rewrites the synonym network onto lemmas. Set it to false to compute the
-# map as a reviewable artifact without applying it -- the same distinction stopword
-# candidates have -- in which case consumers must apply it themselves or ignore it.
-apply = true
+# Whether to bake the lemma map into this profile's TextConfig. OFF by default, which is
+# what makes the profile a reusable BASE: whether to lemmatize belongs to whoever adapts it
+# (`textsearch refit`, which applies the saved map on request and folds the base counters
+# through it), and a tuned model that declines lemmatization simply does not carry the map.
+# Leaving it off keeps the profile strictly more general, and the map is still saved for
+# review -- the same detected-versus-applied split stopword candidates have.
+#
+# Set it to true for a profile meant to be used directly as fitted. That costs one extra
+# tokenization pass over the batch (the map is derived from embeddings over the vocabulary it
+# rewrites, so it cannot be known any earlier) and rewrites the synonym network onto lemmas,
+# in exchange for a vocabulary whose idf counts each inflection family together.
+apply = false
 """
 
 """

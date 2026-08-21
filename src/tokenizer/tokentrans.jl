@@ -2,6 +2,7 @@
 
 export AbstractTokenTransformation, IdentityTokenTransformation, transform
 export IgnoreStopwords, LemmaTransformation, ChainTransformation, SnowballTokenTransformation
+export has_lemma_transformation, with_lemma_transformation, without_lemma_transformation
 
 """
     AbstractTokenTransformation
@@ -168,6 +169,7 @@ LemmaTransformation(lemmas::AbstractDict{<:AbstractString,<:AbstractString}) =
 
 transform_unigram(tt::LemmaTransformation, tok) = get(tt.lemmas, tok, tok)
 
+
 """
     ChainTransformation(list::AbstractVector{<:AbstractTokenTransformation})
 
@@ -209,4 +211,51 @@ convenience constructor.
 """
 struct SnowballTokenTransformation{S} <: AbstractTokenTransformation
     stemmer::S
+end
+
+"""
+    has_lemma_transformation(tt::AbstractTokenTransformation) -> Bool
+
+Whether `tt` applies a [`LemmaTransformation`](@ref) anywhere in its pipeline, looking
+inside a [`ChainTransformation`](@ref).
+
+Useful for telling a profile that lemmatizes from one that merely *carries* a lemma map as
+an artifact -- the distinction matters because the two are statistically different: a
+vocabulary built under a lemma step already counts inflection families together.
+"""
+has_lemma_transformation(::AbstractTokenTransformation) = false
+has_lemma_transformation(::LemmaTransformation) = true
+has_lemma_transformation(tt::ChainTransformation) = any(has_lemma_transformation, tt.list)
+
+"""
+    with_lemma_transformation(tt::AbstractTokenTransformation, lemmas) -> AbstractTokenTransformation
+
+Returns `tt` with a [`LemmaTransformation`](@ref) for `lemmas` applied **first**, chaining if
+needed. Returns `tt` unchanged when `lemmas` is empty or it already lemmatizes.
+
+Prepending rather than appending is the whole point: see [`LemmaTransformation`](@ref) for why
+a lemma step placed after [`IgnoreStopwords`](@ref) quietly reintroduces stopwords.
+"""
+function with_lemma_transformation(tt::AbstractTokenTransformation, lemmas)
+    (isempty(lemmas) || has_lemma_transformation(tt)) && return tt
+    lt = LemmaTransformation(lemmas)
+    tt isa IdentityTokenTransformation && return lt
+    tt isa ChainTransformation && return ChainTransformation(
+        AbstractTokenTransformation[lt, tt.list...])
+    ChainTransformation(AbstractTokenTransformation[lt, tt])
+end
+
+"""
+    without_lemma_transformation(tt::AbstractTokenTransformation) -> AbstractTokenTransformation
+
+Returns `tt` with every [`LemmaTransformation`](@ref) step removed, leaving the rest of the
+pipeline intact. Since lemmas live in the `TextConfig`, this -- not declining to apply a map
+afterwards -- is how a consumer turns lemmatization off.
+"""
+without_lemma_transformation(tt::AbstractTokenTransformation) = tt
+without_lemma_transformation(::LemmaTransformation) = IdentityTokenTransformation()
+function without_lemma_transformation(tt::ChainTransformation)
+    kept = AbstractTokenTransformation[s for s in tt.list if !(s isa LemmaTransformation)]
+    isempty(kept) && return IdentityTokenTransformation()
+    length(kept) == 1 ? only(kept) : ChainTransformation(kept)
 end

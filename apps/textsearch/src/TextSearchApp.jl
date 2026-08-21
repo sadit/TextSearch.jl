@@ -13,6 +13,7 @@ include("corpusio.jl")
 include("config.jl")
 include("cli_fit.jl")
 include("cli_merge.jl")
+include("cli_refit.jl")
 include("cli_search.jl")
 include("cli_list.jl")
 include("cli_info.jl")
@@ -22,6 +23,7 @@ include("cli_uninstall.jl")
 const SUBCOMMANDS = Dict(
     "fit" => cmd_fit,
     "merge" => cmd_merge,
+    "refit" => cmd_refit,
     "search" => cmd_search,
     "list" => cmd_list,
     "info" => cmd_info,
@@ -39,6 +41,8 @@ function print_top_help(io::IO)
       fit         fit a profile (vocabulary, weights, synonyms, lemmas, stopword
                   candidates) from a corpus -- opens \$EDITOR on a TOML config
       merge       merge several profiles into one corpus-wide profile
+      refit       adapt a bootstrap profile to a dataset from a sample of it,
+                  adjusting its statistics rather than replacing them
       search      grep-like search over a collection using a profile's tokenization
                   (not fast to start -- see 'textsearch search --help')
       list        list installed profile nicknames

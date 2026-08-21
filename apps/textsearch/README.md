@@ -261,6 +261,91 @@ transformations may differ *only* in their stopword set (the normal case when ea
 detected its own), which merges to the union. `EntropyWeighting` profiles cannot be merged,
 since recomputing supervised weights would need the labeled corpus.
 
+### `refit` -- adapt a bootstrap profile to a dataset
+
+```
+textsearch refit <base-profile> --sample PATH --out OUT.zip
+                 [--format FMT] [--text-key KEY]
+                 [--kappa N | --base-weight W] [--no-lemmas]
+                 [--keep-rate T] [--keep-floor N] [--drop-distances] [--chunk N]
+```
+
+A profile fit from a large generic corpus is a **bootstrap** model: reasonable statistics
+for a language, not a model for anyone's dataset. `refit` adapts one to a specific dataset
+given a sample of it, and writes a new **self-contained** profile -- nothing in the output
+refers back to the base, and it is typically smaller and more accurate for that dataset than
+the generic profile it came from.
+
+```sh
+textsearch refit wiki-es --sample my-reviews.jsonl --out reviews-es.zip
+textsearch install reviews-es.zip reviews-es
+```
+
+Statistics are **adjusted, not replaced**. The base acts as a prior worth `--kappa`
+documents against the sample's evidence:
+
+```
+ndocs(t)  = ndocs_sample(t) + round(kappa * ndocs_base(t) / trainsize_base)
+trainsize = trainsize_sample + kappa
+```
+
+`--kappa 0` (the default) uses the sample's own document count, weighting the two sides
+equally; halve it for 1/3 base, double it for 2/3. `--base-weight 0.75` says the same thing
+as a fraction. Expressing the base's authority *in documents* is what makes the output
+sample-sized rather than base-sized, and what makes the knob mean something concrete.
+
+Two consequences fall out of that arithmetic, and they are the point of the whole command:
+
+- A word the base considers important but the sample never shows **keeps only its
+  kappa-weighted share**, so it survives with reduced importance. Nothing special is done
+  for it; lowering weight is just what the interpolation does.
+- A word that mattered in neither is **dropped**: `--keep-rate`/`--keep-floor` decide, and
+  anything whose blended count rounds below one document falls out regardless. `--keep-floor`
+  is an absolute document count, so a single-document typo in a huge base corpus cannot clear
+  a small rate threshold.
+
+**Why counters and not weights.** BM25 never reads a model's precomputed weight vector -- it
+derives its own IDF from `ndocs`/`trainsize` and normalizes by `avgdoclen`. Blending weights
+alone would tune the tf-idf path and leave BM25 with the base corpus' numbers. Blending the
+counters tunes both, and the weight vector is recomputed from them.
+
+Both counters (`ndocs` and `occs`) are scaled by the same per-base-document denominator, which
+is what keeps the output a *possible* corpus: scaling occurrences by the base's share of total
+tokens instead looks equally reasonable but makes the two round against different denominators,
+leaving carried tokens present in documents yet never occurring. One consequence to know:
+`avgdoclen` comes out as a weighted mean of the two corpora's average document lengths rather
+than the sample's -- honest, since the pseudo-documents the prior contributes are base
+documents, but it does pull BM25's length normalization toward the base. A base whose documents
+are nothing like the target's (Wikipedia articles against product reviews) argues for a smaller
+`--kappa`.
+
+**Lemmas.** By default the base's lemma map is *applied* here -- chained into the new
+profile's `TextConfig` -- and the base's own counters are folded through the same map so both
+sides stay comparable. That folding is exact in `occs` and an over-estimate in `ndocs` (a
+document containing two forms of one family counts twice), which is why every `ndocs` is
+capped at `trainsize`; the counts are reported on stderr. Pass `--no-lemmas` to leave the map
+carried but unapplied. This is why `fit` defaults to `apply = false`: whether to lemmatize
+belongs to the model being tuned, not to the generic base.
+
+**What is not recomputed.** No embedding is fit here. Synonyms and lemmas come from the base,
+with synonym entries pointing at pruned tokens removed. That is exactly what makes a refit
+cheap next to a fit, and the point of bootstrapping. `--drop-distances` omits the synonym
+distances from the output for the smallest possible profile, since only the ranking is used
+on the normal query path.
+
+The **applied** stopword set stays the base's -- it has to, since the base's counts were
+collected under it and swapping it mid-blend would compare two incomparable vocabularies.
+New candidates are recomputed from the blended counters and recorded for review.
+
+The sample streams in batches of `--chunk` documents, so it can be far larger than memory.
+
+**From a program**, rather than the CLI: `refit` is an operation of TextSearch itself, and
+the library API is layered so any program can tune a base model when its sample arrives ---
+`refit_textconfig(base; apply_lemmas)` gives the config the sample **must** be tokenized
+under, `refit_profile(base, sample_voc)` takes a `Vocabulary` built however you like
+(streamed, or grown over time with `update_voc!`), and `refit_profile(base, sample_docs)` is
+the convenience form. `fold_lemmas` and `blend_vocabularies` are the pieces underneath.
+
 ## Tutorial
 
 A complete walkthrough, from a raw corpus to a search hit, using a tiny 7-document

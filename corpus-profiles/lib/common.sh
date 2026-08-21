@@ -83,10 +83,11 @@ ts_render_fit_config() {
   local syn_k="${TS_SYN_K:-8}"
   local lem_alg="${TS_LEMMA_ALG:-fft}"
   local lem_sel="${TS_LEMMA_SEL:-most_frequent}"
-  # Bake the lemma map into the profile's TextConfig, so consumers apply it to documents and
-  # queries alike and the idf counts an inflection family together. Costs one extra
-  # tokenization pass per part; set TS_LEMMA_APPLY=false to keep the map as an artifact only.
-  local lem_apply="${TS_LEMMA_APPLY:-true}"
+  # These profiles are BASE models: the lemma map is computed and saved but NOT applied, so
+  # whoever adapts one with `textsearch refit` decides whether to lemmatize. Applying it here
+  # would bake that choice into every downstream model. Set TS_LEMMA_APPLY=true for a profile
+  # meant to be used exactly as fitted.
+  local lem_apply="${TS_LEMMA_APPLY:-false}"
   local del_diac="${TS_DEL_DIAC:-false}"
   local del_punc="${TS_DEL_PUNC:-true}"
 

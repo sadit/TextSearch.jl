@@ -381,6 +381,70 @@ end
                 @test_throws Exception TextSearchApp.cmd_merge([batchdir, "--out", joinpath(dir, "nope.tar")])
             end
 
+            @testset "refit: adapts a base profile to a sample" begin
+                # a sample about a topic the base corpus never covers
+                samplepath = joinpath(dir, "sample.jsonl")
+                write_jsonl_corpus(samplepath, [
+                    "el perro ladra fuerte", "otro perro corre rapido",
+                    "el perro y el perro juegan", "un perro mas en el parque",
+                ])
+                outpath = joinpath(dir, "refitted.zip")
+
+                @test TextSearchApp.cmd_refit([zippath, "--sample", samplepath,
+                                               "--out", outpath]) == 0
+                @test isfile(outpath)
+
+                r = TextSearch.load_profile(outpath)
+                @test TextSearch.token2id(r.model.voc, "perro") != 0
+                @test r.encoder["kind"] == "refit"
+                # sample-sized, not base-sized: kappa defaults to the sample's document count
+                @test TextSearch.trainsize(r.model.voc) == 8
+                # the guard against a negative idf / negative BM25 numerator
+                @test all(id -> TextSearch.ndocs(r.model.voc, id) <= TextSearch.trainsize(r.model.voc),
+                          eachindex(r.model.voc))
+                @test all(w -> w >= 0, r.model.weight)
+
+                @testset "the output is self-contained" begin
+                    # the whole point of emitting a new profile: it must not need the base
+                    isolated = joinpath(dir, "isolated.zip")
+                    cp(outpath, isolated)
+                    @test TextSearchApp.cmd_search([isolated, "perro",
+                                                    "--collection", samplepath,
+                                                    "--format", "jsonl"]) == 0
+                end
+
+                @testset "--drop-distances omits the distances file" begin
+                    lean = joinpath(dir, "lean.zip")
+                    TextSearchApp.cmd_refit([zippath, "--sample", samplepath,
+                                             "--out", lean, "--drop-distances"])
+                    q = TextSearch.load_profile(lean)
+                    @test q.synonym_distances === nothing
+                    @test filesize(lean) <= filesize(outpath)
+                end
+
+                @testset "--kappa moves how much the base counts for" begin
+                    big = joinpath(dir, "bigprior.zip")
+                    TextSearchApp.cmd_refit([zippath, "--sample", samplepath,
+                                             "--out", big, "--kappa", "1000"])
+                    q = TextSearch.load_profile(big)
+                    @test TextSearch.trainsize(q.model.voc) == 1004
+                    # a large prior keeps base vocabulary the default kappa prunes away
+                    @test vocsize(q.model.voc) >= vocsize(r.model.voc)
+                end
+
+                @testset "invalid arguments are rejected" begin
+                    @test_throws Exception TextSearchApp.cmd_refit(
+                        [zippath, "--sample", samplepath, "--out", joinpath(dir, "x.tar")])
+                    # kappa and base-weight say the same thing two ways
+                    @test_throws Exception TextSearchApp.cmd_refit(
+                        [zippath, "--sample", samplepath, "--out", joinpath(dir, "y.zip"),
+                         "--kappa", "10", "--base-weight", "0.5"])
+                    @test_throws Exception TextSearchApp.cmd_refit(
+                        [zippath, "--sample", samplepath, "--out", joinpath(dir, "z.zip"),
+                         "--base-weight", "1.5"])
+                end
+            end
+
             @testset "corpusio.each_record: jsonl / csv / json" begin
                 jsonl_path = joinpath(dir, "rec.jsonl")
                 write_jsonl_corpus(jsonl_path, ["hello", "world"])

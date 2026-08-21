@@ -117,7 +117,7 @@ function _build_vocabulary(textconfig, docs::Vector{String}, min_ndocs::Int; lab
 end
 
 """
-    _remap_synonyms_to_lemmas(synmap, lemmas) -> Dict{String,Vector{Pair{String,Float32}}}
+    _remap_synonyms_to_lemmas(synmap, syndists, lemmas) -> (; synonyms, distances)
 
 Rewrites a synonym network's keys and values through `lemmas`, for use when the lemma map
 is baked into the profile's `TextConfig` and the vocabulary is therefore lemmatized.
@@ -127,30 +127,47 @@ which are no longer tokens of the vocabulary, and `expand_synonyms!` drops an ou
 vocabulary synonym without complaint (`token2id` returning `0`) -- a quiet loss of every
 expansion whose surface form happened to be inflected.
 
-Two source tokens can share a lemma, so entries are merged rather than overwritten,
-keeping the smallest distance for each target; a synonym that lemmatizes onto its own key
-is dropped, since a token is not its own synonym. Each list comes back sorted by distance,
-matching how `TextSearch.synonyms` produces them.
+Two source tokens can share a lemma, so entries are merged rather than overwritten. What
+"best" means depends on what the network carries: with `syndists`, the smallest distance
+wins; without it, the smallest *rank* does -- the rank-based analogue, and the reason the
+network stays usable when distances were never stored. A synonym that lemmatizes onto its
+own key is dropped, since a token is not its own synonym.
+
+Each list comes back in rank order (nearest first), matching how `TextSearch.synonyms`
+produces them. `distances` is `nothing` when the input had none.
 """
-function _remap_synonyms_to_lemmas(synmap, lemmas)
+function _remap_synonyms_to_lemmas(synmap, syndists, lemmas)
     lem(t) = get(lemmas, t, t)
-    acc = Dict{String,Dict{String,Float32}}()
+    hasdist = syndists !== nothing
+    # per lemma key: candidate => (ordering key, distance-or-nothing)
+    acc = Dict{String,Dict{String,Tuple{Float64,Union{Nothing,Float32}}}}()
+
     for (tok, syns) in synmap
         k = lem(tok)
-        d = get!(() -> Dict{String,Float32}(), acc, k)
-        for (syn, dist) in syns
+        d = get!(() -> Dict{String,Tuple{Float64,Union{Nothing,Float32}}}(), acc, k)
+        dl = hasdist ? get(syndists, tok, nothing) : nothing
+        for (rank, syn) in enumerate(syns)
             s = lem(syn)
             s == k && continue
-            prev = get(d, s, Inf32)
-            dist < prev && (d[s] = Float32(dist))
+            dist = (dl !== nothing && rank <= length(dl)) ? Float32(dl[rank]) : nothing
+            key = dist === nothing ? Float64(rank) : Float64(dist)
+            prev = get(d, s, nothing)
+            (prev === nothing || key < prev[1]) && (d[s] = (key, dist))
         end
     end
-    out = Dict{String,Vector{Pair{String,Float32}}}()
+
+    out = Dict{String,Vector{String}}()
+    outd = Dict{String,Vector{Float32}}()
     for (k, d) in acc
         isempty(d) && continue
-        out[k] = sort!([s => dist for (s, dist) in d]; by=last)
+        cands = sort!(collect(keys(d)); by=c -> (d[c][1], c))
+        out[k] = cands
+        ds = [d[c][2] for c in cands]
+        # all or nothing per token, so the two lists can never fall out of alignment
+        any(isnothing, ds) || (outd[k] = Float32[Float32(x) for x in ds])
     end
-    out
+
+    (; synonyms=out, distances=(isempty(outd) ? nothing : outd))
 end
 
 """
@@ -194,7 +211,7 @@ function _fit_one_batch(docs::Vector{String}, cfg, batch_dir::AbstractString)
 
     lsiopts = (factorization = Symbol(get(enc, "factorization", "auto")),)
 
-    wordvecs, synmap = if kind === :lsi
+    wordvecs, net = if kind === :lsi
         lsi = LatentSemanticIndexing(model, docs; maxoutdim=outdim, scaling, verbose=false, lsiopts...)
         wordvectors(lsi), synonyms(lsi, Int(syn["k"]); verbose=false, synopts...)
     elseif kind === :external
@@ -204,6 +221,7 @@ function _fit_one_batch(docs::Vector{String}, cfg, batch_dir::AbstractString)
     else
         error("unknown encoder kind: $(enc["kind"]); supported: lsi, external")
     end
+    synmap, syndists = net.synonyms, net.distances
 
     lemmas = lemma_clusters(voc, wordvecs;
         algorithm=Symbol(lem["algorithm"]), num_clusters=Int(lem["num_clusters"]),
@@ -226,7 +244,7 @@ function _fit_one_batch(docs::Vector{String}, cfg, batch_dir::AbstractString)
     # is deliberately NOT redone on the lemmatized vocabulary -- the embeddings' job was to
     # discover the families, and they have; re-deriving them would only shift synonym
     # neighbours slightly for the cost of a full factorization.
-    if Bool(get(lem, "apply", true)) && !isempty(lemmas)
+    if Bool(get(lem, "apply", false)) && !isempty(lemmas)
         lt = LemmaTransformation(lemmas)
         # Lemmas run BEFORE the stopword filter. The reverse order silently reintroduces
         # stopwords: a form not in the stopword set survives the filter and is only then
@@ -241,13 +259,14 @@ function _fit_one_batch(docs::Vector{String}, cfg, batch_dir::AbstractString)
         model = VectorModel(IdfWeighting(), TfWeighting(), voc)
         # the network's entries name unlemmatized forms, which are no longer vocabulary
         # tokens; left alone, every inflected entry would be silently dropped at query time
-        synmap = _remap_synonyms_to_lemmas(synmap, lemmas)
+        remapped = _remap_synonyms_to_lemmas(synmap, syndists, lemmas)
+        synmap, syndists = remapped.synonyms, remapped.distances
         println("  lemmas applied: $(length(lemmas)) remapped tokens -> vocsize=$(vocsize(voc)), synonyms=$(length(synmap))")
         flush(stdout)
     end
 
     save_profile(batch_dir, model;
-        synonyms=synmap, lemmas, stopword_candidates=candidates,
+        synonyms=synmap, synonym_distances=syndists, lemmas, stopword_candidates=candidates,
         encoder=(; kind, outdim, scaling, source_path=external_path))
 
     vocsize(voc), model

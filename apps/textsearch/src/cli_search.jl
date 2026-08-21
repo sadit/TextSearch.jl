@@ -112,7 +112,7 @@ function _query_tokens(p, query::AbstractString, tc, usesynonyms::Bool, synk::In
         for tok in raw
             neighbors = get(p.synonyms, tok, nothing)
             neighbors === nothing && continue
-            for (i, (syn, _)) in enumerate(neighbors)
+            for (i, syn) in enumerate(neighbors)
                 synk > 0 && i > synk && break
                 for st in tokenize(tc, syn)
                     push!(expanded, st)

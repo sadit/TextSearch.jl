@@ -46,6 +46,7 @@ export TextConfig, NormalizationConfig, TokenizationConfig, TokenizedText, token
        normalize_text, isemoji, tokenize_paragraphs, tokenize_sentences,
        TokenizerBuffer, tokenizerbuffer, borrowtokenizedtext,
        AbstractTokenTransformation, IdentityTokenTransformation, IgnoreStopwords, LemmaTransformation, ChainTransformation, SnowballTokenTransformation, transform,
+       has_lemma_transformation, with_lemma_transformation, without_lemma_transformation,
        AbstractTokenGenerator, UnigramGenerator, NWordGenerator,
        needs_unigrams, tokentag, generate!, flush_token!, alltokengenerators
 
@@ -85,6 +86,7 @@ include("stopwords.jl")
 include("queryexpansion.jl")
 include("profile.jl")
 include("mergeprofiles.jl")
+include("refitprofile.jl")
 
 include("bm25/BM25.jl")
 using .BM25

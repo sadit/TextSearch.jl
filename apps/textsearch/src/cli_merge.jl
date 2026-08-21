@@ -72,7 +72,8 @@ function cmd_merge(args::Vector{String})
     tmpdir = out * ".tmpdir"
     try
         save_profile(tmpdir, merged.model;
-            merged.synonyms, merged.lemmas, merged.stopword_candidates, merged.encoder)
+            merged.synonyms, merged.synonym_distances, merged.lemmas,
+            merged.stopword_candidates, merged.encoder)
         zip_profile(tmpdir, out)
     finally
         rm(tmpdir; recursive=true, force=true)
