@@ -65,7 +65,7 @@ using Test, SimilaritySearch, TextSearch
     @testset "Query-time synonym expansion (expand_query_synonyms)" begin
         # corpus[4] = "la manzana roja"; a query for "pera roja" should rank it higher
         # once "pera" is registered as a synonym of "manzana".
-        synonyms = Dict("pera" => [("manzana", 0.1f0)])
+        synonyms = Dict("pera" => ["manzana"])
 
         expand_textconfig = TextConfig(tokenization=TokenizationConfig(nlist=[1]), expand_query_synonyms=true)
         expand_voc = Vocabulary(expand_textconfig, corpus)

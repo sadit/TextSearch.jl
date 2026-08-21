@@ -45,7 +45,7 @@ end
 end
 
 @testset "BM25InvertedFile query-time synonym expansion" begin
-    synonyms = Dict("pera" => [("manzana" => 0.1f0)])
+    synonyms = Dict("pera" => ["manzana"])
 
     textconfig = TextConfig(tokenization=TokenizationConfig(nlist=[1]))
     voc = Vocabulary(textconfig, _corpus)

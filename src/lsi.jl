@@ -408,15 +408,21 @@ const SYNONYMS_APPROX_THRESHOLD = 4096
     synonyms(voc::Vocabulary, wordvecs::AbstractDatabase, k::Integer=8;
              dist=Dist.Cosine(), verbose::Bool=true, approx=:auto,
              construction_recall::Real=0.97, search_recall::Real=0.9)
-        -> Dict{String,Vector{Pair{String,Float32}}}
+        -> (; synonyms::Dict{String,Vector{String}}, distances::Dict{String,Vector{Float32}})
 
 Builds a synonym network from `voc`'s token embeddings in `wordvecs` (column `t` =
 embedding of `token(voc, t)`, e.g. from [`wordvectors`](@ref) or an externally supplied
 matrix): for every vocabulary token, finds its `k` nearest neighbors (by `dist`, cosine by
-default) among all *other* tokens' embeddings, via `SimilaritySearch.allknn`. Returns a
-`Dict` mapping each token to a list of `neighbor_token => distance` pairs sorted by
-increasing distance (lower means more similar); the token itself is always excluded from
-its own neighbor list.
+default) among all *other* tokens' embeddings, via `SimilaritySearch.allknn`. The token
+itself is always excluded from its own neighbor list.
+
+The two halves come back **separately**, as parallel per-token lists sorted by increasing
+distance (lower means more similar): `synonyms[tok]` are the neighbor tokens in rank order,
+and `distances[tok][i]` is the distance to `synonyms[tok][i]`. They are split because only
+the ranking participates in the normal query-expansion path -- BM25 ignores the query side's
+weights entirely, and the distances stop being distances in any single space as soon as a
+network is merged or refitted. Keeping them apart lets a consumer (or a profile on disk)
+carry the ranking alone, which is where nearly all of a network's size lives.
 
 `approx` selects how the all-pairs search is done, and matters enormously on real
 vocabularies -- an exhaustive search is O(vocabulary²):
@@ -433,7 +439,8 @@ vocabularies -- an exhaustive search is O(vocabulary²):
 # Example
 ```julia
 net = synonyms(voc, wordvectors(lsi), 5)
-net["dog"]   # ["dogs" => 0.02, "puppy" => 0.11, ...]
+net.synonyms["dog"]   # ["dogs", "puppy", ...]
+net.distances["dog"]  # [0.02, 0.11, ...]
 ```
 """
 function synonyms(voc::Vocabulary, wordvecs::AbstractDatabase, k::Integer=8;
@@ -462,9 +469,11 @@ function synonyms(voc::Vocabulary, wordvecs::AbstractDatabase, k::Integer=8;
         allknn(idx, GenericContext(), kk; progress=Progress(m; dt=1, enabled=verbose, desc="synonyms allknn (exact)"))
     end
 
-    net = Dict{String,Vector{Pair{String,Float32}}}()
+    net = Dict{String,Vector{String}}()
+    netdist = Dict{String,Vector{Float32}}()
     for t in 1:m
-        pairs = Pair{String,Float32}[]
+        words = String[]
+        wdists = Float32[]
         for j in 1:size(ids, 1)
             nb = ids[j, t]
             d = dists[j, t]
@@ -474,13 +483,16 @@ function synonyms(voc::Vocabulary, wordvecs::AbstractDatabase, k::Integer=8;
             # it gets no synonyms and is never anyone else's synonym, rather than poisoning
             # the network (and downstream JSON serialization, which rejects NaN) with NaN.
             (nb == 0 || nb == t || isnan(d)) && continue
-            push!(pairs, token(voc, nb) => d)
-            length(pairs) >= k && break
+            push!(words, token(voc, nb))
+            push!(wdists, d)
+            length(words) >= k && break
         end
-        net[token(voc, t)] = pairs
+        tok = token(voc, t)
+        net[tok] = words
+        netdist[tok] = wdists
     end
 
-    net
+    (; synonyms=net, distances=netdist)
 end
 
 """

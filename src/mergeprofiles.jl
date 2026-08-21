@@ -31,6 +31,7 @@ end
 
 _same_transformation(::IdentityTokenTransformation, ::IdentityTokenTransformation) = true
 _same_transformation(a::IgnoreStopwords, b::IgnoreStopwords) = a.stopwords == b.stopwords
+_same_transformation(a::LemmaTransformation, b::LemmaTransformation) = a.lemmas == b.lemmas
 
 function _same_transformation(a::SnowballTokenTransformation, b::SnowballTokenTransformation)
     (hasproperty(a.stemmer, :alg) && hasproperty(b.stemmer, :alg)) || return false
@@ -72,7 +73,7 @@ end
 # ── synonym fusion ───────────────────────────────────────────────────────────
 
 """
-    _fuse_synonyms(profiles, voc, k, rrf_k) -> Dict{String,Vector{Pair{String,Float32}}}
+    _fuse_synonyms(profiles, voc, k, rrf_k) -> (; synonyms, distances)
 
 Fuses the per-profile synonym networks into one.
 
@@ -82,12 +83,14 @@ directly would be meaningless. What does transfer is the *ranking*: a token that
 independently-fit profiles all place near the same neighbor is far likelier to be a real
 relation than one that a single profile ranked highly. So the lists are combined with
 Reciprocal Rank Fusion, `score(candidate) = Σ_p 1/(rrf_k + rank_p)`, the standard way to
-merge ranked lists produced by incomparable scorers.
+merge ranked lists produced by incomparable scorers. Fusing by rank is also why merging
+needs no distances at all: a profile that carries only its ranking merges perfectly well.
 
-The `Float32` kept alongside each surviving neighbor is the mean of the distances the
-contributing profiles reported for that pair -- informative (cosine distances share a
-scale even across spaces) but, unlike a single profile's synonyms, no longer a distance in
-any one space. Candidates are restricted to tokens that survive in the merged vocabulary.
+`distances`, when the inputs carry any, holds the mean of the distances the contributing
+profiles reported for each surviving pair -- informative (cosine distances share a scale
+even across spaces) but, unlike a single profile's, no longer a distance in any one space.
+It comes back empty when no input had distances. Candidates are restricted to tokens that
+survive in the merged vocabulary.
 """
 function _fuse_synonyms(profiles, voc::Vocabulary, k::Integer, rrf_k::Real)
     scores = Dict{String,Dict{String,Float64}}()
@@ -95,33 +98,53 @@ function _fuse_synonyms(profiles, voc::Vocabulary, k::Integer, rrf_k::Real)
     widest = 0
 
     for p in profiles
+        pd = get(p, :synonym_distances, nothing)
         for (tok, neighbors) in p.synonyms
             token2id(voc, tok) == 0 && continue
             widest = max(widest, length(neighbors))
             s = get!(() -> Dict{String,Float64}(), scores, tok)
-            d = get!(() -> Dict{String,Vector{Float32}}(), dists, tok)
-            for (rank, (syn, dist)) in enumerate(neighbors)
+            dl = pd === nothing ? nothing : get(pd, tok, nothing)
+            for (rank, syn) in enumerate(neighbors)
                 token2id(voc, syn) == 0 && continue
                 s[syn] = get(s, syn, 0.0) + 1.0 / (rrf_k + rank)
-                push!(get!(() -> Float32[], d, syn), Float32(dist))
+                if dl !== nothing && rank <= length(dl)
+                    d = get!(() -> Dict{String,Vector{Float32}}(), dists, tok)
+                    push!(get!(() -> Float32[], d, syn), Float32(dl[rank]))
+                end
             end
         end
     end
 
     keep = k > 0 ? Int(k) : widest
-    net = Dict{String,Vector{Pair{String,Float32}}}()
+    net = Dict{String,Vector{String}}()
+    netdist = Dict{String,Vector{Float32}}()
+
     for (tok, s) in scores
         isempty(s) && continue
+        # a candidate's mean distance, or `nothing` when no input reported one for it
+        dtok = get(dists, tok, nothing)
+        function meandist(c)
+            dtok === nothing && return nothing
+            ds = get(dtok, c, nothing)
+            ds === nothing ? nothing : sum(ds) / length(ds)
+        end
+
         cands = collect(keys(s))
-        # highest fused score first; ties broken deterministically (closer mean distance,
-        # then lexicographically) so a merge is reproducible regardless of Dict ordering
-        meandist(c) = (ds = dists[tok][c]; sum(ds) / length(ds))
-        sort!(cands; by=c -> (-s[c], meandist(c), c))
+        # highest fused score first; ties broken deterministically (closer mean distance
+        # when known, then lexicographically) so a merge is reproducible regardless of Dict
+        # ordering. Candidates without a distance sort after those with one, rather than
+        # comparing `nothing` against a number.
+        sort!(cands; by=c -> (-s[c], something(meandist(c), Inf), c))
         resize!(cands, min(keep, length(cands)))
-        net[tok] = [c => Float32(meandist(c)) for c in cands]
+        net[tok] = cands
+
+        # All or nothing per token: a partial list could not stay aligned with the ranking,
+        # and a NaN placeholder would be unserializable (JSON rejects it).
+        ds = [meandist(c) for c in cands]
+        any(isnothing, ds) || (netdist[tok] = Float32[Float32(d) for d in ds])
     end
 
-    net
+    (; synonyms=net, distances=netdist)
 end
 
 # ── lemma voting ─────────────────────────────────────────────────────────────
@@ -191,14 +214,15 @@ end
 
 """
     merge_profiles(profiles; doc_freq_threshold=0.5, synonyms_k=0, rrf_k=60)
-        -> (; model, synonyms, lemmas, stopword_candidates, encoder)
+        -> (; model, synonyms, synonym_distances, lemmas, stopword_candidates, encoder)
 
 Merges several profiles (each a [`load_profile`](@ref) result) into one, returning exactly
 the pieces [`save_profile`](@ref) takes as keywords, so a merged profile is written with
 
 ```julia
 p = merge_profiles(load_profile.(paths))
-save_profile(dir, p.model; p.synonyms, p.lemmas, p.stopword_candidates, p.encoder)
+save_profile(dir, p.model; p.synonyms, p.synonym_distances, p.lemmas,
+             p.stopword_candidates, p.encoder)
 ```
 
 This is what makes `fit`'s batching usable: batching a large corpus produces one
@@ -264,7 +288,7 @@ function merge_profiles(profiles; doc_freq_threshold::Real=0.5, synonyms_k::Inte
 
     model = VectorModel(gw, lw, voc)   # recomputed from the merged counters
 
-    synonyms = _fuse_synonyms(profiles, voc, synonyms_k, rrf_k)
+    fused = _fuse_synonyms(profiles, voc, synonyms_k, rrf_k)
     lemmas = _vote_lemmas(profiles, voc)
 
     candidates = Set{String}(stopword_candidates(voc, doc_freq_threshold))
@@ -278,5 +302,7 @@ function merge_profiles(profiles; doc_freq_threshold::Real=0.5, synonyms_k::Inte
     ])
     encoder = (; kind=:merged, n_sources=length(profiles), source_kinds=join(sort(source_kinds), ","))
 
-    (; model, synonyms, lemmas, stopword_candidates=sort!(collect(candidates)), encoder)
+    (; model, synonyms=fused.synonyms,
+       synonym_distances=(isempty(fused.distances) ? nothing : fused.distances),
+       lemmas, stopword_candidates=sort!(collect(candidates)), encoder)
 end

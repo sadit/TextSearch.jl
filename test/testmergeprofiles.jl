@@ -65,31 +65,32 @@ using Test, TextSearch, SimilaritySearch
         # "jardin" is ranked #1 by BOTH inputs; "roja" and "pera" are ranked #2 by one each.
         # Consensus must put jardin first even though one input reported a closer raw
         # distance for another candidate -- that is the whole point of fusing ranks.
-        a = roundtrip(docs; synonyms=Dict("casa" => ["jardin" => 0.30f0, "roja" => 0.40f0]))
-        b = roundtrip(docs; synonyms=Dict("casa" => ["jardin" => 0.10f0, "pera" => 0.20f0]))
+        a = roundtrip(docs; synonyms=Dict("casa" => ["jardin", "roja"]), synonym_distances=Dict("casa" => Float32[0.30, 0.40]))
+        b = roundtrip(docs; synonyms=Dict("casa" => ["jardin", "pera"]), synonym_distances=Dict("casa" => Float32[0.10, 0.20]))
         merged = merge_profiles([a, b])
 
         got = merged.synonyms["casa"]
-        @test first(got).first == "jardin"
-        # the kept Float32 is the mean of the distances the contributors reported
-        @test first(got).second ≈ 0.20f0
+        @test first(got) == "jardin"
+        # the distances that come back are the mean of what the contributors reported, in a
+        # parallel list rather than interleaved with the words
+        @test first(merged.synonym_distances["casa"]) ≈ 0.20f0
         # synonyms_k=0 keeps as many neighbors as the richest input had (2 here), so the
         # fused pool of 3 candidates is truncated -- the merged list does not grow with the
         # number of inputs. Single-support ties break by mean distance, so pera (0.20)
         # beats roja (0.40) for the remaining slot.
-        @test [p.first for p in got] == ["jardin", "pera"]
+        @test got == ["jardin", "pera"]
 
         @testset "synonyms_k overrides the default cap" begin
             m1 = merge_profiles([a, b]; synonyms_k=1)
-            @test [p.first for p in m1.synonyms["casa"]] == ["jardin"]
+            @test m1.synonyms["casa"] == ["jardin"]
 
             m3 = merge_profiles([a, b]; synonyms_k=3)
-            @test [p.first for p in m3.synonyms["casa"]] == ["jardin", "pera", "roja"]
+            @test m3.synonyms["casa"] == ["jardin", "pera", "roja"]
         end
     end
 
     @testset "OOV synonyms/lemmas are dropped, not carried over" begin
-        a = roundtrip(docs; synonyms=Dict("casa" => ["noexisteenvocab" => 0.1f0]),
+        a = roundtrip(docs; synonyms=Dict("casa" => ["noexisteenvocab"]),
                             lemmas=Dict("casa" => "tampocoexiste"))
         merged = merge_profiles([a, roundtrip(docs)])
         @test !haskey(merged.synonyms, "casa") || isempty(merged.synonyms["casa"])
@@ -134,6 +135,23 @@ using Test, TextSearch, SimilaritySearch
         # and "la", in 5 of 6 documents, is re-derived from the merged counters
         @test "la" in merged.stopword_candidates
         @test issorted(merged.stopword_candidates)
+    end
+
+    @testset "profiles with the same applied lemma map merge" begin
+        # regression guard: _same_transformation had no LemmaTransformation method, so it
+        # fell through to the `false` fallback and merging two lemmatized profiles errored
+        # as "incompatible transformations" even when their maps were identical
+        lt = LemmaTransformation(Dict("casas" => "casa"))
+        tc_l = TextConfig(tc; transformation=lt)
+        merged = merge_profiles([roundtrip(docs[1:3]; textconfig=tc_l),
+                                 roundtrip(docs[4:6]; textconfig=tc_l)])
+        @test has_lemma_transformation(merged.model.voc.textconfig.transformation)
+        @test trainsize(merged.model.voc) == 6
+
+        # differing maps genuinely cannot be reconciled and must still be refused
+        tc_l2 = TextConfig(tc; transformation=LemmaTransformation(Dict("casas" => "jardin")))
+        @test_throws ErrorException merge_profiles([roundtrip(docs[1:3]; textconfig=tc_l),
+                                                   roundtrip(docs[4:6]; textconfig=tc_l2)])
     end
 
     @testset "differing stopword transformations union" begin

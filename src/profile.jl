@@ -216,11 +216,50 @@ function _profile_reader(path::AbstractString)
     end
 end
 
+"""
+    _decode_synonyms(synd) -> (words, distances)
+
+Decodes a profile's `synonyms.json` into per-token neighbor lists, accepting both layouts.
+
+The current one stores the ranking alone, `{token: [neighbor, ...]}`, with distances in their
+own file. Profiles written before the split store the two interleaved,
+`{token: [[neighbor, distance], ...]}`. They are told apart by the shape of a list's
+elements -- a string means the ranking-only layout -- which is why this needs no format
+version bump: the payload identifies itself.
+
+`distances` comes back `nothing` for the current layout (the caller reads the separate file)
+and as the recovered mapping for the interleaved one, so an older profile loses nothing.
+"""
+function _decode_synonyms(synd)
+    words = Dict{String,Vector{String}}()
+    dists = Dict{String,Vector{Float32}}()
+
+    for (tok, syns) in synd
+        t = String(tok)
+        w = String[]
+        d = Float32[]
+        for e in syns
+            if e isa AbstractString || e isa Symbol
+                push!(w, String(e))
+            else
+                # interleaved [neighbor, distance]
+                push!(w, String(e[1]))
+                push!(d, Float32(e[2]))
+            end
+        end
+        words[t] = w
+        isempty(d) || (dists[t] = d)
+    end
+
+    words, (isempty(dists) ? nothing : dists)
+end
+
 # ── save_profile / load_profile / zip_profile ────────────────────────────────
 
 """
     save_profile(dir::AbstractString, model::VectorModel;
-                 synonyms::AbstractDict=Dict{String,Vector{Pair{String,Float32}}}(),
+                 synonyms::AbstractDict=Dict{String,Vector{String}}(),
+                 synonym_distances::Union{Nothing,AbstractDict}=nothing,
                  lemmas::AbstractDict{String,String}=Dict{String,String}(),
                  stopword_candidates::AbstractVector{<:AbstractString}=String[],
                  encoder::Union{Nothing,NamedTuple}=nothing) -> dir
@@ -231,12 +270,19 @@ network (e.g. as produced by [`LSI.synonyms`](@ref)), a `lemmas` map (e.g. as pr
 [`lemma_clusters`](@ref)), a `stopword_candidates` list (e.g. as produced by
 [`stopword_candidates`](@ref)), and `encoder` provenance metadata, into `dir` (created if
 missing) as a small directory of plain, human-readable JSON files: one per "large" piece --
-`vocabulary.json`, `weights.json`, `synonyms.json`/`lemmas.json`/`stopword_candidates.json`
-(each only written if non-empty), and `stopwords.json` (only written if `model`'s
+`vocabulary.json`, `weights.json`, `synonyms.json`/`synonym_distances.json`/`lemmas.json`/
+`stopword_candidates.json` (each only written if non-empty), and `stopwords.json` (only written if `model`'s
 `transformation` involves one) -- tied together by a small `manifest.json` that holds
 everything else (normalization/tokenization flags, weighting tags, encoder metadata, and
 file references). Load it back with [`load_profile`](@ref), or package it for
 distribution with [`zip_profile`](@ref).
+
+`synonyms` maps a token to its neighbor tokens **in rank order** (nearest first);
+`synonym_distances`, if given, is the parallel `token => Vector{Float32}` of distances, written
+to its own file. The split is deliberate: only the ranking participates in normal query
+expansion, and the distances are by far the bulk of a network on disk, so a consumer that does
+not need them can skip an entire file. Omit `synonym_distances` (or pass an empty mapping) to
+save the ranking alone.
 
 `lemmas` should map only non-identity tokens (a lookup miss on load means "token is its
 own lemma"). `stopword_candidates` is distinct from and additive to the `stopwords.json`
@@ -257,7 +303,8 @@ isn't `IdentityTokenTransformation`/`IgnoreStopwords`/`SnowballTokenTransformati
 `ChainTransformation` of those, errors clearly rather than silently mis-saving.
 """
 function save_profile(dir::AbstractString, model::VectorModel;
-                       synonyms::AbstractDict=Dict{String,Vector{Pair{String,Float32}}}(),
+                       synonyms::AbstractDict=Dict{String,Vector{String}}(),
+                       synonym_distances::Union{Nothing,AbstractDict}=nothing,
                        lemmas::AbstractDict{String,String}=Dict{String,String}(),
                        stopword_candidates::AbstractVector{<:AbstractString}=String[],
                        encoder::Union{Nothing,NamedTuple}=nothing)
@@ -298,8 +345,24 @@ function save_profile(dir::AbstractString, model::VectorModel;
 
     if !isempty(synonyms)
         _write_json(joinpath(dir, "synonyms.json"),
-            Dict(tok => [[syn, Float32(dist)] for (syn, dist) in syns] for (tok, syns) in synonyms))
+            Dict(String(tok) => [String(syn) for syn in syns] for (tok, syns) in synonyms))
         manifest["synonyms_file"] = "synonyms.json"
+
+        # Only for tokens the ranking actually carries: a distance list without its words
+        # could not be interpreted, and an entry for a token absent from `synonyms` would be
+        # dead weight in the file that exists to be skippable.
+        if synonym_distances !== nothing && !isempty(synonym_distances)
+            dd = Dict{String,Vector{Float32}}()
+            for (tok, ds) in synonym_distances
+                t = String(tok)
+                haskey(synonyms, tok) && !isempty(ds) || continue
+                dd[t] = Float32[Float32(d) for d in ds]
+            end
+            if !isempty(dd)
+                _write_json(joinpath(dir, "synonym_distances.json"), dd)
+                manifest["synonym_distances_file"] = "synonym_distances.json"
+            end
+        end
     end
 
     if !isempty(lemmas)
@@ -321,7 +384,8 @@ function save_profile(dir::AbstractString, model::VectorModel;
 end
 
 """
-    load_profile(path::AbstractString) -> (; model, synonyms, lemmas, stopword_candidates, encoder)
+    load_profile(path::AbstractString)
+        -> (; model, synonyms, synonym_distances, lemmas, stopword_candidates, encoder)
 
 Reads back a profile written by [`save_profile`](@ref) -- `path` may be either the
 directory `save_profile` produced, or a `.zip` archive of it (see [`zip_profile`](@ref));
@@ -330,13 +394,20 @@ extraction to disk needed. Reconstructs the `Vocabulary` (rebuilding `token2id` 
 stored `tokens` list) and `VectorModel`, and returns a `NamedTuple`:
 
 - `model::VectorModel`
-- `synonyms::Dict{String,Vector{Pair{String,Float32}}}` (empty if none saved)
+- `synonyms::Dict{String,Vector{String}}` -- neighbor tokens in rank order (empty if none saved)
+- `synonym_distances::Union{Nothing,Dict{String,Vector{Float32}}}` -- parallel distances
+  (`nothing` if the profile carries none, which is normal: they are optional side data)
 - `lemmas::Dict{String,String}` (empty if none saved)
 - `stopword_candidates::Vector{String}` (empty if none saved)
 - `encoder::Union{Nothing,Dict{String,Any}}` (`nothing` if none saved)
 
 `model`/`synonyms` are ready to pass straight into e.g. `TextInvertedFile(model;
 synonyms, ...)`.
+
+A profile written before synonyms were split into two files stores them interleaved, as
+`[[neighbor, distance], ...]`. Such a file is detected by shape and split on load, so older
+profiles keep working; nothing about them needs rewriting, and the format version does not
+move for it.
 
 Errors if the profile's `transformation` needs `Snowball`/`Languages` to reconstruct (a
 `"snowball"` tagged-union entry) and those packages aren't loaded yet.
@@ -374,14 +445,19 @@ function load_profile(path::AbstractString)
     weightd = read_file(String(wd[:weight_file]))
     model = VectorModel(gw, lw, voc, Int32(wd[:maxoccs]), Float32.(weightd[:weight]))
 
-    synonyms = if haskey(manifest, :synonyms_file)
-        synd = read_file(String(manifest[:synonyms_file]))
-        Dict{String,Vector{Pair{String,Float32}}}(
-            String(tok) => [Pair(String(syn), Float32(dist)) for (syn, dist) in syns]
-            for (tok, syns) in synd
+    synonyms, legacy_distances = if haskey(manifest, :synonyms_file)
+        _decode_synonyms(read_file(String(manifest[:synonyms_file])))
+    else
+        Dict{String,Vector{String}}(), nothing
+    end
+
+    synonym_distances = if haskey(manifest, :synonym_distances_file)
+        dd = read_file(String(manifest[:synonym_distances_file]))
+        Dict{String,Vector{Float32}}(
+            String(tok) => Float32[Float32(d) for d in ds] for (tok, ds) in dd
         )
     else
-        Dict{String,Vector{Pair{String,Float32}}}()
+        legacy_distances   # nothing, unless an old interleaved file supplied them
     end
 
     lemmas = if haskey(manifest, :lemmas_file)
@@ -403,7 +479,7 @@ function load_profile(path::AbstractString)
         nothing
     end
 
-    (; model, synonyms, lemmas, stopword_candidates, encoder)
+    (; model, synonyms, synonym_distances, lemmas, stopword_candidates, encoder)
 end
 
 """

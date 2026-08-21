@@ -1,4 +1,4 @@
-using Test, TextSearch, SimilaritySearch
+using Test, TextSearch, SimilaritySearch, JSON3
 using Snowball, Languages
 
 @testset "save_profile / load_profile / zip_profile" begin
@@ -9,8 +9,12 @@ using Snowball, Languages
         "la pera verde esta rica",
     ]
     synonyms = Dict(
-        "casa" => [("hogar" => 0.12f0), ("vivienda" => 0.20f0)],
-        "pera" => [("manzana" => 0.1f0)],
+        "casa" => ["hogar", "vivienda"],
+        "pera" => ["manzana"],
+    )
+    synonym_distances = Dict(
+        "casa" => Float32[0.12, 0.20],
+        "pera" => Float32[0.1],
     )
     lemmas = Dict("casas" => "casa", "peras" => "pera")
     stopword_candidates = ["la", "esta"]
@@ -23,13 +27,14 @@ using Snowball, Languages
 
         dir = tempname()
         try
-            save_profile(dir, model; synonyms, lemmas, stopword_candidates, encoder)
+            save_profile(dir, model; synonyms, synonym_distances, lemmas, stopword_candidates, encoder)
 
             # one file per "large" variable, not a single big JSON blob
             @test isfile(joinpath(dir, "manifest.json"))
             @test isfile(joinpath(dir, "vocabulary.json"))
             @test isfile(joinpath(dir, "weights.json"))
             @test isfile(joinpath(dir, "synonyms.json"))
+            @test isfile(joinpath(dir, "synonym_distances.json"))
             @test isfile(joinpath(dir, "lemmas.json"))
             @test isfile(joinpath(dir, "stopword_candidates.json"))
             @test !isfile(joinpath(dir, "stopwords.json"))  # no stopwords transformation here
@@ -46,6 +51,7 @@ using Snowball, Languages
             @test p.model.maxoccs == model.maxoccs
             @test p.model.weight == model.weight
             @test p.synonyms == synonyms
+            @test p.synonym_distances == synonym_distances
             @test p.lemmas == lemmas
             @test sort(p.stopword_candidates) == sort(stopword_candidates)
             @test p.encoder["kind"] == "lsi"
@@ -68,14 +74,49 @@ using Snowball, Languages
         try
             save_profile(dir, model)
             @test !isfile(joinpath(dir, "synonyms.json"))
+            @test !isfile(joinpath(dir, "synonym_distances.json"))
             @test !isfile(joinpath(dir, "lemmas.json"))
             @test !isfile(joinpath(dir, "stopword_candidates.json"))
 
             p = load_profile(dir)
-            @test p.synonyms isa Dict{String,Vector{Pair{String,Float32}}} && isempty(p.synonyms)
+            @test p.synonyms isa Dict{String,Vector{String}} && isempty(p.synonyms)
+            @test p.synonym_distances === nothing
             @test p.lemmas isa Dict{String,String} && isempty(p.lemmas)
             @test p.stopword_candidates isa Vector{String} && isempty(p.stopword_candidates)
             @test p.encoder === nothing
+        finally
+            rm(dir; force=true, recursive=true)
+        end
+    end
+
+    @testset "legacy interleaved synonyms.json still loads" begin
+        # Profiles written before synonyms were split store [[neighbor, distance], ...] in
+        # one file. They must keep loading, distances included, without a format bump --
+        # the payload identifies itself by shape. This is what keeps already-published
+        # profiles usable.
+        textconfig = TextConfig(tokenization=TokenizationConfig(nlist=[1]))
+        voc = Vocabulary(textconfig, corpus)
+        model = VectorModel(IdfWeighting(), TfWeighting(), voc)
+
+        dir = tempname()
+        try
+            save_profile(dir, model; synonyms, synonym_distances)
+            # rewrite synonyms.json in the old layout and drop the separate distances file
+            open(joinpath(dir, "synonyms.json"), "w") do io
+                JSON3.write(io, Dict(
+                    tok => [[syn, synonym_distances[tok][i]] for (i, syn) in enumerate(syns)]
+                    for (tok, syns) in synonyms))
+            end
+            rm(joinpath(dir, "synonym_distances.json"))
+            man = JSON3.read(read(joinpath(dir, "manifest.json"), String), Dict{String,Any})
+            delete!(man, "synonym_distances_file")
+            open(joinpath(dir, "manifest.json"), "w") do io
+                JSON3.write(io, man)
+            end
+
+            p = load_profile(dir)
+            @test p.synonyms == synonyms
+            @test p.synonym_distances == synonym_distances   # recovered from the interleaved file
         finally
             rm(dir; force=true, recursive=true)
         end
@@ -189,7 +230,7 @@ using Snowball, Languages
         dir = tempname()
         zippath = dir * ".zip"
         try
-            save_profile(dir, model; synonyms, lemmas, stopword_candidates, encoder)
+            save_profile(dir, model; synonyms, synonym_distances, lemmas, stopword_candidates, encoder)
             out = zip_profile(dir, zippath)
             @test out == zippath
             @test isfile(zippath)
@@ -198,6 +239,7 @@ using Snowball, Languages
             @test p.model.voc.token == model.voc.token
             @test p.model.weight == model.weight
             @test p.synonyms == synonyms
+            @test p.synonym_distances == synonym_distances
             @test p.lemmas == lemmas
             @test sort(p.stopword_candidates) == sort(stopword_candidates)
             @test p.encoder["kind"] == "lsi"

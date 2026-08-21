@@ -145,12 +145,15 @@ using Test, TextSearch, SimilaritySearch, LinearAlgebra, SparseArrays
         @test isapprox(X[tokenID], vectorize(lsi, "quick"), atol=1e-5)
 
         net = synonyms(lsi, 3; verbose=false)
-        @test net isa Dict{String,Vector{Pair{String,Float32}}}
-        @test length(net) == m
-        for (tok, neighbors) in net
+        @test net.synonyms isa Dict{String,Vector{String}}
+        @test net.distances isa Dict{String,Vector{Float32}}
+        @test length(net.synonyms) == m
+        for (tok, neighbors) in net.synonyms
             @test length(neighbors) <= 3
-            @test all(nb != tok for (nb, _) in neighbors)  # never its own synonym
-            @test issorted(last.(neighbors))                # increasing distance
+            @test all(nb != tok for nb in neighbors)          # never its own synonym
+            ds = net.distances[tok]
+            @test length(ds) == length(neighbors)             # the two lists stay aligned
+            @test issorted(ds)                                # increasing distance
         end
     end
 
@@ -190,17 +193,18 @@ using Test, TextSearch, SimilaritySearch, LinearAlgebra, SparseArrays
 
         # forcing the approximate path must still produce a well-formed network
         net = synonyms(lsi, 3; approx=true, verbose=false)
-        @test net isa Dict{String,Vector{Pair{String,Float32}}}
-        @test length(net) == m
-        for (tok, neighbors) in net
+        @test net.synonyms isa Dict{String,Vector{String}}
+        @test length(net.synonyms) == m
+        for (tok, neighbors) in net.synonyms
             @test length(neighbors) <= 3
-            @test all(nb != tok for (nb, _) in neighbors)
-            @test issorted(last.(neighbors))
+            @test all(nb != tok for nb in neighbors)
+            @test length(net.distances[tok]) == length(neighbors)
+            @test issorted(net.distances[tok])
         end
 
         # recall targets are forwarded, not silently ignored
         net2 = synonyms(lsi, 3; approx=true, construction_recall=0.99, search_recall=0.95, verbose=false)
-        @test net2 isa Dict{String,Vector{Pair{String,Float32}}}
+        @test net2.synonyms isa Dict{String,Vector{String}}
 
         @test_throws ArgumentError synonyms(lsi, 3; approx=:bogus, verbose=false)
     end
