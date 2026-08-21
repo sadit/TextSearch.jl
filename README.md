@@ -10,8 +10,8 @@
 
 - **Flexible Preprocessing & Tokenization (`TextConfig`)**:
   - Fine-grained character normalization: lowercase conversion, diacritic stripping, punctuation handling, emoji grouping/detection, and regex-based entity replacement (users, URLs, numbers).
-  - Multi-scale tokenizers: word $n$-grams, character $q$-grams, skip-grams, paragraph/sentence splitters, and custom token generators (`AbstractTokenGenerator`).
-  - Extensible token transformations (`AbstractTokenTransformation`): stemming via Snowball (through `TextSearchSnowballExt`), stopword filtering (`IgnoreStopwords`), and chained pipelines (`ChainTransformation`).
+  - Word $n$-gram tokenization (`nlist`), paragraph/sentence splitters (`tokenize_paragraphs`, `tokenize_sentences`), and custom token generators (`AbstractTokenGenerator`).
+  - Extensible token transformations (`AbstractTokenTransformation`): stemming via Snowball (through `TextSearchSnowballExt`), stopword filtering (`IgnoreStopwords`), lemma normalization (`LemmaTransformation`), and chained pipelines (`ChainTransformation`).
 - **Vocabulary & Bag-of-Words (`Vocabulary`, `BOW`)**:
   - Fast token $\leftrightarrow$ ID mappings, document frequency tracking, and vocabulary pruning/filtering.
   - Efficient multithreaded corpus processing via `SimilaritySearch.@BATCHES`.
@@ -20,16 +20,25 @@
   - Global weighting schemes: `IdfWeighting`, `BinaryGlobalWeighting`.
   - Supervised & entropy weighting: `EntropyWeighting` and `CombineWeighting` for text classification.
   - High-performance sparse vector representations (`SparseVector`, `SparseVecView`) with SIMD-accelerated and adaptive sparse dot products, cosine similarities, and centroids.
+- **Semantic Artifacts (`LSI`, `synonyms`, `lemma_clusters`, `stopword_candidates`)**:
+  - Latent semantic indexing with an exact truncated SVD, dense or ARPACK-based, chosen by corpus size.
+  - Synonym networks built by (optionally approximate) all-pairs kNN over token embeddings, storing the neighbour ranking and its distances separately.
+  - Lemma maps derived by grouping inflections morphologically and splitting them semantically.
+  - Query-time synonym expansion (`expand_synonyms!`) for both sparse-vector and BM25 queries -- applied to queries only, never to documents.
+- **Portable Profiles (`save_profile`, `load_profile`, `zip_profile`, `merge_profiles`, `refit_profile`)**:
+  - A profile bundles vocabulary, weights, synonyms, lemmas and stopword candidates as plain, inspectable JSON -- no code is ever deserialized.
+  - `merge_profiles` folds batched profiles of one corpus into an exact corpus-wide model; `refit_profile` adapts a generic profile to a specific dataset from a sample, adjusting statistics rather than replacing them.
 - **Search Indexes & BM25 Ranking**:
   - `BM25InvertedFile`: Fast, merge-based BM25 scoring and retrieval over posting lists.
   - `FullText` & `TextInvertedFile`: High-level full-text search indexes that wrap corpus tokenization, weighting, and inverted index search into a unified interface.
-  - Direct compatibility with `SimilaritySearch.jl` metric search indexes (`SearchGraph`, `ExhaustiveSearch`, `InvertedFile`).
+  - Direct compatibility with `SimilaritySearch.jl` metric search indexes (`SearchGraph`, `ExhaustiveSearch`) and its `InvertedFiles` submodule.
 
 ## Processing Pipeline
 
 ```
 Raw text / Corpus
-  → TextConfig (preprocessing options: diacritics, lowercase, urls, emojis, q-grams, n-grams)
+  → TextConfig (normalization: diacritics, lowercase, urls, emojis / tokenization: n-grams
+                / transformation: stopwords, lemmas, stemming)
   → normalize_text (character-level normalization)
   → tokenize (produces a TokenizedText or list of token strings)
   → Vocabulary (token ⇄ id table, corpus statistics, filtering)
@@ -58,6 +67,7 @@ To run the test suite:
 ### 1. Vector Model and Inverted Index Search
 
 ```julia
+# TextSearch v1.1
 using TextSearch, SimilaritySearch
 
 # Sample documents
@@ -69,32 +79,29 @@ corpus = [
 ]
 
 # Configure tokenization (unigrams + bigrams)
-config = TextConfig(nlist=[1, 2], qlist=[])
+config = TextConfig(tokenization=TokenizationConfig(nlist=[1, 2]))
 
 # Build vocabulary and TF-IDF vector model
 voc = Vocabulary(config, corpus)
 model = VectorModel(IdfWeighting(), TfWeighting(), voc)
 
-# Vectorize corpus into sparse vectors
-X = vectorize_corpus(model, corpus)
-
-# Index vectors with an inverted file using normalized cosine distance
-db = VectorDatabase(X)
-invfile = InvertedFile(Dist.NormCosine(), db)
-index!(invfile)
+# Index the corpus: TextInvertedFile wraps vectorization and the posting lists
+idx = TextInvertedFile(model; dist=Dist.NormCosine())
+ctx = InvertedFileContext()
+append_items!(idx, ctx, corpus)
 
 # Search nearest documents for a query
-query = "machine learning and text retrieval in Julia"
-qvec = vectorize(model, query)
-res = search(invfile, qvec, 3)
+res = search(idx, ctx, "machine learning and text retrieval in Julia", knnqueue(KnnSorted, 3))
 
-println("Nearest neighbor doc IDs: ", res.ids)
-println("Cosine distances: ", res.dists)
+for (id, d) in zip(res.ids, res.dists)
+    println("doc $id (cosine distance $(round(d; digits=4))): ", corpus[id])
+end
 ```
 
 ### 2. BM25 Inverted File Search
 
 ```julia
+# TextSearch v1.1
 using TextSearch, SimilaritySearch
 
 corpus = [
@@ -104,18 +111,79 @@ corpus = [
     "the lazy dog sleeps all day"
 ]
 
-# Create and populate a BM25 inverted index
-invfile = BM25InvertedFile(corpus; config=TextConfig(nlist=[1]))
+# Create and populate a BM25 inverted index. The index is built from a Vocabulary, and
+# documents are added separately -- so a corpus larger than memory can be streamed in.
+voc = Vocabulary(TextConfig(tokenization=TokenizationConfig(nlist=[1])), corpus)
+invfile = BM25InvertedFile(voc)
+ctx = InvertedFileContext()
+append_items!(invfile, ctx, corpus)
 
 # Query the BM25 index (returns top-k documents ranked by BM25 score)
-query = "quick brown fox"
-res = search(invfile, query, 2)
+res = search(invfile, ctx, "quick brown fox", knnqueue(KnnSorted, 2))
 
 for (doc_id, dist) in zip(res.ids, res.dists)
-    # dist is negative score (or 1 / (1 + score)) for metric consistency
-    println("Doc $doc_id: $(corpus[doc_id]) (score: $dist)")
+    # dist is the negated BM25 score, so it is negative and MORE negative means more relevant
+    println("Doc $doc_id: $(corpus[doc_id]) (distance: $(round(dist; digits=4)))")
 end
 ```
+
+### 3. Semantic Artifacts and Portable Profiles
+
+Beyond indexing, a corpus can be distilled into artifacts that travel with the model:
+per-token embeddings (LSI), a synonym network, and a lemma map. Together with the vocabulary
+and weights they form a **profile** -- a directory of plain JSON files (or a zip of them)
+that can be shipped, inspected, and adapted.
+
+```julia
+# TextSearch v1.1
+using TextSearch, SimilaritySearch
+
+corpus = [
+    "the quick brown fox jumps over the lazy dog",
+    "brown foxes jump over lazy dogs every morning",
+    "quick dogs and lazy cats share the park",
+    "a lazy dog sleeps while the cats play",
+    "foxes and dogs are both animals of the forest",
+    "the forest is full of quick animals",
+]
+
+config = TextConfig(tokenization=TokenizationConfig(nlist=[1]))
+voc = Vocabulary(config, corpus)
+model = VectorModel(IdfWeighting(), TfWeighting(), voc)
+
+# Latent semantic indexing gives one vector per vocabulary token
+lsi = LatentSemanticIndexing(model, corpus; maxoutdim=4, verbose=false)
+wordvecs = wordvectors(lsi)
+
+# A synonym network: neighbour tokens in rank order, with distances kept separately, since
+# only the ranking takes part in query expansion
+net = synonyms(lsi, 2; verbose=false)
+
+# A lemma map: inflections are grouped by surface similarity, then split by meaning
+lemmas = lemma_clusters(voc, wordvecs)
+
+# Package everything as a portable profile
+dir = mktempdir()
+save_profile(dir, model;
+             synonyms=net.synonyms, synonym_distances=net.distances, lemmas,
+             stopword_candidates=stopword_candidates(voc, 0.9))
+
+p = load_profile(dir)
+println("profile: vocsize=$(vocsize(p.model.voc)) synonyms=$(length(p.synonyms)) lemmas=$(length(p.lemmas))")
+
+# Adapt the profile to a different dataset, given a sample of it. Statistics are adjusted
+# rather than replaced: the profile acts as a prior, the sample as evidence.
+sample = ["cats sleep on the sofa", "the sofa is warm for cats", "warm cats sleep all day"]
+tuned = refit_profile(p, sample; verbose=false)
+println("refitted: vocsize=$(vocsize(tuned.model.voc)) trainsize=$(trainsize(tuned.model.voc))")
+```
+
+Do not judge artifact quality from a six-document corpus: LSI needs real co-occurrence
+statistics before its neighbours mean anything. The mechanics are the point here.
+
+The [`textsearch` CLI app](apps/textsearch) drives this end to end -- fitting profiles over
+large corpora in batches, merging them, refitting one against a dataset sample, and probing
+the result -- without writing Julia.
 
 ## Documentation
 
@@ -136,6 +204,54 @@ Contributions are welcome! Please open an issue or pull request on GitHub for bu
 ---
 
 ## Release Notes
+
+### About the v1.1 series
+
+Changed, in how synonym networks are represented:
+
+- **Words and distances are stored separately.** `synonyms(...)` returns `(; synonyms,
+  distances)` -- a token maps to its neighbours *in rank order*, the distances live in a
+  parallel structure -- and `load_profile` exposes them as two fields. Only the ranking takes
+  part in query expansion (BM25 ignores query-side weights entirely, and once a network is
+  merged or refitted its distances are no longer distances in any single space), so keeping
+  them apart lets a consumer, or a profile on disk, carry the ranking alone. On a real profile
+  that is most of the file.
+- **`expand_synonyms!` weights by rank by default**, `1/rank` instead of `exp(-d)`.
+
+Profiles written by v1.0 keep loading: they store the two interleaved, and that layout is
+recognized by shape and split on load. Code that reads a network in memory needs updating:
+
+```julia
+# v1.0
+net = synonyms(lsi, 8)
+for (neighbour, distance) in net["dog"]; end
+
+# v1.1
+net = synonyms(lsi, 8)
+for (rank, neighbour) in enumerate(net.synonyms["dog"])
+    distance = net.distances["dog"][rank]   # optional; the ranking alone is usually enough
+end
+
+# and to keep expand_synonyms!' previous distance-based weighting
+expand_synonyms!(vec, voc, net.synonyms; distances=net.distances)
+```
+
+New:
+
+- **Lemma normalization in the pipeline (`LemmaTransformation`)**: a lemma is a normalization,
+  so it belongs in the `TextConfig`, where it applies to documents and queries alike and the
+  idf counts an inflection family together instead of splitting it across forms. Chain it
+  *before* `IgnoreStopwords` -- the reverse order silently reintroduces stopwords.
+- **`refit_profile`**: adapts a bootstrap profile to a dataset from a sample of it, treating
+  the profile as a prior worth `kappa` documents against the sample's evidence. A word the
+  base considered important but the sample never shows survives with reduced weight; one that
+  mattered in neither is dropped. Layered so any program can drive it (`refit_textconfig`,
+  `fold_lemmas`, `blend_vocabularies`).
+- **`extend_lemmas_morphological`**: recovers lemma families for tokens a base profile never
+  saw, from surface similarity alone -- no embedding is fit.
+- The tokenizer's borrowed-buffer API (`tokenizerbuffer`, `borrowtokenizedtext`,
+  `TokenizerBuffer`) is now exported, along with the transformation-pipeline predicates
+  `has_lemma_transformation` / `with_lemma_transformation` / `without_lemma_transformation`.
 
 ### About v1.0 series
 
