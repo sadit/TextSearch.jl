@@ -404,6 +404,102 @@ end
 "The vocabulary size past which [`synonyms`](@ref)' `approx=:auto` prefers an approximate index."
 const SYNONYMS_APPROX_THRESHOLD = 4096
 
+# Four ways of deciding "where does this token's real neighborhood end?" were measured on
+# 272,466 Spanish Wikipedia paragraphs (106,436 tokens, 256-dim LSI) and all four fail, for the
+# same underlying reason. Recorded here because each one looks obviously right on paper.
+#
+# The failing population is a token whose neighbors are incoherent -- `comun` returning
+# `aguilucho pintojo arrendajo cerceta` (bird names, from "nombre comun" in species articles),
+# `bojan` returning `cahill musica carnatica`. The healthy comparison cases are `innodb` ->
+# `mysql oracle sqlite mariadb interbase` and `planeta` -> `marte saturno neptuno urano jupiter`.
+#
+# 1. ABSOLUTE DISTANCE CEILING. No global scale exists: `innodb`, whose list is perfect, has the
+#    farthest first neighbour of every token examined (0.501) -- farther than `boca` (0.387),
+#    `comun` (0.426) and `seccion` (0.465), whose lists are junk. Any ceiling separating them
+#    cuts the good one first.
+# 2. KNEE / SECOND DIFFERENCE of the sorted distance curve. There is no knee: `planeta` runs
+#    0.037 -> 0.179 over 24 neighbours in smooth increments, and its largest curvature falls at
+#    position 9, in the middle of the correct list (it would drop `joviana ceres deimos
+#    galileanos caronte`). In `innodb` the real good/junk boundary sits between `interbase`
+#    (0.572) and `sidereo` (0.579), a gap of 0.007 -- indistinguishable from the 0.005 gaps
+#    inside the good part.
+# 3. LOCAL RADIUS from reverse votes (`bichromatic_metricjoin`, the `prune=:localradius` option
+#    below). Correctly empties the polysemous fillers, but also empties `innodb`, `cistoscopia`
+#    (-> `vesical cistitis biopsia`) and `aluminosilicato`, because the estimate needs the token
+#    to be in someone else's top-k: a rare term close to `mysql` gets no voters, since `mysql`
+#    has closer neighbours, so it falls to the global cutoff and is cut. It hits precisely the
+#    rare-but-coherent technical vocabulary a synonym network is most useful for.
+# 4. RECIPROCITY, and DOCUMENT FREQUENCY. Reciprocity measures frequency, not coherence:
+#    `forma` and `tiene` (junk lists) score 1.00 while `innodb` and `destacamento` (good lists)
+#    score 0.00 -- high-frequency tokens sit near the centre of the space and link mutually,
+#    rare ones point at tokens with closer neighbours. Document frequency does not separate at
+#    the bottom either: at 5-8 documents both `innodb`/`ruderal` (good) and
+#    `bojan`/`declararan` (bad) live together, so a sample-size floor cuts both.
+#    The raw LSI norm over sqrt(ndocs) does separate by ~2x in the mid and high bands
+#    (`guardia` 0.00215 vs `boca` 0.00099) and not at all in the rare band (good 0.00040-0.00085
+#    against bad 0.00049-0.00056) -- i.e. it works where it is not needed.
+#
+# The common cause is that in 256 dimensions under cosine the distances concentrate: the RANKING
+# carries information, the absolute values and their differences do not. What actually separates
+# `innodb` from `bojan` is that `innodb`'s five documents are all about databases while
+# `bojan`'s eight are about unrelated people -- context coherence, which no statistic already on
+# hand encodes.
+#
+# So the noise is accepted rather than filtered, and the query-expansion weighting is what bounds
+# it: `expand_synonyms!` appends `weight * weight_fn(rank)`, i.e. the weight of the token that
+# produced the expansion. A high-frequency polysemous token has low idf and therefore contributes
+# its noise weakly. The remaining exposure is a rare token with an incoherent neighbourhood, whose
+# high idf amplifies it -- bounded in practice because such tokens are the bulk of a vocabulary
+# by count but not of real queries.
+
+"""
+    _synonyms_localradius(voc, wordvecs, idx, ictx, kk, kcap, rank, q, mingroup)
+
+Assembles a synonym network whose per-token neighbor count is decided by the data instead of by
+a fixed `k`, via [`SimilaritySearch.bichromatic_metricjoin`](@ref) as a self-join.
+
+A top-`k` network gives every token exactly `k` neighbors whether or not it has `k` real ones,
+so a token in a sparse region of the embedding gets filler and a token in a dense one gets
+truncated. The join instead estimates a cutoff radius *per token* from the reverse view of the
+same search: every token that ranked `t` among its own closest `rank` candidates votes for `t`
+with that distance, and `t`'s cutoff is the `q`-quantile of its voters. Tokens with fewer than
+`mingroup` voters fall back to a pooled global cutoff.
+
+Two consequences worth knowing before choosing this over `:topk`. The surviving pairs are those
+where the *other* token found `t` in its own top-`kk`, so the network becomes mutual-ish rather
+than a plain per-token top-`k`: a token that nobody's neighborhood reaches gets no synonyms even
+if it has close ones of its own. And the output size is data-dependent, so `kcap` is applied only
+as a ceiling to keep a pathologically dense token from carrying thousands of neighbors.
+"""
+function _synonyms_localradius(voc::Vocabulary, wordvecs::AbstractDatabase, idx, ictx,
+                               kk::Integer, kcap::Integer, rank::Int, q::Float64, mingroup::Int)
+    pairs = bichromatic_metricjoin(idx, ictx, wordvecs; k=kk, rank=rank, q=q,
+                                   mingroup=mingroup, samedata=true)
+    acc = Dict{Int,Vector{Tuple{Float32,Int}}}()
+    for (a, b, d) in pairs
+        isnan(d) && continue          # zero embeddings: no direction to compare, see `synonyms`
+        push!(get!(() -> Tuple{Float32,Int}[], acc, Int(a)), (d, Int(b)))
+    end
+
+    net = Dict{String,Vector{String}}()
+    netdist = Dict{String,Vector{Float32}}()
+    for t in 1:length(wordvecs)
+        tok = gettoken(voc, t)
+        got = get(acc, t, nothing)
+        if got === nothing
+            net[tok] = String[]
+            netdist[tok] = Float32[]
+            continue
+        end
+        sort!(got)
+        length(got) > kcap && resize!(got, kcap)
+        net[tok] = [gettoken(voc, b) for (_, b) in got]
+        netdist[tok] = [d for (d, _) in got]
+    end
+
+    (; synonyms=net, distances=netdist)
+end
+
 """
     synonyms(voc::Vocabulary, wordvecs::AbstractDatabase, k::Integer=8;
              dist=Dist.Cosine(), verbose::Bool=true, approx=:auto,
@@ -445,8 +541,12 @@ net.distances["dog"]  # [0.02, 0.11, ...]
 """
 function synonyms(voc::Vocabulary, wordvecs::AbstractDatabase, k::Integer=8;
                    dist=Dist.Cosine(), verbose::Bool=true, approx=:auto,
-                   construction_recall::Real=0.97, search_recall::Real=0.9)
+                   construction_recall::Real=0.97, search_recall::Real=0.9,
+                   prune::Symbol=:topk, join_rank::Integer=1, join_quantile::Real=0.9,
+                   join_mingroup::Integer=8)
     k > 0 || throw(ArgumentError("k must be positive"))
+    prune in (:topk, :localradius) ||
+        throw(ArgumentError("prune must be :topk or :localradius; got $(repr(prune))"))
     m = length(wordvecs)
     kk = min(k + 1, m)
 
@@ -454,7 +554,7 @@ function synonyms(voc::Vocabulary, wordvecs::AbstractDatabase, k::Integer=8;
                 approx isa Bool ? approx :
                 throw(ArgumentError("approx must be :auto, true, or false; got $(repr(approx))"))
 
-    ids, dists = if useapprox
+    idx, ictx = if useapprox
         G = SearchGraph(dist, wordvecs)
         gctx = SearchGraphContext(;
             hyperparameters_callback=OptimizeParameters(MinRecall(construction_recall)),
@@ -463,11 +563,19 @@ function synonyms(voc::Vocabulary, wordvecs::AbstractDatabase, k::Integer=8;
         # tune for the same k `allknn` will ask for; optimizing at the default ksearch=10
         # and then querying at a different k leaves realized recall off target
         optimize_index!(G, gctx, MinRecall(search_recall); ksearch=kk)
-        allknn(G, gctx, kk; progress=Progress(m; dt=1, enabled=verbose, desc="synonyms allknn (approx)"))
+        G, gctx
     else
-        idx = ParallelExhaustiveSearch(dist, wordvecs)
-        allknn(idx, GenericContext(), kk; progress=Progress(m; dt=1, enabled=verbose, desc="synonyms allknn (exact)"))
+        ParallelExhaustiveSearch(dist, wordvecs), GenericContext()
     end
+
+    if prune === :localradius
+        return _synonyms_localradius(voc, wordvecs, idx, ictx, kk, k,
+                                     Int(join_rank), Float64(join_quantile), Int(join_mingroup))
+    end
+
+    ids, dists = allknn(idx, ictx, kk;
+                        progress=Progress(m; dt=1, enabled=verbose,
+                                          desc="synonyms allknn ($(useapprox ? "approx" : "exact"))"))
 
     net = Dict{String,Vector{String}}()
     netdist = Dict{String,Vector{Float32}}()
