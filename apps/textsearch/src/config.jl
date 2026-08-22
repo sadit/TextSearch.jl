@@ -49,6 +49,15 @@ min_ndocs = 1
 [stopwords]
 enabled = true
 doc_freq_threshold = 0.5
+# Fraction of the batch used to DETECT stopwords. Detection needs one full tokenization pass whose
+# only product is the list of tokens above the threshold, and it is the single most expensive stage
+# of a fit -- 39% of it on 10,000 Spanish articles. A document frequency is estimable from a
+# sample, and how small a sample depends on the document unit: with paragraphs at threshold 0.1,
+# samples of 20%, 10% and 5% all recover the set exactly (5% took 1.9s against 37.3s), because the
+# band around the cut is empty -- the highest content word sits at 0.069. With articles at 0.5 even
+# 20% differs, since 21 tokens crowd (0.4, 0.5] and sampling noise flips the marginal ones. So
+# there is no safe default: 0 (or 1) tokenizes everything, which is always correct.
+detect_sample = 0.0
 
 [encoder]
 kind = "lsi"                # "lsi" | "external"

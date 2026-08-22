@@ -187,7 +187,29 @@ function _fit_one_batch(docs::Vector{String}, cfg, batch_dir::AbstractString)
     base_textconfig = _fit_textconfig(cfg)
 
     if sw["enabled"]
-        voc0 = Vocabulary(base_textconfig, docs; verbose=false)
+        # This pass exists only to find the tokens above `doc_freq_threshold`, and it is the
+        # single most expensive stage of a fit: measured on 10,000 Spanish articles it was 35.6s
+        # of 90.9s (39%), and on their 272,466 paragraphs 36.5s of 123.2s. A document frequency
+        # is estimable from a sample, so `detect_sample` trades exactness for that cost.
+        #
+        # How safe the trade is depends on the document unit, and the reason is the same one that
+        # makes the threshold easy to set under paragraph units. Measured: with paragraphs at
+        # threshold 0.1, samples of 20%, 10% and 5% all recover the set EXACTLY (31 tokens), and
+        # 5% takes 1.9s against 37.3s. With articles at 0.5, even 20% differs (`anos` appears),
+        # 10% and 5% add `anos otros`, and 2% loses `hasta pero`. At article level the band around
+        # the threshold is crowded -- 21 tokens sit in (0.4, 0.5] -- so sampling noise flips the
+        # marginal ones; under paragraphs that band is empty, with the highest content word at
+        # 0.069 against a cut of 0.1, and no sampling noise can cross it.
+        #
+        # So it is off by default and set by whoever knows the unit, exactly like `head_df`.
+        frac = Float64(get(sw, "detect_sample", 0.0))
+        detect_docs = if 0.0 < frac < 1.0 && length(docs) > 1
+            n = max(1, round(Int, frac * length(docs)))
+            docs[randperm(length(docs))[1:n]]
+        else
+            docs
+        end
+        voc0 = Vocabulary(base_textconfig, detect_docs; verbose=false)
         candidates = stopword_candidates(voc0, Float64(sw["doc_freq_threshold"]))
         fit_tc = TextConfig(base_textconfig; transformation=IgnoreStopwords(Set(candidates)))
     else

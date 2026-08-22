@@ -188,6 +188,14 @@ if [[ -z "${TS_HEAD_DF:-}" && "$SPLIT_PARAGRAPHS" == "true" ]]; then
   TS_HEAD_DF=0.05
   log "query-expansion head cut for paragraph units: $TS_HEAD_DF"
 fi
+# Stopword detection from a sample is EXACT under paragraph units (measured: 20%, 10% and 5% all
+# recover the same 31 tokens on 272,466 Spanish paragraphs at threshold 0.1) because the band
+# around the cut is empty. It is not exact under article units, so only paragraph runs get it.
+# 5% is used rather than 10% since both were exact and it is twice as cheap.
+if [[ -z "${TS_DETECT_SAMPLE:-}" && "$SPLIT_PARAGRAPHS" == "true" ]]; then
+  TS_DETECT_SAMPLE=0.05
+  log "stopword detection sample for paragraph units: $TS_DETECT_SAMPLE"
+fi
 if [[ -z "$DOC_FREQ_THRESHOLD" ]]; then
   case "$LANG_CODE" in
     es)       DOC_FREQ_THRESHOLD=0.5 ;;
@@ -324,7 +332,7 @@ if has_step fit; then
   TS_RESUME="$RESUME" TS_MIN_NDOCS="$MIN_NDOCS" TS_STOPWORDS="$STOPWORDS" \
   TS_DOC_FREQ_THRESHOLD="$DOC_FREQ_THRESHOLD" TS_OUTDIM="$OUTDIM" TS_QUERY_EXPANSION_K="$QUERY_EXPANSION_K" \
   TS_LEMMA_ALG="$LEMMA_ALG" TS_LEMMA_SEL="$LEMMA_SEL" TS_LANGUAGE="$LANG_CODE" \
-  TS_HEAD_DF="${TS_HEAD_DF:-0.0}" \
+  TS_HEAD_DF="${TS_HEAD_DF:-0.0}" TS_DETECT_SAMPLE="${TS_DETECT_SAMPLE:-0.0}" \
   TS_DEL_DIAC="$DEL_DIAC" TS_DEL_PUNC="$DEL_PUNC" \
     ts_render_fit_config "$FIT_CFG"
   ts_fit "$FIT_CFG"
