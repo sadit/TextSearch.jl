@@ -80,7 +80,7 @@ ts_render_fit_config() {
   local sw_enabled="${TS_STOPWORDS:-true}"
   local sw_thresh="${TS_DOC_FREQ_THRESHOLD:-0.5}"
   local outdim="${TS_OUTDIM:-256}"
-  local syn_k="${TS_SYN_K:-8}"
+  local syn_k="${TS_QUERY_EXPANSION_K:-8}"
   local lem_alg="${TS_LEMMA_ALG:-fft}"
   local lem_sel="${TS_LEMMA_SEL:-most_frequent}"
   # These profiles are BASE models: the lemma map is computed and saved but NOT applied, so
@@ -139,7 +139,7 @@ scaling = "none"
 external_path = ""
 factorization = "auto"
 
-[synonyms]
+[query_expansion]
 k = $syn_k
 approx = "auto"
 construction_recall = 0.97

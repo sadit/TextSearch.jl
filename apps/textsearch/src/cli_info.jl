@@ -31,9 +31,9 @@ function cmd_info(args::Vector{String})
     mark(n, applied) = "$n " * (applied ? "(applied)" : "(carried, not applied)")
     println("stopwords: ", mark(length(p.stopwords), p.applied.stopwords))
     println("lemmas:    ", mark(length(p.lemmas), p.applied.lemmas), " remapped tokens")
-    println("synonyms:  ", mark(length(p.synonyms), p.applied.synonyms), " tokens",
-            p.synonym_distances === nothing ? ", ranking only" :
-            ", with $(length(p.synonym_distances)) distance lists")
+    println("query_expansion:  ", mark(length(p.query_expansion), p.applied.query_expansion), " tokens",
+            p.query_expansion_distances === nothing ? ", ranking only" :
+            ", with $(length(p.query_expansion_distances)) distance lists")
     println()
     show(stdout, gettextconfig(p))
 end

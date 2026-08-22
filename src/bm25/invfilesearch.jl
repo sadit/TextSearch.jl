@@ -69,8 +69,8 @@ UInt32[0x00000001, 0x00000002]
 """
 function SimilaritySearch.search(idx::BM25InvertedFile, ctx::InvertedFileContext, qtext::T, res::AbstractKnnQueue; t::Int=1) where {T<:Union{AbstractString,TokenizedText}}
     q = bagofwords(idx.voc, qtext)
-    if idx.synonyms !== nothing
-        expand_synonyms!(q, idx.voc, idx.synonyms)
+    if idx.query_expansion !== nothing
+        expand_query!(q, idx.voc, idx.query_expansion)
     end
     search(idx, ctx, q, res; t)
 end

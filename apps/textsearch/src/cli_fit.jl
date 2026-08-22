@@ -1,6 +1,6 @@
 function parse_fit_args(args::Vector{String})
     s = ArgParseSettings(prog="textsearch fit",
-        description="Fit a TextSearch profile (vocabulary, weights, synonyms, lemmas, " *
+        description="Fit a TextSearch profile (vocabulary, weights, query_expansion, lemmas, " *
                      "stopword candidates) from a corpus. Options are edited as a TOML " *
                      "config file, visudo-style, rather than passed as flags -- pass " *
                      "--config to skip the \$EDITOR flow and read a config file directly.")
@@ -66,17 +66,17 @@ function _load_external_embeddings(path::AbstractString, voc)
 end
 
 """
-    _synonyms_approx(v::AbstractString) -> Union{Symbol,Bool}
+    _query_expansion_approx(v::AbstractString) -> Union{Symbol,Bool}
 
-Maps the config's `[synonyms] approx` string onto what `TextSearch.synonyms` expects:
+Maps the config's `[query_expansion] approx` string onto what `TextSearch.query_expansion` expects:
 `"auto"` -> `:auto` (approximate only once the vocabulary is big enough to need it),
 `"always"` -> `true`, `"never"` -> `false`.
 """
-function _synonyms_approx(v::AbstractString)
+function _query_expansion_approx(v::AbstractString)
     v == "auto"   && return :auto
     v == "always" && return true
     v == "never"  && return false
-    error("invalid [synonyms] approx = $(repr(v)); expected \"auto\", \"always\", or \"never\"")
+    error("invalid [query_expansion] approx = $(repr(v)); expected \"auto\", \"always\", or \"never\"")
 end
 
 function _fit_textconfig(cfg)
@@ -99,7 +99,7 @@ end
 Tokenizes `docs` under `tc` into a `Vocabulary`, then drops tokens appearing in
 fewer than `min_ndocs` documents.
 
-Pruning happens before anything expensive touches the vocabulary: the synonym network is an
+Pruning happens before anything expensive touches the vocabulary: the query_expansion network is an
 all-pairs search over it, so this is a quadratic saving, and a token seen in one or two
 documents has no usable embedding to begin with. `label` distinguishes the passes in the
 progress output.
@@ -118,26 +118,26 @@ function _build_vocabulary(tc, docs::Vector{String}, min_ndocs::Int; label::Abst
 end
 
 """
-    _remap_synonyms_to_lemmas(synmap, syndists, lemmas) -> (; synonyms, distances)
+    _remap_query_expansion_to_lemmas(synmap, syndists, lemmas) -> (; query_expansion, distances)
 
-Rewrites a synonym network's keys and values through `lemmas`, for use when the lemma map
+Rewrites a query_expansion network's keys and values through `lemmas`, for use when the lemma map
 is baked into the profile's `TextConfig` and the vocabulary is therefore lemmatized.
 
 Without this the network would silently stop working: its entries name unlemmatized forms,
-which are no longer tokens of the vocabulary, and `expand_synonyms!` drops an out-of-
-vocabulary synonym without complaint (`token2id` returning `0`) -- a quiet loss of every
+which are no longer tokens of the vocabulary, and `expand_query!` drops an out-of-
+vocabulary query_expansion without complaint (`token2id` returning `0`) -- a quiet loss of every
 expansion whose surface form happened to be inflected.
 
 Two source tokens can share a lemma, so entries are merged rather than overwritten. What
 "best" means depends on what the network carries: with `syndists`, the smallest distance
 wins; without it, the smallest *rank* does -- the rank-based analogue, and the reason the
-network stays usable when distances were never stored. A synonym that lemmatizes onto its
-own key is dropped, since a token is not its own synonym.
+network stays usable when distances were never stored. A query_expansion that lemmatizes onto its
+own key is dropped, since a token is not its own query_expansion.
 
-Each list comes back in rank order (nearest first), matching how `TextSearch.synonyms`
+Each list comes back in rank order (nearest first), matching how `TextSearch.query_expansion`
 produces them. `distances` is `nothing` when the input had none.
 """
-function _remap_synonyms_to_lemmas(synmap, syndists, lemmas)
+function _remap_query_expansion_to_lemmas(synmap, syndists, lemmas)
     lem(t) = get(lemmas, t, t)
     hasdist = syndists !== nothing
     # per lemma key: candidate => (ordering key, distance-or-nothing)
@@ -168,7 +168,7 @@ function _remap_synonyms_to_lemmas(synmap, syndists, lemmas)
         any(isnothing, ds) || (outd[k] = Float32[Float32(x) for x in ds])
     end
 
-    (; synonyms=out, distances=(isempty(outd) ? nothing : outd))
+    (; query_expansion=out, distances=(isempty(outd) ? nothing : outd))
 end
 
 """
@@ -181,7 +181,7 @@ the stopword-before-vocabulary ordering rationale.
 function _fit_one_batch(docs::Vector{String}, cfg, batch_dir::AbstractString)
     sw = cfg["stopwords"]
     enc = cfg["encoder"]
-    syn = cfg["synonyms"]
+    syn = cfg["query_expansion"]
     lem = cfg["lemmas"]
 
     base_textconfig = _fit_textconfig(cfg)
@@ -205,7 +205,7 @@ function _fit_one_batch(docs::Vector{String}, cfg, batch_dir::AbstractString)
     external_path = get(enc, "external_path", "")
 
     synopts = (
-        approx = _synonyms_approx(get(syn, "approx", "auto")),
+        approx = _query_expansion_approx(get(syn, "approx", "auto")),
         construction_recall = Float64(get(syn, "construction_recall", 0.97)),
         search_recall = Float64(get(syn, "search_recall", 0.9)),
     )
@@ -214,15 +214,15 @@ function _fit_one_batch(docs::Vector{String}, cfg, batch_dir::AbstractString)
 
     wordvecs, net = if kind === :lsi
         lsi = LatentSemanticIndexing(model, docs; maxoutdim=outdim, scaling, verbose=false, lsiopts...)
-        wordvectors(lsi), synonyms(lsi, Int(syn["k"]); verbose=false, synopts...)
+        wordvectors(lsi), query_expansion(lsi, Int(syn["k"]); verbose=false, synopts...)
     elseif kind === :external
         wv, oov = _load_external_embeddings(external_path, voc)
         oov > 0 && @warn "textsearch fit: $oov / $(vocsize(voc)) vocabulary tokens missing from external embeddings; using zero vectors for them"
-        wv, synonyms(voc, wv, Int(syn["k"]); verbose=false, synopts...)
+        wv, query_expansion(voc, wv, Int(syn["k"]); verbose=false, synopts...)
     else
         error("unknown encoder kind: $(enc["kind"]); supported: lsi, external")
     end
-    synmap, syndists = net.synonyms, net.distances
+    synmap, syndists = net.query_expansion, net.distances
 
     lemmas = lemma_clusters(voc, wordvecs;
         algorithm=Symbol(lem["algorithm"]), num_clusters=Int(lem["num_clusters"]),
@@ -243,7 +243,7 @@ function _fit_one_batch(docs::Vector{String}, cfg, batch_dir::AbstractString)
     # The lemma map cannot be known before this point: it is derived from embeddings over
     # the vocabulary it now rewrites, so this pass cannot be folded into an earlier one. LSI
     # is deliberately NOT redone on the lemmatized vocabulary -- the embeddings' job was to
-    # discover the families, and they have; re-deriving them would only shift synonym
+    # discover the families, and they have; re-deriving them would only shift query_expansion
     # neighbours slightly for the cost of a full factorization.
     apply_lemmas = Bool(get(lem, "apply", false)) && !isempty(lemmas)
     stopwords = Set(candidates)
@@ -258,14 +258,14 @@ function _fit_one_batch(docs::Vector{String}, cfg, batch_dir::AbstractString)
         model = VectorModel(IdfWeighting(), TfWeighting(), voc)
         # the network's entries name unlemmatized forms, which are no longer vocabulary
         # tokens; left alone, every inflected entry would be silently dropped at query time
-        remapped = _remap_synonyms_to_lemmas(synmap, syndists, lemmas)
-        synmap, syndists = remapped.synonyms, remapped.distances
-        println("  lemmas applied: $(length(lemmas)) remapped tokens -> vocsize=$(vocsize(voc)), synonyms=$(length(synmap))")
+        remapped = _remap_query_expansion_to_lemmas(synmap, syndists, lemmas)
+        synmap, syndists = remapped.query_expansion, remapped.distances
+        println("  lemmas applied: $(length(lemmas)) remapped tokens -> vocsize=$(vocsize(voc)), query_expansion=$(length(synmap))")
         flush(stdout)
     end
 
     profile = TextProfile(model; stopwords, lemmas,
-                          synonyms=synmap, synonym_distances=syndists, applied,
+                          query_expansion=synmap, query_expansion_distances=syndists, applied,
                           lineage=[LineageStep(:fit; encoder=String(kind), outdim, scaling=String(scaling),
                                                      source_path=external_path,
                                                      trainsize=gettrainsize(model.voc),

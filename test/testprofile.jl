@@ -7,8 +7,8 @@ using Test, TextSearch, SimilaritySearch, JSON3
         "la manzana roja",
         "la pera verde esta rica",
     ]
-    synonyms = Dict("casa" => ["hogar", "vivienda"], "pera" => ["manzana"])
-    synonym_distances = Dict("casa" => Float32[0.12, 0.20], "pera" => Float32[0.1])
+    query_expansion = Dict("casa" => ["hogar", "vivienda"], "pera" => ["manzana"])
+    query_expansion_distances = Dict("casa" => Float32[0.12, 0.20], "pera" => Float32[0.1])
     lemmas = Dict("casas" => "casa", "peras" => "pera")
     stopwords = Set(["la", "esta"])
     lineage = [LineageStep(:fit; trainsize=4, outdim=8)]
@@ -18,8 +18,8 @@ using Test, TextSearch, SimilaritySearch, JSON3
         VectorModel(IdfWeighting(), TfWeighting(), Vocabulary(textconfig, docs; verbose=false))
 
     @testset "directory layout and round-trip" begin
-        p = TextProfile(mkmodel(); stopwords, lemmas, synonyms, synonym_distances, lineage,
-                        applied=AppliedArtifacts(stopwords=true, synonyms=true))
+        p = TextProfile(mkmodel(); stopwords, lemmas, query_expansion, query_expansion_distances, lineage,
+                        applied=AppliedArtifacts(stopwords=true, query_expansion=true))
 
         dir = tempname()
         try
@@ -28,7 +28,7 @@ using Test, TextSearch, SimilaritySearch, JSON3
             # one file per "large" variable, not a single big JSON blob -- and each artifact
             # appears exactly ONCE, which is the point of the layout
             for f in ("manifest.json", "vocabulary.json", "weights.json", "stopwords.json",
-                      "lemmas.json", "synonyms.json", "synonym_distances.json")
+                      "lemmas.json", "query_expansion.json", "query_expansion_distances.json")
                 @test isfile(joinpath(dir, f))
             end
             @test !isfile(joinpath(dir, "lemma_map.json"))            # no second lemma copy
@@ -48,8 +48,8 @@ using Test, TextSearch, SimilaritySearch, JSON3
 
             @test q.stopwords == stopwords
             @test q.lemmas == lemmas
-            @test q.synonyms == synonyms
-            @test q.synonym_distances == synonym_distances
+            @test q.query_expansion == query_expansion
+            @test q.query_expansion_distances == query_expansion_distances
             @test q.applied == p.applied
             @test length(q.lineage) == 1
             @test q.lineage[1].stage === :fit
@@ -66,15 +66,15 @@ using Test, TextSearch, SimilaritySearch, JSON3
         dir = tempname()
         try
             save_profile(dir, p)
-            for f in ("stopwords.json", "lemmas.json", "synonyms.json", "synonym_distances.json")
+            for f in ("stopwords.json", "lemmas.json", "query_expansion.json", "query_expansion_distances.json")
                 @test !isfile(joinpath(dir, f))
             end
 
             q = load_profile(dir)
             @test isempty(q.stopwords)
             @test isempty(q.lemmas)
-            @test isempty(q.synonyms)
-            @test q.synonym_distances === nothing
+            @test isempty(q.query_expansion)
+            @test q.query_expansion_distances === nothing
             @test q.applied == AppliedArtifacts()
             @test isempty(q.lineage)
         finally
@@ -85,13 +85,13 @@ using Test, TextSearch, SimilaritySearch, JSON3
     @testset "the applied marker survives the round-trip, per artifact" begin
         # what makes a base profile a base: artifacts carried but not in the pipeline
         for (sw, lem, syn) in Iterators.product((false, true), (false, true), (false, true))
-            p = TextProfile(mkmodel(); stopwords, lemmas, synonyms,
-                            applied=AppliedArtifacts(stopwords=sw, lemmas=lem, synonyms=syn))
+            p = TextProfile(mkmodel(); stopwords, lemmas, query_expansion,
+                            applied=AppliedArtifacts(stopwords=sw, lemmas=lem, query_expansion=syn))
             dir = tempname()
             try
                 save_profile(dir, p)
                 q = load_profile(dir)
-                @test q.applied == AppliedArtifacts(stopwords=sw, lemmas=lem, synonyms=syn)
+                @test q.applied == AppliedArtifacts(stopwords=sw, lemmas=lem, query_expansion=syn)
                 # and the config it tokenizes with follows the marker, not the mere presence
                 # of the artifact
                 @test has_lemma_transformation(gettextconfig(q).transformation) == lem
@@ -101,16 +101,16 @@ using Test, TextSearch, SimilaritySearch, JSON3
         end
     end
 
-    @testset "synonym distances are optional and can be dropped" begin
-        p = TextProfile(mkmodel(); synonyms)   # ranking only
+    @testset "query_expansion distances are optional and can be dropped" begin
+        p = TextProfile(mkmodel(); query_expansion)   # ranking only
         dir = tempname()
         try
             save_profile(dir, p)
-            @test isfile(joinpath(dir, "synonyms.json"))
-            @test !isfile(joinpath(dir, "synonym_distances.json"))
+            @test isfile(joinpath(dir, "query_expansion.json"))
+            @test !isfile(joinpath(dir, "query_expansion_distances.json"))
             q = load_profile(dir)
-            @test q.synonyms == synonyms
-            @test q.synonym_distances === nothing
+            @test q.query_expansion == query_expansion
+            @test q.query_expansion_distances === nothing
         finally
             rm(dir; force=true, recursive=true)
         end
@@ -122,7 +122,9 @@ using Test, TextSearch, SimilaritySearch, JSON3
         try
             save_profile(dir, p)
             man = JSON3.read(read(joinpath(dir, "manifest.json"), String), Dict{String,Any})
-            man["format_version"] = "1.0"
+            # any version that is not the current one; "1.0" would silently stop testing the
+            # refusal the day the current version became 1.0, which is exactly what happened
+            man["format_version"] = "0.9"
             open(io -> JSON3.write(io, man), joinpath(dir, "manifest.json"), "w")
 
             err = try
@@ -131,7 +133,7 @@ using Test, TextSearch, SimilaritySearch, JSON3
                 sprint(showerror, e)
             end
             @test err !== nothing
-            @test occursin("1.0", err)          # says which version it found
+            @test occursin("0.9", err)          # says which version it found
             @test occursin("Refit", err)        # and what to do about it
         finally
             rm(dir; force=true, recursive=true)
@@ -151,7 +153,7 @@ using Test, TextSearch, SimilaritySearch, JSON3
     end
 
     @testset "zip_profile packages a directory, load_profile reads it back directly" begin
-        p = TextProfile(mkmodel(); stopwords, lemmas, synonyms, synonym_distances,
+        p = TextProfile(mkmodel(); stopwords, lemmas, query_expansion, query_expansion_distances,
                         applied=AppliedArtifacts(stopwords=true, lemmas=true))
         dir = tempname()
         try

@@ -121,7 +121,7 @@ using Test, TextSearch, SimilaritySearch, LinearAlgebra, SparseArrays
         @test IdView(res_g)[1] in (4, 5)
     end
 
-    @testset "wordvectors and synonyms" begin
+    @testset "wordvectors and query_expansion" begin
         lsi = LatentSemanticIndexing(vmodel, corpus; maxoutdim=8, verbose=false)
         k = outdim(lsi)
         m = vocsize(lsi)
@@ -144,13 +144,13 @@ using Test, TextSearch, SimilaritySearch, LinearAlgebra, SparseArrays
         @test tokenID > 0
         @test isapprox(X[tokenID], vectorize(lsi, "quick"), atol=1e-5)
 
-        net = synonyms(lsi, 3; verbose=false)
-        @test net.synonyms isa Dict{String,Vector{String}}
+        net = query_expansion(lsi, 3; verbose=false)
+        @test net.query_expansion isa Dict{String,Vector{String}}
         @test net.distances isa Dict{String,Vector{Float32}}
-        @test length(net.synonyms) == m
-        for (tok, neighbors) in net.synonyms
+        @test length(net.query_expansion) == m
+        for (tok, neighbors) in net.query_expansion
             @test length(neighbors) <= 3
-            @test all(nb != tok for nb in neighbors)          # never its own synonym
+            @test all(nb != tok for nb in neighbors)          # never its own query_expansion
             ds = net.distances[tok]
             @test length(ds) == length(neighbors)             # the two lists stay aligned
             @test issorted(ds)                                # increasing distance
@@ -182,20 +182,20 @@ using Test, TextSearch, SimilaritySearch, LinearAlgebra, SparseArrays
         @test_throws ArgumentError LatentSemanticIndexing(vmodel, corpus; factorization=:randomized, verbose=false)
     end
 
-    @testset "synonyms: approximate vs exhaustive search" begin
+    @testset "query_expansion: approximate vs exhaustive search" begin
         lsi = LatentSemanticIndexing(vmodel, corpus; maxoutdim=8, verbose=false)
         m = vocsize(lsi)
 
         # this vocabulary is far below the auto threshold, so :auto must pick the exact
         # path -- that is what keeps small-corpus results (and these tests) deterministic
-        @test m < TextSearch.LSI.SYNONYMS_APPROX_THRESHOLD
-        @test synonyms(lsi, 3; verbose=false) == synonyms(lsi, 3; approx=false, verbose=false)
+        @test m < TextSearch.LSI.QUERY_EXPANSION_APPROX_THRESHOLD
+        @test query_expansion(lsi, 3; verbose=false) == query_expansion(lsi, 3; approx=false, verbose=false)
 
         # forcing the approximate path must still produce a well-formed network
-        net = synonyms(lsi, 3; approx=true, verbose=false)
-        @test net.synonyms isa Dict{String,Vector{String}}
-        @test length(net.synonyms) == m
-        for (tok, neighbors) in net.synonyms
+        net = query_expansion(lsi, 3; approx=true, verbose=false)
+        @test net.query_expansion isa Dict{String,Vector{String}}
+        @test length(net.query_expansion) == m
+        for (tok, neighbors) in net.query_expansion
             @test length(neighbors) <= 3
             @test all(nb != tok for nb in neighbors)
             @test length(net.distances[tok]) == length(neighbors)
@@ -203,10 +203,10 @@ using Test, TextSearch, SimilaritySearch, LinearAlgebra, SparseArrays
         end
 
         # recall targets are forwarded, not silently ignored
-        net2 = synonyms(lsi, 3; approx=true, construction_recall=0.99, search_recall=0.95, verbose=false)
-        @test net2.synonyms isa Dict{String,Vector{String}}
+        net2 = query_expansion(lsi, 3; approx=true, construction_recall=0.99, search_recall=0.95, verbose=false)
+        @test net2.query_expansion isa Dict{String,Vector{String}}
 
-        @test_throws ArgumentError synonyms(lsi, 3; approx=:bogus, verbose=false)
+        @test_throws ArgumentError query_expansion(lsi, 3; approx=:bogus, verbose=false)
     end
 
     @testset "Scaling options" begin

@@ -2,9 +2,9 @@ function parse_search_args(args::Vector{String})
     s = ArgParseSettings(prog="textsearch search",
         description="Grep-like search that runs a collection through the profile's whole " *
                      "pipeline -- normalization, tokenization, lemma normalization and " *
-                     "synonym expansion -- and prints every matching record as one JSONL " *
+                     "query expansion -- and prints every matching record as one JSONL " *
                      "line, in corpus order. This is the way to exercise a profile's " *
-                     "artifacts end to end: --no-lemmas / --no-synonyms turn each one off, " *
+                     "artifacts end to end: --no-lemmas / --no-query_expansion turn each one off, " *
                      "so you can see what it contributes, and the effective query tokens " *
                      "are reported on stderr. Unlike grep it is NOT fast to start (loading " *
                      "a large profile takes seconds), so prefer grep for raw byte matching.")
@@ -34,11 +34,11 @@ function parse_search_args(args::Vector{String})
                    "are matched in their surface forms on both sides (no effect on a profile " *
                    "fitted without an applied lemma map)"
             action = :store_true
-        "--no-synonyms"
-            help = "do not expand the query with the profile's synonym network"
+        "--no-query_expansion"
+            help = "do not expand the query with the profile's query_expansion network"
             action = :store_true
-        "--synonyms-k"
-            help = "use at most this many synonyms per query token (0 = all the profile stored)"
+        "--query_expansion-k"
+            help = "use at most this many query_expansion per query token (0 = all the profile stored)"
             arg_type = Int
             default = 0
         "--chunk"
@@ -65,25 +65,25 @@ function _resolve_profile_path(spec::AbstractString)
 end
 
 """
-    _query_tokens(p, query, tc, usesynonyms, synk) -> (Set{String}, report)
+    _query_tokens(p, query, tc, usequeryexpansion, synk) -> (Set{String}, report)
 
 Builds the query's token set by running it through the same `tc` a document goes through --
 so normalization, stopwords and lemmas all apply identically to both sides -- plus the one
-step only a query gets: synonym expansion.
+step only a query gets: query expansion.
 
-Each synonym is itself tokenized through `tc`, which is what lets it meet document tokens
-on the same footing: a synonym stored in an inflected form arrives lemmatized, and one that
+Each query_expansion is itself tokenized through `tc`, which is what lets it meet document tokens
+on the same footing: a query_expansion stored in an inflected form arrives lemmatized, and one that
 is a stopword drops out. `report` carries the intermediate sets for the stderr summary,
 which is the point of this being a probe command: it shows which artifact contributed what.
 """
-function _query_tokens(p, query::AbstractString, tc, usesynonyms::Bool, synk::Int)
+function _query_tokens(p, query::AbstractString, tc, usequeryexpansion::Bool, synk::Int)
     raw = collect(tokenize(tc, query))
     base = Set{String}(raw)
 
     expanded = Set{String}()
-    if usesynonyms
+    if usequeryexpansion
         for tok in raw
-            neighbors = get(p.synonyms, tok, nothing)
+            neighbors = get(p.query_expansion, tok, nothing)
             neighbors === nothing && continue
             for (i, syn) in enumerate(neighbors)
                 synk > 0 && i > synk && break
@@ -156,7 +156,7 @@ function cmd_search(args::Vector{String})
     tc = gettextconfig(p)
     lemmas_on = p.applied.lemmas
 
-    qtokens, rep = _query_tokens(p, o["query"], tc, !o["no-synonyms"], o["synonyms-k"])
+    qtokens, rep = _query_tokens(p, o["query"], tc, !o["no-query_expansion"], o["query_expansion-k"])
     isempty(qtokens) && error("the query has no tokens under this profile's TextConfig " *
                               "(every term may have been a stopword); nothing could match")
 
@@ -165,7 +165,7 @@ function cmd_search(args::Vector{String})
     expstr = join(sort(collect(rep.expanded)), " ")
     println(stderr, "query: $(length(rep.raw)) gettoken(s) -> $basestr")
     isempty(rep.expanded) ||
-        println(stderr, "  + $(length(rep.expanded)) synonym(s) -> $expstr")
+        println(stderr, "  + $(length(rep.expanded)) query_expansion(s) -> $expstr")
     # report what the profile actually carries, not what was requested: --no-lemmas on a
     # profile that never applied them changes nothing, and a probe command should say so
     println(stderr, "  matching with threshold=$(o["threshold"]) over $(length(qtokens)) gettoken(s), " *

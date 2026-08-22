@@ -10,7 +10,7 @@ export TextProfile, AppliedArtifacts, LineageStep, gettextconfig, getpolicy, wit
 #
 #   policy     -- normalization flags, nlist, mark_token_type. Hand-authorable with no corpus.
 #                 Two profiles merge only if their policies are IDENTICAL.
-#   artifacts  -- stopword set, lemma map, synonym network, vocabulary counters, weights.
+#   artifacts  -- stopword set, lemma map, query_expansion network, vocabulary counters, weights.
 #                 Estimated from data. Two profiles merge by COMBINING these (union, rank
 #                 fusion, plurality vote, addition).
 #
@@ -47,31 +47,31 @@ Base.show(io::IO, s::LineageStep) =
               "(" * join(("$k=$v" for (k, v) in sort(collect(s.params); by=first)), ", ") * ")")
 
 """
-    AppliedArtifacts(; stopwords=false, lemmas=false, synonyms=false)
+    AppliedArtifacts(; stopwords=false, lemmas=false, query_expansion=false)
 
 Which of a profile's artifacts are in play, as opposed to merely carried.
 
 The distinction is the point of a *base* profile: a generic model computes a lemma map and a
-synonym network, but whether to apply them belongs to the model being tuned from it. A tuned
+query_expansion network, but whether to apply them belongs to the model being tuned from it. A tuned
 profile that declines lemmatization simply does not apply the map, and one that never needed
 it does not carry it either.
 
 `stopwords` and `lemmas` are tokenization-time and enter the [`textconfig`](@ref).
-`synonyms` is query-time only -- documents are never expanded, see
-[`expand_synonyms!`](@ref) -- so it does not enter the config at all; it tells a consumer
+`query_expansion` is query-time only -- documents are never expanded, see
+[`expand_query!`](@ref) -- so it does not enter the config at all; it tells a consumer
 building an index whether to hand the network over.
 """
 Base.@kwdef struct AppliedArtifacts
     stopwords::Bool = false
     lemmas::Bool = false
-    synonyms::Bool = false
+    query_expansion::Bool = false
 end
 
 Base.show(io::IO, a::AppliedArtifacts) = print(io, "applied(",
-    join((n for n in (:stopwords, :lemmas, :synonyms) if getfield(a, n)), ", "), ")")
+    join((n for n in (:stopwords, :lemmas, :query_expansion) if getfield(a, n)), ", "), ")")
 
 """
-    TextProfile(model; stopwords, lemmas, synonyms, synonym_distances, applied, lineage)
+    TextProfile(model; stopwords, lemmas, query_expansion, query_expansion_distances, applied, lineage)
 
 A finished, portable text model: the vocabulary and weights in `model`, plus the artifacts a
 corpus produced, plus the lineage that says how it got here.
@@ -93,22 +93,22 @@ struct TextProfile
     model::VectorModel
     stopwords::Set{String}
     lemmas::Dict{String,String}
-    synonyms::Dict{String,Vector{String}}
-    synonym_distances::Union{Nothing,Dict{String,Vector{Float32}}}
+    query_expansion::Dict{String,Vector{String}}
+    query_expansion_distances::Union{Nothing,Dict{String,Vector{Float32}}}
     applied::AppliedArtifacts
     lineage::Vector{LineageStep}
 
     function TextProfile(model::VectorModel,
                           stopwords::Set{String},
                           lemmas::Dict{String,String},
-                          synonyms::Dict{String,Vector{String}},
-                          synonym_distances::Union{Nothing,Dict{String,Vector{Float32}}},
+                          query_expansion::Dict{String,Vector{String}},
+                          query_expansion_distances::Union{Nothing,Dict{String,Vector{Float32}}},
                           applied::AppliedArtifacts,
                           lineage::Vector{LineageStep})
         # Materialize here, so the config the tokenizer sees is always this profile's own
         # artifacts. A caller cannot pass a mismatched one, because it is not an input.
         tc = _materialize(_policy(model.voc.textconfig), stopwords, lemmas, applied)
-        new(_with_textconfig(model, tc), stopwords, lemmas, synonyms, synonym_distances,
+        new(_with_textconfig(model, tc), stopwords, lemmas, query_expansion, query_expansion_distances,
             applied, lineage)
     end
 end
@@ -116,18 +116,18 @@ end
 function TextProfile(model::VectorModel;
                       stopwords=Set{String}(),
                       lemmas=Dict{String,String}(),
-                      synonyms=Dict{String,Vector{String}}(),
-                      synonym_distances=nothing,
+                      query_expansion=Dict{String,Vector{String}}(),
+                      query_expansion_distances=nothing,
                       applied::AppliedArtifacts=AppliedArtifacts(),
                       lineage::AbstractVector{LineageStep}=LineageStep[])
     TextProfile(model,
                 Set{String}(String(w) for w in stopwords),
                 Dict{String,String}(String(k) => String(v) for (k, v) in lemmas),
                 Dict{String,Vector{String}}(String(k) => String[String(s) for s in v]
-                                            for (k, v) in synonyms),
-                synonym_distances === nothing ? nothing :
+                                            for (k, v) in query_expansion),
+                query_expansion_distances === nothing ? nothing :
                     Dict{String,Vector{Float32}}(String(k) => Float32[Float32(d) for d in v]
-                                                 for (k, v) in synonym_distances),
+                                                 for (k, v) in query_expansion_distances),
                 applied, collect(LineageStep, lineage))
 end
 
@@ -179,7 +179,7 @@ function _with_textconfig(model::VectorModel, tc::TextConfig)
 end
 
 """
-    with_applied(p::TextProfile; stopwords, lemmas, synonyms) -> TextProfile
+    with_applied(p::TextProfile; stopwords, lemmas, query_expansion) -> TextProfile
 
 `p` with different artifacts applied, rematerializing the `TextConfig`. This is how a
 consumer turns lemmatization off (`textsearch search --no-lemmas`) or how a refit decides to
@@ -188,9 +188,9 @@ apply a base's carried map: change the marker, not the pipeline by hand.
 function with_applied(p::TextProfile;
                        stopwords::Bool=p.applied.stopwords,
                        lemmas::Bool=p.applied.lemmas,
-                       synonyms::Bool=p.applied.synonyms)
-    TextProfile(p.model, p.stopwords, p.lemmas, p.synonyms, p.synonym_distances,
-                AppliedArtifacts(; stopwords, lemmas, synonyms), p.lineage)
+                       query_expansion::Bool=p.applied.query_expansion)
+    TextProfile(p.model, p.stopwords, p.lemmas, p.query_expansion, p.query_expansion_distances,
+                AppliedArtifacts(; stopwords, lemmas, query_expansion), p.lineage)
 end
 
 """
@@ -219,7 +219,7 @@ function Base.show(io::IO, p::TextProfile)
     println(io, "  ", lineage_summary(p))
     println(io, "  stopwords: ", length(p.stopwords), p.applied.stopwords ? " (applied)" : " (carried)")
     println(io, "  lemmas: ", length(p.lemmas), p.applied.lemmas ? " (applied)" : " (carried)")
-    println(io, "  synonyms: ", length(p.synonyms), p.applied.synonyms ? " (applied)" : " (carried)",
-            p.synonym_distances === nothing ? "" : ", with distances")
+    println(io, "  query_expansion: ", length(p.query_expansion), p.applied.query_expansion ? " (applied)" : " (carried)",
+            p.query_expansion_distances === nothing ? "" : ", with distances")
     show(io, p.model; prefix="  ")
 end

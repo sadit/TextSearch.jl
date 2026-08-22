@@ -111,8 +111,8 @@ An [`AbstractTokenTransformation`](@ref) that rewrites each unigram to its lemma
 mapping produced by [`lemma_clusters`](@ref). Only non-identity entries need to be
 present: a token absent from `lemmas` is its own lemma and passes through unchanged.
 
-A lemma is a *normalization*, not an expansion, so unlike query-time synonym expansion
-(see [`expand_synonyms!`](@ref), which must only ever touch queries) it belongs on both
+A lemma is a *normalization*, not an expansion, so unlike query-time expansion
+(see [`expand_query!`](@ref), which must only ever touch queries) it belongs on both
 sides. Putting it here rather than in each consumer is what makes that automatic: a
 `Vocabulary` built under this config is already lemmatized, so its `occs`/`ndocs` (and
 therefore the idf a [`VectorModel`](@ref) derives) count a whole inflection family

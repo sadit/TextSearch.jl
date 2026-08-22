@@ -377,23 +377,23 @@ end
         end
     end
 
-    @testset "synonyms are inherited and restricted to survivors" begin
+    @testset "query_expansion are inherited and restricted to survivors" begin
         syn = Dict("gato" => ["wikipedia", "typoxyz", "noexisteenvocab"])
         sdist = Dict("gato" => Float32[0.1, 0.2, 0.3])
-        sbase = mkprofile(basedocs; synonyms=syn, synonym_distances=sdist)
+        sbase = mkprofile(basedocs; query_expansion=syn, query_expansion_distances=sdist)
 
         r = refit_profile(sbase, sampledocs; verbose=false)
-        @test haskey(r.synonyms, "gato")
+        @test haskey(r.query_expansion, "gato")
         # "typoxyz" was pruned and "noexisteenvocab" never existed: both must go, and the
         # distances must stay aligned with what remains
-        @test r.synonyms["gato"] == ["wikipedia"]
-        @test r.synonym_distances["gato"] == Float32[0.1]
+        @test r.query_expansion["gato"] == ["wikipedia"]
+        @test r.query_expansion_distances["gato"] == Float32[0.1]
 
         @testset "a network with no distances survives the restriction" begin
-            nbase = mkprofile(basedocs; synonyms=syn)
+            nbase = mkprofile(basedocs; query_expansion=syn)
             r2 = refit_profile(nbase, sampledocs; verbose=false)
-            @test r2.synonyms["gato"] == ["wikipedia"]
-            @test r2.synonym_distances === nothing
+            @test r2.query_expansion["gato"] == ["wikipedia"]
+            @test r2.query_expansion_distances === nothing
         end
     end
 

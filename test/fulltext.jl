@@ -62,15 +62,15 @@ using Test, SimilaritySearch, TextSearch
         @test 6 in ids || 4 in ids || 2 in ids
     end
 
-    @testset "Query-time synonym expansion" begin
+    @testset "Query-time expansion" begin
         # corpus[4] = "la manzana roja"; a query for "pera roja" should rank it higher
-        # once "pera" is registered as a synonym of "manzana".
-        synonyms = Dict("pera" => ["manzana"])
+        # once "pera" is registered as a query_expansion of "manzana".
+        query_expansion = Dict("pera" => ["manzana"])
 
         # Handing a network over IS the request to expand with it; there is no separate flag.
-        # Whether a profile wants that is recorded as its applied.synonyms, not on the config.
+        # Whether a profile wants that is recorded as its applied.query_expansion, not on the config.
         expand_model = VectorModel(IdfWeighting(), TfWeighting(), voc)
-        idx_expand = TextInvertedFile(expand_model; dist=Dist.NormCosine(), synonyms)
+        idx_expand = TextInvertedFile(expand_model; dist=Dist.NormCosine(), query_expansion)
         ctx = InvertedFileContext()
         append_items!(idx_expand, ctx, corpus)
 
@@ -87,7 +87,7 @@ using Test, SimilaritySearch, TextSearch
         dists_plain = collect(DistView(res_plain))
 
         @test 4 in ids_plain && 4 in ids_expand
-        # doc4 ("la manzana roja") ranks strictly better once "pera" expands into its synonym "manzana"
+        # doc4 ("la manzana roja") ranks strictly better once "pera" expands into its query_expansion "manzana"
         @test findfirst(==(4), ids_expand) < findfirst(==(4), ids_plain)
         @test dists_expand[findfirst(==(4), ids_expand)] < dists_plain[findfirst(==(4), ids_plain)]
 

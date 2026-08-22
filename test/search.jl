@@ -44,8 +44,8 @@ end
     @show invfile.bm25
 end
 
-@testset "BM25InvertedFile query-time synonym expansion" begin
-    synonyms = Dict("pera" => ["manzana"])
+@testset "BM25InvertedFile query-time expansion" begin
+    query_expansion = Dict("pera" => ["manzana"])
 
     textconfig = TextConfig(tokenization=TokenizationConfig(nlist=[1]))
     voc = Vocabulary(textconfig, _corpus)
@@ -55,7 +55,7 @@ end
     append_items!(idx_plain, ctx, _corpus)
 
     # Handing a network over IS the request to expand with it; there is no separate flag.
-    idx_expand = BM25InvertedFile(voc; synonyms)
+    idx_expand = BM25InvertedFile(voc; query_expansion)
     append_items!(idx_expand, ctx, _corpus)
 
     res_plain = search(idx_plain, ctx, "pera roja", knnqueue(KnnSorted, 3))
@@ -67,7 +67,7 @@ end
     dists_expand = collect(DistView(res_expand))
 
     @test 4 in ids_plain && 4 in ids_expand
-    # doc4 ("la manzana roja") ranks strictly better once "pera" expands into its synonym "manzana"
+    # doc4 ("la manzana roja") ranks strictly better once "pera" expands into its query_expansion "manzana"
     @test findfirst(==(4), ids_expand) < findfirst(==(4), ids_plain)
     @test dists_expand[findfirst(==(4), ids_expand)] < dists_plain[findfirst(==(4), ids_plain)]
 

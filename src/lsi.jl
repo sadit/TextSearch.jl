@@ -15,7 +15,7 @@ using ..TextSearch: TextModel, VectorModel, Vocabulary, TextConfig, gettoken,
 import ..TextSearch: vectorize, vectorize!, vectorize_corpus, vocsize, gettrainsize
 
 export LatentSemanticIndexing, LSIModel, indim, outdim, vocsize, gettrainsize,
-       vectorize, vectorize!, vectorize_corpus, wordvectors, synonyms
+       vectorize, vectorize!, vectorize_corpus, wordvectors, query_expansion
 
 """
     LatentSemanticIndexing{M<:AbstractMatrix{Float32}, VM<:VectorModel} <: TextModel
@@ -401,8 +401,8 @@ function wordvectors(lsi::LatentSemanticIndexing; normalize::Bool=true)
     MatrixDatabase(O)
 end
 
-"The vocabulary size past which [`synonyms`](@ref)' `approx=:auto` prefers an approximate index."
-const SYNONYMS_APPROX_THRESHOLD = 4096
+"The vocabulary size past which [`query_expansion`](@ref)' `approx=:auto` prefers an approximate index."
+const QUERY_EXPANSION_APPROX_THRESHOLD = 4096
 
 # Four ways of deciding "where does this token's real neighborhood end?" were measured on
 # 272,466 Spanish Wikipedia paragraphs (106,436 tokens, 256-dim LSI) and all four fail, for the
@@ -428,7 +428,7 @@ const SYNONYMS_APPROX_THRESHOLD = 4096
 #    (-> `vesical cistitis biopsia`) and `aluminosilicato`, because the estimate needs the token
 #    to be in someone else's top-k: a rare term close to `mysql` gets no voters, since `mysql`
 #    has closer neighbours, so it falls to the global cutoff and is cut. It hits precisely the
-#    rare-but-coherent technical vocabulary a synonym network is most useful for.
+#    rare-but-coherent technical vocabulary a expansion network is most useful for.
 # 4. RECIPROCITY, and DOCUMENT FREQUENCY. Reciprocity measures frequency, not coherence:
 #    `forma` and `tiene` (junk lists) score 1.00 while `innodb` and `destacamento` (good lists)
 #    score 0.00 -- high-frequency tokens sit near the centre of the space and link mutually,
@@ -451,7 +451,7 @@ const SYNONYMS_APPROX_THRESHOLD = 4096
 #    nouns", because the profile separates common from proper nouns -- `planeta` follows a
 #    determiner (0.96) and `marte` follows a preposition (0.91), as Spanish proper nouns take no
 #    article -- so `planeta`/`marte` scores 0.058, *below* the 0.14 that must be cut to remove
-#    `comun`/`aguilucho`. A hard same-class filter therefore deletes one of the best synonyms the
+#    `comun`/`aguilucho`. A hard same-class filter therefore deletes one of the best expansion the
 #    paragraph split produces.
 #
 #    Coarsening the anchors into groups (determiners, graders, copulas, clitics, prepositions)
@@ -466,11 +466,45 @@ const SYNONYMS_APPROX_THRESHOLD = 4096
 #    anchor observations (38%), and the 62% without them are the rare tail where an incoherent
 #    neighborhood does the most damage, since high idf amplifies it.
 #
-#    What the data does suggest, unmeasured beyond two pairs: filter only when the profiles are
-#    incompatible AND the neighbour is far rarer. `comun`(1857 anchor observations) ->
-#    `aguilucho`(9) is a ratio of 206x while `planeta`(1610) -> `marte`(578) is 2.8x, a much
-#    wider margin than 0.14 against 0.058. That is two interacting heuristics and would need
-#    measuring over many pairs before being believed.
+#    The ASYMMETRIC variant does survive measurement, unlike the plain class filter: cut a pair
+#    only when the profiles are incompatible AND the neighbour is far rarer. Over all 851,567
+#    pairs of the paragraph-level network, at (cosine < 0.1, ndocs ratio > 50) it cuts 1,182
+#    pairs -- 0.34% of the pairs that have a profile on both sides -- and the margin is wide:
+#    the worst good pair among low-cosine ones is `planeta`/`marte` at ratio 3.5 (`saturno` 7.5,
+#    `neptuno` 8.1) while the best junk pair is `comun`/`mirlo` at 277 (`aguilucho` 462,
+#    `cigueniuela` 925, `forma`/`ovalada` 373, `tiene`/`engarce` 3045). A factor of 34 between
+#    them, against the 0.028-vs-0.058 that cosine alone offers. The high-ratio cuts are
+#    unambiguous: `por`->`soyuzmultfilm`, `los`->`panonios`, `son`->`oleorresinas`,
+#    `tambien`->`sirope`, `parte`->`esplacnocraneo`, `tiene`->`levonorgestrel`.
+#
+#    Two things stop it from being worth building on its own. Its boundary cuts real
+#    cross-category associations -- `reaccion`->`catalizada`, `teorias`->`mecanicismo`,
+#    `sierras`->`paramera`, `chipre`->`grecochipriotas`, `viento`->`sopla` -- roughly half the
+#    pairs at the threshold. And what it removes hangs off `por`, `los`, `fue`, `una`, `es`,
+#    `tambien`, `son`, `tiene`: high-frequency tokens whose expansion is already muted by low
+#    idf, while the 59.3% of pairs whose neighbour is too rare to have a profile at all -- the
+#    population that enters queries with high idf -- are exactly the ones it cannot judge.
+#
+#    Measured, the backfill argument closes it against the rule. Only 813 of 106,447 tokens lose
+#    any neighbour at all (0.76%) and 250 lose two or more, so the reach is marginal -- and
+#    reading those tokens' full lists shows the rule removing GOOD pairs, not junk:
+#
+#      se    encuentra encuentran trata denomina observa llama conoce aplica   (excellent)
+#      sus   respectivos propios colegas respectivas propias predecesores      (excellent)
+#      su    natal tio hermana esposo abuela suegro hermano esposa             (coherent)
+#      fue   exonerado rechazada trasladado descubierta sepultado absuelto     (coherent)
+#
+#    `fue` -> a set of past participles is exactly right for a passive auxiliary, and `se` -> a
+#    set of reflexive verb forms likewise; judged in isolation `fue`->`exonerado` reads as noise,
+#    which is how it was first classified here. The anchor profile is correct that the categories
+#    differ and wrong that the association is bad. Backfilling then makes it worse, since the
+#    freed slots take `melamina`, `bechstein`, `aimee`, `teropodo`, `xanadu`. Even `comun`, the
+#    case that motivated the whole line, only trades bird names for more bird names plus `lunes`.
+#
+#    The recurring methodological point, and the reason all six attempts are written down: a pair
+#    judged on its own is convincing and a full list reverses the verdict. The RRF normalization
+#    in `_fuse_expansion` failed the same way -- 64.9% of lists rewritten, aggregate statistics
+#    that looked like a decisive win, and `cidade` losing `cidades`.
 #
 # The common cause of 1-4 is that in 256 dimensions under cosine the distances concentrate: the RANKING
 # carries information, the absolute values and their differences do not. What actually separates
@@ -479,16 +513,16 @@ const SYNONYMS_APPROX_THRESHOLD = 4096
 # hand encodes.
 #
 # So the noise is accepted rather than filtered, and the query-expansion weighting is what bounds
-# it: `expand_synonyms!` appends `weight * weight_fn(rank)`, i.e. the weight of the token that
+# it: `expand_query!` appends `weight * weight_fn(rank)`, i.e. the weight of the token that
 # produced the expansion. A high-frequency polysemous token has low idf and therefore contributes
 # its noise weakly. The remaining exposure is a rare token with an incoherent neighbourhood, whose
 # high idf amplifies it -- bounded in practice because such tokens are the bulk of a vocabulary
 # by count but not of real queries.
 
 """
-    _synonyms_localradius(voc, wordvecs, idx, ictx, kk, kcap, rank, q, mingroup)
+    _query_expansion_localradius(voc, wordvecs, idx, ictx, kk, kcap, rank, q, mingroup)
 
-Assembles a synonym network whose per-token neighbor count is decided by the data instead of by
+Assembles a query_expansion network whose per-token neighbor count is decided by the data instead of by
 a fixed `k`, via [`SimilaritySearch.bichromatic_metricjoin`](@ref) as a self-join.
 
 A top-`k` network gives every token exactly `k` neighbors whether or not it has `k` real ones,
@@ -500,17 +534,17 @@ with that distance, and `t`'s cutoff is the `q`-quantile of its voters. Tokens w
 
 Two consequences worth knowing before choosing this over `:topk`. The surviving pairs are those
 where the *other* token found `t` in its own top-`kk`, so the network becomes mutual-ish rather
-than a plain per-token top-`k`: a token that nobody's neighborhood reaches gets no synonyms even
+than a plain per-token top-`k`: a token that nobody's neighborhood reaches gets no query_expansion even
 if it has close ones of its own. And the output size is data-dependent, so `kcap` is applied only
 as a ceiling to keep a pathologically dense token from carrying thousands of neighbors.
 """
-function _synonyms_localradius(voc::Vocabulary, wordvecs::AbstractDatabase, idx, ictx,
+function _query_expansion_localradius(voc::Vocabulary, wordvecs::AbstractDatabase, idx, ictx,
                                kk::Integer, kcap::Integer, rank::Int, q::Float64, mingroup::Int)
     pairs = bichromatic_metricjoin(idx, ictx, wordvecs; k=kk, rank=rank, q=q,
                                    mingroup=mingroup, samedata=true)
     acc = Dict{Int,Vector{Tuple{Float32,Int}}}()
     for (a, b, d) in pairs
-        isnan(d) && continue          # zero embeddings: no direction to compare, see `synonyms`
+        isnan(d) && continue          # zero embeddings: no direction to compare, see `query_expansion`
         push!(get!(() -> Tuple{Float32,Int}[], acc, Int(a)), (d, Int(b)))
     end
 
@@ -530,24 +564,24 @@ function _synonyms_localradius(voc::Vocabulary, wordvecs::AbstractDatabase, idx,
         netdist[tok] = [d for (d, _) in got]
     end
 
-    (; synonyms=net, distances=netdist)
+    (; query_expansion=net, distances=netdist)
 end
 
 """
-    synonyms(voc::Vocabulary, wordvecs::AbstractDatabase, k::Integer=8;
+    query_expansion(voc::Vocabulary, wordvecs::AbstractDatabase, k::Integer=8;
              dist=Dist.Cosine(), verbose::Bool=true, approx=:auto,
              construction_recall::Real=0.97, search_recall::Real=0.9)
-        -> (; synonyms::Dict{String,Vector{String}}, distances::Dict{String,Vector{Float32}})
+        -> (; query_expansion::Dict{String,Vector{String}}, distances::Dict{String,Vector{Float32}})
 
-Builds a synonym network from `voc`'s token embeddings in `wordvecs` (column `t` =
+Builds a query_expansion network from `voc`'s token embeddings in `wordvecs` (column `t` =
 embedding of `gettoken(voc, t)`, e.g. from [`wordvectors`](@ref) or an externally supplied
 matrix): for every vocabulary token, finds its `k` nearest neighbors (by `dist`, cosine by
 default) among all *other* tokens' embeddings, via `SimilaritySearch.allknn`. The token
 itself is always excluded from its own neighbor list.
 
 The two halves come back **separately**, as parallel per-token lists sorted by increasing
-distance (lower means more similar): `synonyms[tok]` are the neighbor tokens in rank order,
-and `distances[tok][i]` is the distance to `synonyms[tok][i]`. They are split because only
+distance (lower means more similar): `query_expansion[tok]` are the neighbor tokens in rank order,
+and `distances[tok][i]` is the distance to `query_expansion[tok][i]`. They are split because only
 the ranking participates in the normal query-expansion path -- BM25 ignores the query side's
 weights entirely, and the distances stop being distances in any single space as soon as a
 network is merged or refitted. Keeping them apart lets a consumer (or a profile on disk)
@@ -556,7 +590,7 @@ carry the ranking alone, which is where nearly all of a network's size lives.
 `approx` selects how the all-pairs search is done, and matters enormously on real
 vocabularies -- an exhaustive search is O(vocabulary²):
 
-- `:auto` (default): approximate when `length(wordvecs) > SYNONYMS_APPROX_THRESHOLD`,
+- `:auto` (default): approximate when `length(wordvecs) > QUERY_EXPANSION_APPROX_THRESHOLD`,
   exhaustive below it (where exhaustive is already fast *and* exact, so there is nothing
   to gain from approximating).
 - `true`: always approximate -- build a `SearchGraph`, autotuning construction to
@@ -567,12 +601,12 @@ vocabularies -- an exhaustive search is O(vocabulary²):
 
 # Example
 ```julia
-net = synonyms(voc, wordvectors(lsi), 5)
-net.synonyms["dog"]   # ["dogs", "puppy", ...]
+net = query_expansion(voc, wordvectors(lsi), 5)
+net.query_expansion["dog"]   # ["dogs", "puppy", ...]
 net.distances["dog"]  # [0.02, 0.11, ...]
 ```
 """
-function synonyms(voc::Vocabulary, wordvecs::AbstractDatabase, k::Integer=8;
+function query_expansion(voc::Vocabulary, wordvecs::AbstractDatabase, k::Integer=8;
                    dist=Dist.Cosine(), verbose::Bool=true, approx=:auto,
                    construction_recall::Real=0.97, search_recall::Real=0.9,
                    prune::Symbol=:topk, join_rank::Integer=1, join_quantile::Real=0.9,
@@ -583,7 +617,7 @@ function synonyms(voc::Vocabulary, wordvecs::AbstractDatabase, k::Integer=8;
     m = length(wordvecs)
     kk = min(k + 1, m)
 
-    useapprox = approx === :auto ? m > SYNONYMS_APPROX_THRESHOLD :
+    useapprox = approx === :auto ? m > QUERY_EXPANSION_APPROX_THRESHOLD :
                 approx isa Bool ? approx :
                 throw(ArgumentError("approx must be :auto, true, or false; got $(repr(approx))"))
 
@@ -602,13 +636,13 @@ function synonyms(voc::Vocabulary, wordvecs::AbstractDatabase, k::Integer=8;
     end
 
     if prune === :localradius
-        return _synonyms_localradius(voc, wordvecs, idx, ictx, kk, k,
+        return _query_expansion_localradius(voc, wordvecs, idx, ictx, kk, k,
                                      Int(join_rank), Float64(join_quantile), Int(join_mingroup))
     end
 
     ids, dists = allknn(idx, ictx, kk;
                         progress=Progress(m; dt=1, enabled=verbose,
-                                          desc="synonyms allknn ($(useapprox ? "approx" : "exact"))"))
+                                          desc="query_expansion allknn ($(useapprox ? "approx" : "exact"))"))
 
     net = Dict{String,Vector{String}}()
     netdist = Dict{String,Vector{Float32}}()
@@ -621,7 +655,7 @@ function synonyms(voc::Vocabulary, wordvecs::AbstractDatabase, k::Integer=8;
             # a token with a near-uniform document frequency (e.g. "the") can end up with
             # an all-zero embedding after LSI projection, making cosine distance to/from it
             # undefined (0/0 = NaN); such a token has no meaningful direction to compare, so
-            # it gets no synonyms and is never anyone else's synonym, rather than poisoning
+            # it gets no query_expansion and is never anyone else's query_expansion, rather than poisoning
             # the network (and downstream JSON serialization, which rejects NaN) with NaN.
             (nb == 0 || nb == t || isnan(d)) && continue
             push!(words, gettoken(voc, nb))
@@ -633,29 +667,29 @@ function synonyms(voc::Vocabulary, wordvecs::AbstractDatabase, k::Integer=8;
         netdist[tok] = wdists
     end
 
-    (; synonyms=net, distances=netdist)
+    (; query_expansion=net, distances=netdist)
 end
 
 """
-    synonyms(lsi::LatentSemanticIndexing, k::Integer=8;
+    query_expansion(lsi::LatentSemanticIndexing, k::Integer=8;
              dist=Dist.Cosine(), normalize::Bool=true, verbose::Bool=true, approx=:auto,
              construction_recall::Real=0.97, search_recall::Real=0.9) -> Dict{String,Vector{Pair{String,Float32}}}
 
-Builds a synonym network from `lsi`'s vocabulary embeddings ([`wordvectors`](@ref)); see
+Builds a query_expansion network from `lsi`'s vocabulary embeddings ([`wordvectors`](@ref)); see
 the `(voc, wordvecs, k)` method above for the underlying algorithm and for what `approx`/
 `construction_recall`/`search_recall` control. `normalize` is forwarded to
 [`wordvectors`](@ref) before searching.
 
 # Example
 ```julia
-net = synonyms(lsi, 5)
+net = query_expansion(lsi, 5)
 net["dog"]   # ["dogs" => 0.02, "puppy" => 0.11, ...]
 ```
 """
-function synonyms(lsi::LatentSemanticIndexing, k::Integer=8;
+function query_expansion(lsi::LatentSemanticIndexing, k::Integer=8;
                    dist=Dist.Cosine(), normalize::Bool=true, verbose::Bool=true, approx=:auto,
                    construction_recall::Real=0.97, search_recall::Real=0.9)
-    synonyms(lsi.model.voc, wordvectors(lsi; normalize), k;
+    query_expansion(lsi.model.voc, wordvectors(lsi; normalize), k;
              dist, verbose, approx, construction_recall, search_recall)
 end
 

@@ -98,8 +98,8 @@ using .FullText
 export FullText, TextInvertedFile
 
 include("lsi.jl")
-using .LSI: LatentSemanticIndexing, LSIModel, indim, outdim, wordvectors, synonyms
-export LSI, LatentSemanticIndexing, LSIModel, indim, outdim, wordvectors, synonyms
+using .LSI: LatentSemanticIndexing, LSIModel, indim, outdim, wordvectors, query_expansion
+export LSI, LatentSemanticIndexing, LSIModel, indim, outdim, wordvectors, query_expansion
 
 include("lemmas.jl")
 

@@ -1,7 +1,7 @@
 # corpus-profiles
 
 Recipes for building **distributable TextSearch.jl profiles** -- per-language/per-domain
-bundles of vocabulary, weights, synonym network, lemmas, and stopword candidates, as
+bundles of vocabulary, weights, query_expansion network, lemmas, and stopword candidates, as
 produced by [`textsearch fit`](../apps/textsearch/README.md) and consumed by
 `TextSearch.load_profile`.
 
@@ -66,11 +66,11 @@ As of this writing the only published snapshot is **20231101** (323 languages); 
 
 ## Cost: read this before launching a full language
 
-`fit`'s heaviest step is the **synonym network**, an all-pairs kNN over the vocabulary.
+`fit`'s heaviest step is the **query_expansion network**, an all-pairs kNN over the vocabulary.
 Done exactly it is O(vocabulary²), which makes vocabulary size -- not corpus size -- the
 thing that decides whether a run finishes today or next month.
 
-By default (`[synonyms] approx = "auto"`) vocabularies past a few thousand tokens use an
+By default (`[query_expansion] approx = "auto"`) vocabularies past a few thousand tokens use an
 autotuned approximate `SearchGraph` instead: construction tuned to `MinRecall(0.97)`,
 search parameters to `MinRecall(0.9)`. Measured against the exact answer on a real 37,388-
 token vocabulary (64 threads), that is **4× faster at essentially no cost where it
@@ -82,7 +82,7 @@ matters**:
 | top 3 | 0.949 |
 | top 8 | 0.855 |
 
-i.e. the closest synonyms -- the ones a synonym network is actually for -- are almost all
+i.e. the closest query_expansion -- the ones a query_expansion network is actually for -- are almost all
 recovered, and only the far tail of the list degrades. Raising `construction_recall` to
 0.999 does not improve this (it saturates), so 0.97 is the default. Since exact search
 grows quadratically while the graph does not, the speedup widens with vocabulary size.
@@ -99,10 +99,10 @@ Two things fall out of that Spanish measurement:
 **1. Most of the vocabulary is noise.** Of those 611,797 tokens, **53% occur in exactly
 one article** (typos, IDs, foreign words, stray markup) and only 9.6% occur in 20+. Those
 tokens cannot have a meaningful embedding, so they contribute nothing but quadratic cost
-and junk synonyms. Hence `--min-ndocs` (config: `[vocabulary] min_ndocs`), which prunes
+and junk query_expansion. Hence `--min-ndocs` (config: `[vocabulary] min_ndocs`), which prunes
 them *before* the encoder runs:
 
-| `min_ndocs` | Spanish vocabulary (25k articles) | share kept | relative synonym cost |
+| `min_ndocs` | Spanish vocabulary (25k articles) | share kept | relative query_expansion cost |
 |---|---|---|---|
 | 1 (no pruning) | 611,742 | 100% | 1× |
 | 2 | 285,903 | 46.7% | ~0.22× |
@@ -119,7 +119,7 @@ at `--batch-size 25000` is 74 batches, i.e. 74 *independent* profiles, each with
 vocabulary and IDF over its own 25k articles. `textsearch merge` combines them into the
 single `wiki20231101-es` profile you actually want, and does so **exactly** for the parts
 that matter most -- the merged vocabulary counts and IDF weights are identical to what one
-unbatched fit over the whole corpus would produce (synonyms are fused by rank consensus and
+unbatched fit over the whole corpus would produce (query_expansion are fused by rank consensus and
 lemmas by plurality vote; see the [app README](../apps/textsearch/README.md#merge----fold-batched-profiles-into-one)):
 
 ```sh
@@ -147,10 +147,10 @@ large batches viable at all.
 
 **Still, mind the total cost before launching a full language.** Before these two changes,
 one 25,000-article Spanish batch at `--min-ndocs 5` (≈143k tokens) ran over 50 minutes
-without finishing with exact synonym search, and over 30 minutes stuck in the dense
+without finishing with exact query_expansion search, and over 30 minutes stuck in the dense
 factorization. Practical options:
 
-- **Prune harder.** `--min-ndocs 20` cuts the vocabulary to ~59k, roughly 6× less synonym
+- **Prune harder.** `--min-ndocs 20` cuts the vocabulary to ~59k, roughly 6× less query_expansion
   work than `min_ndocs=5` and ~110× less than no pruning, at the cost of the rare-token
   tail. This is the first knob to reach for.
 - **Sample instead of covering everything.** `--limit 200000` is usually plenty for stable
@@ -177,7 +177,7 @@ the document count, because what the split actually controls is:
 
 Fewer, larger parts are otherwise better: less duplicated vocabulary on disk (the 10-part
 split stores overlapping vocabularies ten times over), better per-part statistics, and fewer
-merges -- which matters because `merge` is exact only for counts and weights, while synonyms
+merges -- which matters because `merge` is exact only for counts and weights, while query_expansion
 and lemmas go through rank fusion and voting.
 
 Extrapolating the measured throughput to all **1,841,155** Spanish articles: roughly **3
@@ -187,7 +187,7 @@ since the early articles are the long ones.
 
 Stopword detection works out of the box: on the Spanish slice it flagged 55 candidates,
 headed by `de . , en la el y del a un` -- real function words and punctuation, exactly what
-`[stopwords] doc_freq_threshold` is supposed to catch. The synonym network is likewise good
+`[stopwords] doc_freq_threshold` is supposed to catch. The query_expansion network is likewise good
 without tuning: `rio` -> `confluencia, afluente, desembocadura, fluvial`, `futbol` -> `copa,
 supercopa, balompie, clubes`.
 
@@ -227,7 +227,7 @@ vocabulary, where no later `refit` can bring it back; keeping one costs almost n
 idf already drives a high-document-frequency token's weight toward zero (measured on Arabic,
 the most frequent token carried 0.64% of the maximum weight). The reason to remove function
 words at all is cost, not relevance: they dominate `numtokens`/`avgdoclen`, which is what BM25
-normalizes by, they spend the all-pairs synonym kNN budget, and they crowd the leading LSI
+normalizes by, they spend the all-pairs query_expansion kNN budget, and they crowd the leading LSI
 dimensions.
 
 These values are the per-language defaults in `corpora/wikipedia.sh`;
@@ -290,7 +290,7 @@ That is why the per-language thresholds above do not apply in this mode, and why
 first 30 by frequency are all function words while the highest content word sits at 0.069. The
 band is wide enough that the exact value stops being a tuning problem.
 
-Synonyms improve too, since co-occurring in an 87-token paragraph is a much tighter semantic
+Query expansions improve too, since co-occurring in an 87-token paragraph is a much tighter semantic
 window than co-occurring in a 2,300-token article, which pulls in terms that share a document
 but not a meaning:
 
@@ -318,7 +318,7 @@ filter -- 106,436 tokens survive instead of 94,330.
 The `[lemmas]` step deserves a note, because the obvious version of it does not work. LSI
 embeddings encode *distributional* similarity, so a token's neighbours are its topical
 relatives, not its inflected forms -- `guerra` sits next to `belico` and `aliados`, which is
-what the synonym network is for. Electing one representative per semantic cluster therefore
+what the query_expansion network is for. Electing one representative per semantic cluster therefore
 produced, measured on Spanish Wikipedia, mappings like `casas -> dia`, `ciudades -> 市`,
 `mujeres -> %`: 99.7% of the vocabulary remapped with only 0.3% of pairs even sharing a
 prefix. More clusters did not help -- shrinking them to an average of 1.5 tokens still only
@@ -376,7 +376,7 @@ matters is that every variant collapses onto the *same* key, which it does.
    smoke-test the whole path cheaply before committing real compute.
 3. **Verify** before publishing anything. At minimum: `textsearch info` on the result (does
    `vocsize`/`trainsize` look sane? are the stopword candidates actually stopwords for that
-   language? do the synonyms and lemmas look linguistically plausible rather than like
+   language? do the query_expansion and lemmas look linguistically plausible rather than like
    clustering noise?), plus a few `textsearch search` queries against a held-out slice.
 4. **Publish** the verified `.zip`s as attachments on a GitHub release, so users can
    `textsearch install <downloaded>.zip <nickname>` without refitting anything.

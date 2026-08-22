@@ -1,6 +1,6 @@
 # This file is a part of TextSearch.jl
 
-export expand_synonyms!
+export expand_query!
 
 @inline _synlt_id(X, i, j) = @inbounds X[1][i] < X[1][j]
 @inline function _synswap_id_val(X, i, j)
@@ -9,31 +9,31 @@ export expand_synonyms!
 end
 
 # Default weightings for the two modes of the SparseVector expansion below. Rank is the
-# default because a synonym network stores its neighbors in rank order and that is the part
-# that transfers between models; distances are optional side data (see `synonyms`).
+# default because a query_expansion network stores its neighbors in rank order and that is the part
+# that transfers between models; distances are optional side data (see `query_expansion`).
 @inline _rank_weight(rank::Integer) = 1f0 / rank
 @inline _dist_weight(dist::Real) = Float32(exp(-dist))
 
 """
-    expand_synonyms!(vec::SparseVector, voc::Vocabulary, synonyms;
+    expand_query!(vec::SparseVector, voc::Vocabulary, query_expansion;
                       distances=nothing, weight_fn=nothing, normalize::Bool=true) -> vec
 
 Expands a **query**'s sparse tf-idf vector IN PLACE with weighted contributions from each present
-token's synonyms (`synonyms`, e.g. as produced by [`LSI.synonyms`](@ref)). This mutates `vec` --
+token's query_expansion (`query_expansion`, e.g. as produced by [`LSI.query_expansion`](@ref)). This mutates `vec` --
 pass an unnormalized, disposable query vector (`vectorize(model, query; normalize=false)`); never a
 vector you still need afterwards, and never a document vector (documents are never expanded, only
-queries). Normalizing before calling this would also make the original-vs-synonym weight ratio
-depend on how many tokens the query had, not on the intended per-synonym weighting -- that's why
+queries). Normalizing before calling this would also make the original-vs-query_expansion weight ratio
+depend on how many tokens the query had, not on the intended per-query_expansion weighting -- that's why
 `normalize` (default `true`) happens here, as the final step.
 
-`synonyms` maps a token to its neighbor tokens **in rank order** (nearest first). For each of
+`query_expansion` maps a token to its neighbor tokens **in rank order** (nearest first). For each of
 `vec`'s original nonzero `(tokenID, weight)` pairs (captured once, before any appending), looks up
-its string via `gettoken(voc, tokenID)`; if it's a key of `synonyms`, appends `weight * weight_fn(...)`
-at `token2id(voc, synonym)` for every neighbor (an OOV synonym -- `token2id` returning `0` -- is
+its string via `gettoken(voc, tokenID)`; if it's a key of `query_expansion`, appends `weight * weight_fn(...)`
+at `token2id(voc, query_expansion)` for every neighbor (an OOV query_expansion -- `token2id` returning `0` -- is
 silently skipped, matching `bagofwords!`/`vectorize!`'s existing convention). The appended entries
 are then merged into `vec`'s existing nonzeros: the combined `(nzind, nzval)` arrays are heap-sorted
 by id (reusing `SimilaritySearch.heapify!`/`heapsort!`, the same coupled-array sort used to build a
-`SparseVector` out of a `KnnQueue`), duplicate ids (a synonym that was also already present, or
+`SparseVector` out of a `KnnQueue`), duplicate ids (a query_expansion that was also already present, or
 reached via two different original tokens) are combined in a single two-pointer reduction pass, and
 the backing arrays are `resize!`d down to the final count -- an in-place O(n log n) merge, no new
 allocation for the index/value storage itself.
@@ -47,12 +47,12 @@ There are two, chosen by whether `distances` is given:
   transfers between models -- distances live in whichever embedding space produced them, and a
   merged or refitted network's distances are no longer distances in any single space at all.
 - **distance**: pass `distances`, a parallel mapping `token => Vector{Float32}` aligned with
-  `synonyms[token]`; `weight_fn` then receives the distance and defaults to `exp(-d)` (`1.0` at
+  `query_expansion[token]`; `weight_fn` then receives the distance and defaults to `exp(-d)` (`1.0` at
   distance `0`, decaying smoothly). Pass e.g. `d -> d < 0.3 ? 0.5 : 0.0` for a hard cutoff. A
   token missing from `distances`, or a short distance list, falls back to rank weighting for the
   neighbors it does not cover, so a partially-populated `distances` is safe rather than an error.
 """
-function expand_synonyms!(vec::SparseVector, voc::Vocabulary, synonyms;
+function expand_query!(vec::SparseVector, voc::Vocabulary, query_expansion;
                            distances=nothing, weight_fn=nothing, normalize::Bool=true)
     nzind = vec.nzind
     nzval = vec.nzval
@@ -62,9 +62,9 @@ function expand_synonyms!(vec::SparseVector, voc::Vocabulary, synonyms;
 
     for i in 1:m0
         tok = gettoken(voc, nzind[i])
-        haskey(synonyms, tok) || continue
+        haskey(query_expansion, tok) || continue
         v = nzval[i]
-        neighbors = synonyms[tok]
+        neighbors = query_expansion[tok]
         dl = bydist ? get(distances, tok, nothing) : nothing
         for (rank, syn) in enumerate(neighbors)
             sid = token2id(voc, syn)
@@ -109,27 +109,27 @@ function expand_synonyms!(vec::SparseVector, voc::Vocabulary, synonyms;
 end
 
 """
-    expand_synonyms!(bow::AbstractDict{<:Integer,<:Real}, voc::Vocabulary, synonyms) -> bow
+    expand_query!(bow::AbstractDict{<:Integer,<:Real}, voc::Vocabulary, query_expansion) -> bow
 
-Expands a **query**'s bag-of-words IN PLACE by adding every present token's synonyms as
+Expands a **query**'s bag-of-words IN PLACE by adding every present token's query_expansion as
 extra keys -- the [`BM25InvertedFile`](@ref) counterpart of the `SparseVector` method above.
 There is no `weight_fn`/`normalize`/`distances` here: BM25 scoring (`bm25score`) never reads
 the query side's frequencies, only which token ids are present ("query's own frequencies are
-not used"), so an injected synonym only needs to make its id present in `bow` -- any positive
-count works, and an id already present (e.g. the synonym also appears literally in the
+not used"), so an injected query_expansion only needs to make its id present in `bow` -- any positive
+count works, and an id already present (e.g. the query_expansion also appears literally in the
 query) is left untouched rather than overwritten. This is why a network's distances are not
 needed on the normal path at all.
 
 As with the `SparseVector` method, `bow`'s original keys are snapshotted once (via
-`collect`) before any insertion, so newly-added synonym ids are never themselves expanded.
-An OOV synonym (`token2id` returning `0`) is silently skipped, matching `bagofwords!`'s
+`collect`) before any insertion, so newly-added query_expansion ids are never themselves expanded.
+An OOV query_expansion (`token2id` returning `0`) is silently skipped, matching `bagofwords!`'s
 existing convention.
 """
-function expand_synonyms!(bow::AbstractDict{K,V}, voc::Vocabulary, synonyms) where {K<:Integer,V<:Real}
+function expand_query!(bow::AbstractDict{K,V}, voc::Vocabulary, query_expansion) where {K<:Integer,V<:Real}
     for (tokenID, _) in collect(bow)
         tok = gettoken(voc, tokenID)
-        haskey(synonyms, tok) || continue
-        for syn in synonyms[tok]
+        haskey(query_expansion, tok) || continue
+        for syn in query_expansion[tok]
             sid = token2id(voc, syn)
             sid == 0 && continue
             k = K(sid)

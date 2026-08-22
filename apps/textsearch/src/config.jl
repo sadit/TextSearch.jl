@@ -42,7 +42,7 @@ language = "unknown"
 [vocabulary]
 # Drop tokens appearing in fewer than this many documents. 1 keeps everything; on a real
 # corpus most of the vocabulary is single-document noise (typos, IDs, foreign words) whose
-# embeddings and synonyms are meaningless, and since the synonym network is an all-pairs
+# embeddings and query_expansion are meaningless, and since the query_expansion network is an all-pairs
 # search over the vocabulary, pruning it cuts that cost quadratically.
 min_ndocs = 1
 
@@ -62,9 +62,9 @@ external_path = ""          # kind="external": path to a token->vector JSON mapp
 # scale. "auto" picks full up to a few thousand documents per batch, lanczos above.
 factorization = "auto"       # "auto" | "lanczos" | "full"
 
-[synonyms]
+[query_expansion]
 k = 8
-# The synonym network is an all-pairs kNN over the vocabulary. "auto" uses an approximate
+# The query_expansion network is an all-pairs kNN over the vocabulary. "auto" uses an approximate
 # autotuned index once the vocabulary is large enough for the exact O(vocabulary^2) search
 # to hurt, and the exact one below that (where exact is both fast and, well, exact).
 # "always"/"never" force one or the other. The recalls are the autotuning targets.
@@ -106,7 +106,7 @@ semantic_threshold = 1.0
 #
 # Set it to true for a profile meant to be used directly as fitted. That costs one extra
 # tokenization pass over the batch (the map is derived from embeddings over the vocabulary it
-# rewrites, so it cannot be known any earlier) and rewrites the synonym network onto lemmas,
+# rewrites, so it cannot be known any earlier) and rewrites the query_expansion network onto lemmas,
 # in exchange for a vocabulary whose idf counts each inflection family together.
 apply = false
 """

@@ -2,7 +2,7 @@
 
 A command-line application for fitting, searching, and managing
 [TextSearch.jl](https://github.com/sadit/TextSearch.jl) profiles -- precomputed vocabulary,
-weights, synonym networks, clustering-derived lemmas, and stopword candidates for a text
+weights, query_expansion networks, clustering-derived lemmas, and stopword candidates for a text
 corpus, packaged as a single `.zip` you can install, share, and query.
 
 - **[Install](#install)**
@@ -90,8 +90,8 @@ outdim = 128               # kind="lsi": target LSI dimension
 scaling = "none"           # kind="lsi": "none" | "inv_singular_values" | "singular_values"
 external_path = ""         # kind="external": path to a JSON {token: [vector]} mapping
 
-[synonyms]
-k = 8                      # neighbors per token in the synonym network
+[query_expansion]
+k = 8                      # neighbors per token in the query_expansion network
 
 [lemmas]
 algorithm = "fft"          # "fft" | "dnet" | "randsel" | "multirandsel"
@@ -107,7 +107,7 @@ Notes:
   through Tables.jl. Corpus and query records don't need to be pre-tokenized.
 - **Batching.** A large corpus produces several `.zip` files (`prefix-0001.zip`,
   `prefix-0002.zip`, ...), each an *independent* profile: its own vocabulary, weights,
-  synonyms, and lemmas, computed only from that batch's documents -- nothing is shared or
+  query_expansion, and lemmas, computed only from that batch's documents -- nothing is shared or
   averaged across batches. Combining several profiles back into one is `merge`'s job (see
   below); `fit` never does that itself.
 - **Where lemmas are applied.** With `lemmas.apply = true` (the default) the lemma map is
@@ -117,7 +117,7 @@ Notes:
   documents and queries alike, and the idf counts a whole inflection family together instead
   of splitting it across its forms. This needs a *third* tokenization pass, because the map
   is derived from embeddings over the vocabulary it rewrites and so cannot be known any
-  earlier; the synonym network is rewritten onto lemmas at the same time, since its entries
+  earlier; the query_expansion network is rewritten onto lemmas at the same time, since its entries
   would otherwise name tokens the vocabulary no longer has and be dropped in silence. LSI is
   deliberately not recomputed -- the embeddings' job was to find the families. Set
   `apply = false` to keep the map as a reviewable artifact only, the same detected-versus-
@@ -131,9 +131,9 @@ Notes:
 - **Encoder.** `"lsi"` fits an LSI projection internally (see `LSI.LatentSemanticIndexing`
   in the library). `"external"` instead reads a precomputed `token -> vector` JSON mapping
   from `external_path`; either way the resulting per-token vectors feed the same
-  synonym-network and lemma-clustering steps.
+  query_expansion-network and lemma-clustering steps.
 - On a small/toy corpus (a handful of short documents, as in the tutorial below), don't
-  expect polished synonyms or lemmas -- LSI needs real co-occurrence statistics to separate
+  expect polished query_expansion or lemmas -- LSI needs real co-occurrence statistics to separate
   meaningful clusters from noise. The mechanics are still worth trying at that scale; just
   don't judge output quality from it.
 
@@ -142,7 +142,7 @@ Notes:
 ```
 textsearch search <profile> <query> --collection PATH [--format FORMAT]
                    [--text-key KEY] [-t THRESHOLD]
-                   [--no-lemmas] [--no-synonyms] [--synonyms-k K] [--chunk N]
+                   [--no-lemmas] [--no-query_expansion] [--query_expansion-k K] [--chunk N]
 ```
 
 `profile` is an installed nickname or a path to a profile `.zip`/directory. Prints every
@@ -162,16 +162,16 @@ corpus-encounter order, exactly like `grep`.
 **The whole pipe runs, and each artifact applies where it belongs.** Normalization,
 tokenization, stopwords and lemmas come from the profile's `TextConfig`, so they apply
 identically to the query and to every document -- that is what a normalization means.
-Synonym expansion applies to the **query only**: it widens what the query reaches, and
-applying it to documents would make everything match everything. Each synonym is itself run
+Query expansion applies to the **query only**: it widens what the query reaches, and
+applying it to documents would make everything match everything. Each query_expansion is itself run
 through the same `TextConfig`, so one stored in an inflected form arrives lemmatized and
 meets document tokens on the same footing.
 
 This makes `search` the way to exercise a profile's artifacts end to end, so each can be
 switched off to see what it contributes: `--no-lemmas` removes the lemma step from the
-tokenization pipeline (on both sides), `--no-synonyms` skips expansion, and `--synonyms-k`
-caps how many synonyms each query token may contribute (`0`, the default, uses every one the
-profile stored). The effective query token set, what the synonyms added, and whether the
+tokenization pipeline (on both sides), `--no-query_expansion` skips expansion, and `--query_expansion-k`
+caps how many query_expansion each query token may contribute (`0`, the default, uses every one the
+profile stored). The effective query token set, what the query_expansion added, and whether the
 profile actually carries a lemma map are all reported on **stderr**, leaving stdout pure
 JSONL for piping.
 
@@ -206,7 +206,7 @@ textsearch uninstall <nickname>                       # print the file's path --
 
 - `install` derives the nickname from the zip's filename if you don't give one explicitly;
   `--force` overwrites an existing nickname (without it, a name collision is an error).
-- `info` prints `trainsize`/`vocsize`/`numtokens`/`avgdoclen`, how many synonym/lemma/
+- `info` prints `trainsize`/`vocsize`/`numtokens`/`avgdoclen`, how many query_expansion/lemma/
   stopword-candidate entries were saved, the encoder used, the full `TextConfig`
   (normalization + tokenization + transformation), and the file's absolute path.
 - `uninstall` is deliberately non-destructive: it only looks up and prints the installed
@@ -217,7 +217,7 @@ textsearch uninstall <nickname>                       # print the file's path --
 ### `merge` -- fold batched profiles into one
 
 ```
-textsearch merge <profiles...> --out OUT.zip [--doc-freq-threshold F] [--synonyms-k N]
+textsearch merge <profiles...> --out OUT.zip [--doc-freq-threshold F] [--query_expansion-k N]
 ```
 
 This is what makes `fit`'s batching usable: batching a large corpus produces one
@@ -240,13 +240,13 @@ textsearch install wiki20231101-es.zip wiki-es
   what a single unbatched fit over the whole corpus would produce (the test suite asserts
   exactly this equality). This is the main reason to merge rather than to just pick one
   batch.
-- **Synonyms are a rank-consensus fusion, not a recomputation.** Every input fit its own
+- **Query expansion are a rank-consensus fusion, not a recomputation.** Every input fit its own
   encoder, so its neighbor *distances* live in its own embedding space and aren't
   numerically comparable across inputs. What does transfer is the *ranking*, so the lists
   are combined with Reciprocal Rank Fusion: a neighbor several independently-fit batches
   all rank highly wins over one a single batch happened to like. The number kept beside
   each neighbor is the mean of the distances the contributing batches reported -- no longer
-  a distance in any one space. `--synonyms-k 0` (default) keeps as many neighbors per token
+  a distance in any one space. `--query_expansion-k 0` (default) keeps as many neighbors per token
   as the richest input had.
 - **Lemmas are a plurality vote** over the inputs' clusterings. Independent votes can
   disagree in ways one clustering never does (`a => b` here, `b => a` there), so winning
@@ -346,9 +346,9 @@ and reviving one lemma pulled its whole base family back into the profile. The t
 that nothing can veto a grouping on meaning, so look-alike words with unrelated senses will
 merge where a full `fit` would have kept them apart.
 
-**What is not recomputed.** No embedding is fit here. Synonyms and lemmas come from the base,
-with synonym entries pointing at pruned tokens removed. That is exactly what makes a refit
-cheap next to a fit, and the point of bootstrapping. `--drop-distances` omits the synonym
+**What is not recomputed.** No embedding is fit here. Query expansion and lemmas come from the base,
+with query_expansion entries pointing at pruned tokens removed. That is exactly what makes a refit
+cheap next to a fit, and the point of bootstrapping. `--drop-distances` omits the query_expansion
 distances from the output for the smallest possible profile, since only the ranking is used
 on the normal query path.
 
@@ -426,7 +426,7 @@ outdim = 8
 scaling = "none"
 external_path = ""
 
-[synonyms]
+[query_expansion]
 k = 3
 
 [lemmas]
@@ -475,7 +475,7 @@ trainsize: 7
 vocsize:   26
 numtokens: 38
 avgdoclen: 5.428571428571429
-synonyms:  26 tokens
+query_expansion:  26 tokens
 lemmas:    20 remapped tokens
 stopword_candidates: 2 tokens
 encoder:   lsi (scaling=none, source_path=, outdim=8)

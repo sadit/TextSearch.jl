@@ -52,7 +52,7 @@ end
 # a profile with a different lemma map, for the extension path (Part: extend_lemmas)
 _with_lemmas(p::TextProfile, lemmas) =
     TextProfile(p.model; stopwords=p.stopwords, lemmas,
-                synonyms=p.synonyms, synonym_distances=p.synonym_distances,
+                query_expansion=p.query_expansion, query_expansion_distances=p.query_expansion_distances,
                 applied=p.applied, lineage=p.lineage)
 
 """
@@ -274,8 +274,8 @@ Adapts the bootstrap profile `base` to a dataset, given a sample of it, and retu
 **self-contained** profile: nothing in the result refers back to `base`, so it can be saved
 with [`save_profile`](@ref) and used on its own.
 
-`base` is anything with the fields [`load_profile`](@ref) returns (`model`, `synonyms`,
-`synonym_distances`, `lemmas`, `stopword_candidates`, `encoder`) -- a loaded profile, or one
+`base` is anything with the fields [`load_profile`](@ref) returns (`model`, `query_expansion`,
+`query_expansion_distances`, `lemmas`, `stopword_candidates`, `encoder`) -- a loaded profile, or one
 assembled in memory. The return value has that same shape, as [`merge_profiles`](@ref)'s
 does.
 
@@ -298,7 +298,7 @@ apply_lemmas)`, and is checked against it. The second form is a convenience that
   Without it those tokens stay unmerged, which is the price of not fitting an embedding.
 - **`avgdoclen`** is `:blend` by default and can be pinned to the sample's with `:sample`;
   see [`blend_vocabularies`](@ref) for why that choice matters to BM25.
-- **Synonyms** are inherited, restricted to tokens that survived. No embedding is fit here --
+- **Query expansion** are inherited, restricted to tokens that survived. No embedding is fit here --
   that is exactly what makes a refit cheap next to a fit, and the point of bootstrapping.
 - **Stopword candidates** are recomputed from the blended counters, but the *applied* stopword
   set stays the base's. It has to: the base's counts were collected under that set, and
@@ -340,7 +340,7 @@ function refit_profile(base::TextProfile, sample_voc::Vocabulary;
 
     voc = blend_vocabularies(base_voc, sample_voc; kappa, keep_rate, keep_floor, avgdoclen)
 
-    syn, sdist = _restrict_synonyms(base.synonyms, base.synonym_distances, voc)
+    syn, sdist = _restrict_query_expansion(base.query_expansion, base.query_expansion_distances, voc)
     # Restricted to entries whose target survived the prune. No reconciliation step follows:
     # the profile constructor materializes the TextConfig from THIS map, so the applied map
     # and the saved map are the same object by construction. (They used to be assembled
@@ -356,7 +356,7 @@ function refit_profile(base::TextProfile, sample_voc::Vocabulary;
     κ = kappa <= 0 ? Float64(gettrainsize(sample_voc)) : Float64(kappa)
     applied = AppliedArtifacts(stopwords=base.applied.stopwords,
                                lemmas=(apply_lemmas && !isempty(kept_lemmas)),
-                               synonyms=base.applied.synonyms)
+                               query_expansion=base.applied.query_expansion)
     lineage = LineageStep[base.lineage...,
                           LineageStep(:refit; kappa=κ,
                                               sample_trainsize=gettrainsize(sample_voc),
@@ -484,20 +484,20 @@ function _artifact_pair(t::ChainTransformation)
 end
 
 """
-    _restrict_synonyms(synonyms, distances, voc) -> (synonyms, distances)
+    _restrict_query_expansion(query_expansion, distances, voc) -> (query_expansion, distances)
 
 Drops every network entry naming a token absent from `voc`, keeping rank order and the
 parallel distances aligned.
 
 Necessary because the refit prunes: an entry left pointing at a dropped token would be
-discarded at query time by `expand_synonyms!` without a word (`token2id` returning `0`), so
+discarded at query time by `expand_query!` without a word (`token2id` returning `0`), so
 it would cost file size and tell a reader the network is richer than it is.
 """
-function _restrict_synonyms(synonyms, distances, voc::Vocabulary)
+function _restrict_query_expansion(query_expansion, distances, voc::Vocabulary)
     out = Dict{String,Vector{String}}()
     outd = Dict{String,Vector{Float32}}()
 
-    for (tok, neighbors) in synonyms
+    for (tok, neighbors) in query_expansion
         token2id(voc, tok) == 0 && continue
         dl = distances === nothing ? nothing : get(distances, tok, nothing)
         words = String[]

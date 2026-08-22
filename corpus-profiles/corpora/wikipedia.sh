@@ -38,7 +38,7 @@ OUTDIM=256
 # handled by spelling correction rather than by destroying the distinction in the profile.)
 DEL_DIAC=false
 DEL_PUNC=true
-SYN_K=8
+QUERY_EXPANSION_K=8
 # UNEXAMINED, and it silently discards a lot: verified against the parquet row counts, 200
 # characters drops 62,946 Spanish articles (3.4%), 323,825 English (5.1%) and 129,605
 # Portuguese (11.7%) -- Portuguese Wikipedia is full of very short freguesia stubs. Unlike
@@ -53,7 +53,7 @@ MIN_NDOCS=5
 # paragraphs separates real stopwords from Wikipedia artifacts by a factor of 55 where article
 # frequency puts them within 1.2 (`de` 0.998 -> 0.934 against `enlaces` 0.826 -> 0.017). A fit
 # under identical settings then detects 11 stopwords -- all function words -- against 46 that
-# included `enlaces externos referencias vease anio parte dos`. Synonyms also improve, since
+# included `enlaces externos referencias vease anio parte dos`. Query expansion also improve, since
 # co-occurring in an 87-token paragraph is a far tighter semantic window than in a 2,300-token
 # article: `planeta` goes from `larense protoplanetas haumea verrier` to `marte saturno neptuno
 # urano jupiter`. See ../README.md.
@@ -91,14 +91,14 @@ Options:
                          are reliable, so "año" is kept distinct from "ano")
   --del-punc B           drop punctuation: true|false (default true -- it is ~half of all
                          token occurrences and only ~0.5% of the vocabulary)
-  --syn-k N              synonyms per token (default 8)
+  --query-expansion-k N              query_expansion per token (default 8)
   --min-chars N          skip articles shorter than this (default 200, drops stubs)
   --split-paragraphs     emit one document per paragraph (title-prefixed) instead of per
                          article -- see the note in the script; changes what a "document" is,
                          so stopword detection and avgdoclen change with it
   --min-tokens N         drop records with fewer than N whitespace words (default 4)
   --min-ndocs N          drop tokens in fewer than N documents (default 5; 1 keeps all).
-                         The synonym network is an all-pairs search over the vocabulary,
+                         The query_expansion network is an all-pairs search over the vocabulary,
                          so this cuts fit cost quadratically -- see ../README.md
   --no-stopwords         disable stopword detection/removal (on by default)
   --doc-freq-threshold F stopword document-frequency cutoff. Default is per-language (see
@@ -122,7 +122,7 @@ while [[ $# -gt 0 ]]; do
     --outdim)               OUTDIM="$2"; shift 2 ;;
     --del-diac)             DEL_DIAC="$2"; shift 2 ;;
     --del-punc)             DEL_PUNC="$2"; shift 2 ;;
-    --syn-k)                SYN_K="$2"; shift 2 ;;
+    --query-expansion-k)                QUERY_EXPANSION_K="$2"; shift 2 ;;
     --min-chars)            MIN_CHARS="$2"; shift 2 ;;
     --split-paragraphs)     SPLIT_PARAGRAPHS=true; shift ;;
     --min-tokens)           MIN_TOKENS="$2"; shift 2 ;;
@@ -163,7 +163,7 @@ done
 # threshold where the band is pure function, and leave it where the band holds content.
 #
 # The gain from removing function words is a cost gain, not a relevance one: they dominate
-# `numtokens`/`avgdoclen` (which BM25 normalizes by), spend the all-pairs synonym kNN budget,
+# `numtokens`/`avgdoclen` (which BM25 normalizes by), spend the all-pairs query_expansion kNN budget,
 # and crowd the leading LSI dimensions.
 if [[ -z "$DOC_FREQ_THRESHOLD" && "$SPLIT_PARAGRAPHS" == "true" ]]; then
   # The per-language values below were calibrated with ARTICLES as documents and are simply the
@@ -311,7 +311,7 @@ if has_step fit; then
 
   TS_JSONL="$JSONL" TS_OUTDIR="$OUT_DIR" TS_PREFIX="$PROFILE_NAME" TS_BATCH="$BATCH_SIZE" \
   TS_RESUME="$RESUME" TS_MIN_NDOCS="$MIN_NDOCS" TS_STOPWORDS="$STOPWORDS" \
-  TS_DOC_FREQ_THRESHOLD="$DOC_FREQ_THRESHOLD" TS_OUTDIM="$OUTDIM" TS_SYN_K="$SYN_K" \
+  TS_DOC_FREQ_THRESHOLD="$DOC_FREQ_THRESHOLD" TS_OUTDIM="$OUTDIM" TS_QUERY_EXPANSION_K="$QUERY_EXPANSION_K" \
   TS_LEMMA_ALG="$LEMMA_ALG" TS_LEMMA_SEL="$LEMMA_SEL" TS_LANGUAGE="$LANG_CODE" \
   TS_DEL_DIAC="$DEL_DIAC" TS_DEL_PUNC="$DEL_PUNC" \
     ts_render_fit_config "$FIT_CFG"
