@@ -98,3 +98,25 @@ using Test, SimilaritySearch, TextSearch
         @test collect(IdView(res_flag_only)) == ids_plain
     end
 end
+
+@testset "avgdoclen agrees with the lengths BM25 actually measures" begin
+    # BM25's length normalization is `doclen / avgdoclen`, with `doclen` measured at index time
+    # as a document's total occurrences and `avgdoclen` read off the training vocabulary. The
+    # two have to be the same notion of length or the ratio is not 1 for an average document:
+    # when `numtokens` counted distinct tokens instead, this ratio was 3.47 on Spanish
+    # Wikipedia, driving the normalization as if b were 2.6 rather than 0.75.
+    tc = TextConfig(tokenization=TokenizationConfig(nlist=[1]))
+    docs = ["la casa la casa roja tiene un jardin muy grande y bonito",
+            "la pera verde verde esta muy rica",
+            "el jardin de la casa verde",
+            "casa"]
+    voc = Vocabulary(tc, docs; verbose=false)
+    idx = BM25InvertedFile(voc)
+    append_items!(idx, docs)
+
+    @test sum(idx.doclens) == getnumtokens(voc)
+    @test sum(idx.doclens) / length(idx.doclens) ≈ avgdoclen(voc)
+    for (i, d) in enumerate(docs)
+        @test idx.doclens[i] == length(tokenize(tc, d))
+    end
+end
