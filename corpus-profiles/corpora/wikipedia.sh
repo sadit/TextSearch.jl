@@ -178,10 +178,12 @@ if [[ -z "$DOC_FREQ_THRESHOLD" && "$SPLIT_PARAGRAPHS" == "true" ]]; then
   log "  between function words and content is wide here, unlike at article level)"
 fi
 # The query-expansion head cut has the same scale problem and the same answer: it is a document
-# frequency, so it only means something once the document unit is fixed. Measured on 272,466
-# Spanish paragraphs, 0.05 leaves 57 tokens without a list -- the function words plus `anos ano
-# parte forma ciudad ser ha donde`, none of which needs enriching -- at a cost of 0.1% of all
-# pairs. The article-level equivalent was never measured, so article runs leave it off.
+# frequency, so it only means something once the document unit is fixed. It also has to sit BELOW
+# the stopword threshold to do anything at all, since tokens above that are no longer in the
+# vocabulary. With stopwords at 0.1, a cut of 0.05 denies a list to the strip in between -- 37
+# tokens in es, 45 in pt, 49 in en, measured on 10k articles of each -- which is the function
+# words plus the likes of `anos ano parte forma ciudad`, none of which needs enriching. The
+# article-level equivalent was never measured, so article runs leave it off.
 if [[ -z "${TS_HEAD_DF:-}" && "$SPLIT_PARAGRAPHS" == "true" ]]; then
   TS_HEAD_DF=0.05
   log "query-expansion head cut for paragraph units: $TS_HEAD_DF"
