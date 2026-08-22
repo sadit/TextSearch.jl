@@ -223,4 +223,54 @@ using Test, TextSearch, SimilaritySearch
         merged = merge_profiles([roundtrip(docs[1:3]), roundtrip(docs[4:6]; textconfig=tc2)])
         @test gettrainsize(merged.model.voc) == 6
     end
+
+    @testset "a stopword only SOME inputs removed leaves the merged vocabulary" begin
+        # `fit` applies stopwords by tokenizing under IgnoreStopwords, so a flagged token never
+        # enters that batch's vocabulary and the merged counters hold only the batches that did
+        # not flag it. Merging used to keep such a token with those partial counts, which made
+        # its idf far too high while the profile's own stopword list called it a stopword.
+        # Measured on Portuguese Wikipedia: 18 of 35, with `como` at df=0.049 against a true
+        # corpus df above 0.5.
+        # built the way `fit` builds it: tokenized under IgnoreStopwords, so "la" is genuinely
+        # absent from a's vocabulary rather than merely listed
+        a = roundtrip(docs[1:3]; textconfig=TextConfig(tc; transformation=IgnoreStopwords(Set(["la"]))),
+                      stopwords=Set(["la"]), applied=AppliedArtifacts(stopwords=true))
+        @test !("la" in gettoken.(Ref(a.model.voc), eachindex(a.model.voc)))
+        # "la" is NOT a stopword for b, so b's vocabulary contains it and the merged counters
+        # carry b's count alone -- a fraction of the truth
+        b = roundtrip(docs[4:6])
+        @test "la" in gettoken.(Ref(b.model.voc), eachindex(b.model.voc))
+
+        merged = merge_profiles([a, b])
+        @test "la" in merged.stopwords
+        mvoc = merged.model.voc
+        @test !("la" in gettoken.(Ref(mvoc), eachindex(mvoc)))
+        # its occurrences leave numtokens too, or avgdoclen counts tokens that are gone
+        @test getnumtokens(mvoc) ==
+              getnumtokens(a.model.voc) + getnumtokens(b.model.voc) -
+              getoccs(b.model.voc, token2id(b.model.voc, "la"))
+        # and the materialized config agrees with the artifact
+        @test "la" in gettextconfig(merged).transformation.stopwords
+    end
+
+    @testset "the merge keeps the inputs' lineage" begin
+        # istuned reads nothing but the lineage, so dropping the inputs' steps made a merge of
+        # refitted profiles report itself as a base model
+        a = roundtrip(docs[1:3]; lineage=[LineageStep(:fit; trainsize=3)])
+        b = roundtrip(docs[4:6]; lineage=[LineageStep(:fit; trainsize=3),
+                                         LineageStep(:refit; kappa=2.0)])
+        merged = merge_profiles([a, b])
+        stages = [s.stage for s in merged.lineage]
+        @test stages == [:fit, :refit, :merge]
+        @test istuned(merged)
+        @test !isbase(merged)
+        # each distinct stage carries how many inputs contributed it
+        @test merged.lineage[1].params["n_sources"] == 2
+        @test merged.lineage[2].params["n_sources"] == 1
+
+        # a merge of plain fits stays a base
+        plain = merge_profiles([a, roundtrip(docs[4:6]; lineage=[LineageStep(:fit; trainsize=3)])])
+        @test [s.stage for s in plain.lineage] == [:fit, :merge]
+        @test isbase(plain)
+    end
 end

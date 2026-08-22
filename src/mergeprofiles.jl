@@ -204,8 +204,17 @@ profile.
 - **Lemmas are a plurality vote** over the inputs' clusterings (see [`_vote_lemmas`](@ref)).
 - **Stopwords** are recomputed from the merged counters at `doc_freq_threshold`, then
   unioned with the inputs' own sets -- a token every input already removed is absent from the
-  merged vocabulary and could not be re-derived, but is still a stopword. An artifact counts
-  as applied in the merge if any input applied it.
+  merged vocabulary and could not be re-derived, but is still a stopword. A token only *some*
+  inputs removed is then dropped from the merged vocabulary: the inputs that removed it never
+  recorded its counts, so what survives is a fraction of the truth (measured: `como` at
+  df=0.049 against a real corpus df above 0.5), and no merge can reconstruct the rest. What the
+  *merged counters* newly flag is only reported, never dropped -- those counts are exact, and
+  keeping them is the reason to merge at all. An artifact counts as applied in the merge if any
+  input applied it.
+- **Lineage** keeps the inputs' stages, one entry per distinct stage with the number of inputs
+  that contributed it, followed by the `:merge` step. Merging tuned profiles therefore yields a
+  tuned profile; per-batch params are dropped, since they describe batches the merged profile
+  no longer has.
 
 Inputs must share their **policy** -- normalization and tokenization -- and their weighting
 scheme. Nothing about their artifacts has to match: differing stopword sets union, differing
@@ -253,19 +262,49 @@ function merge_profiles(profiles; doc_freq_threshold::Real=0.5, synonyms_k::Inte
         update_voc!(voc, v)
     end
 
-    model = VectorModel(gw, lw, voc)   # recomputed from the merged counters
-
-    fused = _fuse_synonyms(profiles, voc, synonyms_k, rrf_k)
-    lemmas = _vote_lemmas(profiles, voc)
-
-    # Stopwords union, as they always did -- a token any batch removed is absent from that
-    # batch's vocabulary and so already excluded from the merged counts -- plus whatever the
-    # merged counters now flag. The inputs' own sets are kept even when they cannot be
-    # re-derived from the merged vocabulary, since they are still stopwords.
+    # Stopwords: whatever the merged counters flag, unioned with the inputs' own sets. A set
+    # is kept even when the merged counters can no longer re-derive it, since a token every
+    # input removed is genuinely a stopword and is simply absent from the merged vocabulary.
     stopwords = Set{String}(stopword_candidates(voc, doc_freq_threshold))
     for p in profiles
         union!(stopwords, p.stopwords)
     end
+
+    # ... but a token only SOME inputs removed is a different case, and the one that used to
+    # be wrong. `fit` applies stopwords by tokenizing the batch under `IgnoreStopwords`, so a
+    # flagged token never enters that batch's vocabulary at all -- and the merged counters
+    # then hold only the batches that did NOT flag it. Measured on Portuguese Wikipedia, 18 of
+    # 35 merged stopwords were in that state and `como` came out at df=0.049 against a true
+    # corpus df above 0.5, i.e. an idf of ~3.0 where ~0.5 is right: the profile's own stopword
+    # list called it a stopword while its vocabulary treated it as a rare, highly
+    # discriminative term. Merging cannot recover the real count -- the batches that dropped it
+    # never recorded one -- so the only sound move is to drop it, which is also what
+    # `applied.stopwords` already claims. Occurrences come out of `numtokens` too, or
+    # `avgdoclen` would keep counting tokens the vocabulary no longer has.
+    # Only the inputs' own sets are dropped, not what the merged counters newly flag: a token no
+    # input removed has exact counts, so flagging it makes it a candidate and leaves the
+    # vocabulary exact, which is the whole point of merging. What cannot stay is a token some
+    # input already took out.
+    removed_by_inputs = Set{String}()
+    for p in profiles
+        union!(removed_by_inputs, p.stopwords)
+    end
+    dropped_occs = sum((v.occs for v in (voc[i] for i in eachindex(voc))
+                        if v.token in removed_by_inputs); init=0)
+    if dropped_occs > 0
+        kept = Vocabulary(pol, gettrainsize(voc), getnumtokens(voc) - dropped_occs)
+        for i in eachindex(voc)
+            v = voc[i]
+            v.token in removed_by_inputs && continue
+            push_token!(kept, v.token, v.occs, v.ndocs)
+        end
+        voc = kept
+    end
+
+    model = VectorModel(gw, lw, voc)   # recomputed from the merged counters
+
+    fused = _fuse_synonyms(profiles, voc, synonyms_k, rrf_k)
+    lemmas = _vote_lemmas(profiles, voc)
 
     # an artifact is applied in the merge if any input applied it
     applied = AppliedArtifacts(
@@ -274,8 +313,20 @@ function merge_profiles(profiles; doc_freq_threshold::Real=0.5, synonyms_k::Inte
         synonyms  = any(p -> p.applied.synonyms, profiles),
     )
 
-    lineage = LineageStep[LineageStep(:merge; n_sources=length(profiles),
-                                             trainsize=gettrainsize(voc))]
+    # The inputs' history has to survive the merge, because `istuned` reads nothing else: with
+    # only the `:merge` step, merging refitted profiles produced one that reported itself as a
+    # base. Their stages are summarized rather than concatenated -- 48 identical `fit` steps
+    # are noise, and their per-batch params (trainsize, kappa) describe batches this profile no
+    # longer has -- so each distinct stage appears once, in first-appearance order, carrying
+    # how many inputs contributed it.
+    prior = LineageStep[]
+    for p in profiles, step in p.lineage
+        any(s -> s.stage === step.stage, prior) && continue
+        n = count(q -> any(s -> s.stage === step.stage, q.lineage), profiles)
+        push!(prior, LineageStep(step.stage; n_sources=n))
+    end
+    lineage = push!(prior, LineageStep(:merge; n_sources=length(profiles),
+                                              trainsize=gettrainsize(voc)))
 
     TextProfile(model, stopwords, lemmas, fused.synonyms,
                 (isempty(fused.distances) ? nothing : fused.distances),
