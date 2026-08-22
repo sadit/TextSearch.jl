@@ -39,6 +39,13 @@ OUTDIM=256
 DEL_DIAC=false
 DEL_PUNC=true
 SYN_K=8
+# UNEXAMINED, and it silently discards a lot: verified against the parquet row counts, 200
+# characters drops 62,946 Spanish articles (3.4%), 323,825 English (5.1%) and 129,605
+# Portuguese (11.7%) -- Portuguese Wikipedia is full of very short freguesia stubs. Unlike
+# `del_diac` or `min_ndocs` this value was never measured or argued for, and it biases
+# `avgdoclen` upward by dropping the shortest documents, which is the quantity BM25 normalizes
+# every document length by. A profile fitted this way therefore tells BM25 the average document
+# is longer than it is in the corpus it will index. Set it to 0 to keep everything.
 MIN_CHARS=200
 MIN_NDOCS=5
 STOPWORDS=true

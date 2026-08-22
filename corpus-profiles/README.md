@@ -236,6 +236,29 @@ end that removes less, and that default should not be trusted as a measurement -
 flagged 19 candidates at 0.5 where Spanish flagged 46 on the same 10k, because its function
 words are proclitics glued inside other tokens rather than separate tokens at all.
 
+## `--min-chars` quietly drops a large slice of the corpus
+
+The prepare step skips articles shorter than `--min-chars` (default 200). Verified against the
+parquet row counts, that is not a rounding error:
+
+| lang | parquet rows | JSONL records | dropped |
+|---|---|---|---|
+| es | 1,841,155 | 1,778,209 | 62,946 (3.4%) |
+| en | 6,407,814 | 6,083,989 | 323,825 (5.1%) |
+| pt | 1,112,246 | 982,641 | 129,605 (11.7%) |
+
+Portuguese loses the most because pt.wikipedia carries an enormous number of very short
+freguesia and municipality stubs. All 60 shards were present and byte-identical to what the
+HuggingFace API reports in every case, so nothing is lost in the download or truncated in the
+conversion -- this is entirely the filter.
+
+Unlike `del_diac` or `min_ndocs`, this default was never measured or argued for. It matters
+because it drops the *shortest* documents, which biases `avgdoclen` upward, and `avgdoclen` is
+what BM25 divides every document length by: a profile fitted this way tells BM25 the average
+document is longer than it is in the corpus being indexed. It also shifts stopword detection,
+since a stub is lexically almost all function words, so their document frequency rises when
+stubs are included. Pass `--min-chars 0` to keep everything.
+
 ## Lemmas need morphology, not just embeddings
 
 The `[lemmas]` step deserves a note, because the obvious version of it does not work. LSI
