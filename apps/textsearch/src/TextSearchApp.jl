@@ -38,7 +38,7 @@ function print_top_help(io::IO)
     Usage: textsearch <subcommand> [options]
 
     Subcommands:
-      fit         fit a profile (vocabulary, weights, synonyms, lemmas, stopword
+      fit         fit a profile (vocabulary, weights, query_expansion, lemmas, stopword
                   candidates) from a corpus -- opens \$EDITOR on a TOML config
       merge       merge several profiles into one corpus-wide profile
       refit       adapt a bootstrap profile to a dataset from a sample of it,

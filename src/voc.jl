@@ -256,8 +256,16 @@ end
 const BOW_CACHES = Channel{BOW}(Inf)
 
 function _locked_tokenize_and_push(voc, doc, bow::BOW, l; isnormalized::Bool=false)
+    # Returns how many tokens were pushed. `bow` cannot answer that: it is filled as a SET
+    # (`bow[id] = 1`) because its only job is to say which tokens the document contained, for
+    # `ndocs`. Reading a token count off it -- `length(bow)`, or equivalently summing its
+    # values -- yields the number of DISTINCT tokens instead, which is what made `numtokens`,
+    # and therefore `avgdoclen`, mean something other than its documented "average document
+    # length in tokens".
+    ntokens = Ref(0)
     tokenizerbuffer() do tok
         tokenlist = tokenize(borrowtokenizedtext, voc.textconfig, doc, tok; isnormalized)
+        ntokens[] = length(tokenlist)
         for token in tokenlist
             id = 0
             lock(l)
@@ -269,6 +277,7 @@ function _locked_tokenize_and_push(voc, doc, bow::BOW, l; isnormalized::Bool=fal
             end
         end
     end
+    ntokens[]
 end
 
 """
@@ -304,13 +313,21 @@ function tokenize_and_append!(voc::Vocabulary, corpus; isnormalized::Bool=false)
             empty!(bow)
             if doc isa AbstractVector
                 for text in doc
-                    _locked_tokenize_and_push(voc, text, bow, l; isnormalized)
+                    batch_numtokens += _locked_tokenize_and_push(voc, text, bow, l; isnormalized)
                 end
             else # if doc isa AbstractString
-                _locked_tokenize_and_push(voc, doc, bow, l; isnormalized)
+                batch_numtokens += _locked_tokenize_and_push(voc, doc, bow, l; isnormalized)
             end
 
-            batch_numtokens += length(bow)
+            # `numtokens` accumulates OCCURRENCES, counted above as the tokens are pushed.
+            # It used to be `length(bow)`, i.e. the document's distinct-token count, which made
+            # `avgdoclen` something other than the "average document length in tokens" it
+            # documents. BM25 mixes the two: an index measures each document's length as its
+            # total occurrences (`bm25_register_postings!`) and divides by this average.
+            # Measured on 300 Spanish Wikipedia articles, avgdoclen read 863 against indexed
+            # lengths averaging 2992, so `doclen / avgdoclen` was 3.47 for an average document
+            # instead of 1.0, and the length normalization behaved as if `b` were 2.6 -- outside
+            # BM25's valid [0, 1] -- heavily over-penalizing long documents.
             for id in keys(bow)
                 batch_ndocs[id] = get(batch_ndocs, id, 0) + 1
             end

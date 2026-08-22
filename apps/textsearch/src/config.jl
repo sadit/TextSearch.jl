@@ -42,7 +42,7 @@ language = "unknown"
 [vocabulary]
 # Drop tokens appearing in fewer than this many documents. 1 keeps everything; on a real
 # corpus most of the vocabulary is single-document noise (typos, IDs, foreign words) whose
-# embeddings and synonyms are meaningless, and since the synonym network is an all-pairs
+# embeddings and query_expansion are meaningless, and since the query_expansion network is an all-pairs
 # search over the vocabulary, pruning it cuts that cost quadratically.
 min_ndocs = 1
 
@@ -62,15 +62,32 @@ external_path = ""          # kind="external": path to a token->vector JSON mapp
 # scale. "auto" picks full up to a few thousand documents per batch, lanczos above.
 factorization = "auto"       # "auto" | "lanczos" | "full"
 
-[synonyms]
+[query_expansion]
 k = 8
-# The synonym network is an all-pairs kNN over the vocabulary. "auto" uses an approximate
+# The query_expansion network is an all-pairs kNN over the vocabulary. "auto" uses an approximate
 # autotuned index once the vocabulary is large enough for the exact O(vocabulary^2) search
 # to hurt, and the exact one below that (where exact is both fast and, well, exact).
 # "always"/"never" force one or the other. The recalls are the autotuning targets.
 approx = "auto"              # "auto" | "always" | "never"
 construction_recall = 0.97
 search_recall = 0.9
+# These two say what the network is FOR, and are the reason it is called query_expansion rather
+# than a synonym network. A token this common does not need enriching -- it already reaches most
+# of the corpus and its idf is near zero, so whatever is appended for it arrives weightless --
+# and it is also where every incoherent list lives. There is no safe default: a document
+# frequency is a ratio relative to whatever a document IS, so 0.05 means "one paragraph in
+# twenty" for a paragraph corpus and something else entirely for an article corpus. Set it
+# knowing your unit; 0 disables. (Measured: on Spanish Wikipedia paragraphs 0.05 leaves 57 tokens
+# without a list -- function words plus `anos ano parte forma ciudad` -- costing 0.1% of pairs.)
+head_df = 0.0
+# Drop a neighbour whose document frequency exceeds the source's by more than this factor.
+# Enriching toward something far more common than the source is the worst case, not a neutral
+# one: it adds no discriminating power and `expand_query!` appends it carrying the SOURCE's
+# weight, so a rare token at high idf injects a corpus-wide term at high weight. This one IS
+# scale-invariant (a ratio of two frequencies in the same corpus), hence a real default. Known
+# cost: it also cuts the legitimate rare -> common direction, e.g. a misspelling pointing at the
+# correct word. 0 disables.
+max_target_ratio = 50.0
 
 [lemmas]
 algorithm = "fft"           # "fft" | "dnet" | "randsel" | "multirandsel"
@@ -106,7 +123,7 @@ semantic_threshold = 1.0
 #
 # Set it to true for a profile meant to be used directly as fitted. That costs one extra
 # tokenization pass over the batch (the map is derived from embeddings over the vocabulary it
-# rewrites, so it cannot be known any earlier) and rewrites the synonym network onto lemmas,
+# rewrites, so it cannot be known any earlier) and rewrites the query_expansion network onto lemmas,
 # in exchange for a vocabulary whose idf counts each inflection family together.
 apply = false
 """

@@ -35,12 +35,12 @@ function _same_tokenization(a::TokenizationConfig, b::TokenizationConfig)
     isempty(a.generators) && isempty(b.generators)
 end
 
-# ── synonym fusion ───────────────────────────────────────────────────────────
+# ── query_expansion fusion ───────────────────────────────────────────────────────────
 
 """
-    _fuse_synonyms(profiles, voc, k, rrf_k) -> (; synonyms, distances)
+    _fuse_query_expansion(profiles, voc, k, rrf_k) -> (; query_expansion, distances)
 
-Fuses the per-profile synonym networks into one.
+Fuses the per-profile query_expansion networks into one.
 
 Each input profile fit its **own** encoder, so its neighbor *distances* live in its own
 embedding space and are not numerically comparable across profiles -- averaging them
@@ -81,14 +81,14 @@ survive in the merged vocabulary.
 # advantage. The residual unfairness to a good neighbour missing from one input is real but
 # marginal -- 12.5% of the vote mass at 8 inputs, 2.1% at 48 -- and is the price of a consensus
 # rule rather than a defect in it.
-function _fuse_synonyms(profiles, voc::Vocabulary, k::Integer, rrf_k::Real)
+function _fuse_query_expansion(profiles, voc::Vocabulary, k::Integer, rrf_k::Real)
     scores = Dict{String,Dict{String,Float64}}()
     dists = Dict{String,Dict{String,Vector{Float32}}}()
     widest = 0
 
     for p in profiles
-        pd = p.synonym_distances
-        for (tok, neighbors) in p.synonyms
+        pd = p.query_expansion_distances
+        for (tok, neighbors) in p.query_expansion
             token2id(voc, tok) == 0 && continue
             widest = max(widest, length(neighbors))
             s = get!(() -> Dict{String,Float64}(), scores, tok)
@@ -133,7 +133,7 @@ function _fuse_synonyms(profiles, voc::Vocabulary, k::Integer, rrf_k::Real)
         any(isnothing, ds) || (netdist[tok] = Float32[Float32(d) for d in ds])
     end
 
-    (; synonyms=net, distances=netdist)
+    (; query_expansion=net, distances=netdist)
 end
 
 # ── lemma voting ─────────────────────────────────────────────────────────────
@@ -291,7 +291,7 @@ end
 # ── merge_profiles ───────────────────────────────────────────────────────────
 
 """
-    merge_profiles(profiles; doc_freq_threshold=0.5, synonyms_k=0, rrf_k=60) -> TextProfile
+    merge_profiles(profiles; doc_freq_threshold=0.5, query_expansion_k=0, rrf_k=60) -> TextProfile
 
 Merges several [`TextProfile`](@ref)s of one corpus into a single corpus-wide profile:
 
@@ -310,10 +310,10 @@ profile.
   additive across disjoint document batches, and the weighting scheme is *recomputed* from
   the merged counters -- so the merged IDF is the true corpus-wide IDF, not an average of
   per-batch ones. This is the main reason to merge rather than to pick one batch.
-- **Synonyms are a rank-fusion consensus, not a recomputation** -- each input's distances
-  come from its own embedding space (see [`_fuse_synonyms`](@ref)). Recomputing them
+- **Query expansion are a rank-fusion consensus, not a recomputation** -- each input's distances
+  come from its own embedding space (see [`_fuse_query_expansion`](@ref)). Recomputing them
   exactly would need the corpus, or a persisted projection, neither of which a profile
-  carries. Scores are summed across inputs, i.e. a consensus count -- see `_fuse_synonyms` for
+  carries. Scores are summed across inputs, i.e. a consensus count -- see `_fuse_query_expansion` for
   why normalizing by the inputs that could have voted, though it looks fairer, was measured and
   rejected. No merge can repair a missing embedding either: a token only one input kept has a
   neighbour list resting on that one input's opinion.
@@ -338,9 +338,9 @@ lemma maps vote, differing networks fuse. That asymmetry is the reason policy an
 are separate concepts. `EntropyWeighting` cannot be merged, since recomputing it needs the
 labeled corpus.
 
-`synonyms_k = 0` keeps as many neighbors per token as the richest input had.
+`query_expansion_k = 0` keeps as many neighbors per token as the richest input had.
 """
-function merge_profiles(profiles; doc_freq_threshold::Real=0.5, synonyms_k::Integer=0, rrf_k::Real=60)
+function merge_profiles(profiles; doc_freq_threshold::Real=0.5, query_expansion_k::Integer=0, rrf_k::Real=60)
     profiles = collect(profiles)
     isempty(profiles) && throw(ArgumentError("merge_profiles: no profiles given"))
     length(profiles) == 1 && @warn "merge_profiles: only one profile given; nothing to merge"
@@ -391,14 +391,14 @@ function merge_profiles(profiles; doc_freq_threshold::Real=0.5, synonyms_k::Inte
 
     model = VectorModel(gw, lw, voc)   # recomputed from the merged counters
 
-    fused = _fuse_synonyms(profiles, voc, synonyms_k, rrf_k)
+    fused = _fuse_query_expansion(profiles, voc, query_expansion_k, rrf_k)
     lemmas = _vote_lemmas(profiles, voc)
 
     # an artifact is applied in the merge if any input applied it
     applied = AppliedArtifacts(
         stopwords = any(p -> p.applied.stopwords, profiles),
         lemmas    = any(p -> p.applied.lemmas, profiles),
-        synonyms  = any(p -> p.applied.synonyms, profiles),
+        query_expansion  = any(p -> p.applied.query_expansion, profiles),
     )
 
     # The inputs' history has to survive the merge, because `istuned` reads nothing else: with
@@ -416,7 +416,7 @@ function merge_profiles(profiles; doc_freq_threshold::Real=0.5, synonyms_k::Inte
     lineage = push!(prior, LineageStep(:merge; n_sources=length(profiles),
                                               trainsize=gettrainsize(voc)))
 
-    TextProfile(model, stopwords, lemmas, fused.synonyms,
+    TextProfile(model, stopwords, lemmas, fused.query_expansion,
                 (isempty(fused.distances) ? nothing : fused.distances),
                 applied, lineage)
 end

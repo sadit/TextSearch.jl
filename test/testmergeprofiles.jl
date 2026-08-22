@@ -62,40 +62,40 @@ using Test, TextSearch, SimilaritySearch
         @test isbase(merged)
     end
 
-    @testset "synonyms fuse by rank consensus" begin
+    @testset "query_expansion fuse by rank consensus" begin
         # every token here is in the corpus vocabulary, so nothing is dropped as OOV.
         # "jardin" is ranked #1 by BOTH inputs; "roja" and "pera" are ranked #2 by one each.
         # Consensus must put jardin first even though one input reported a closer raw
         # distance for another candidate -- that is the whole point of fusing ranks.
-        a = roundtrip(docs; synonyms=Dict("casa" => ["jardin", "roja"]), synonym_distances=Dict("casa" => Float32[0.30, 0.40]))
-        b = roundtrip(docs; synonyms=Dict("casa" => ["jardin", "pera"]), synonym_distances=Dict("casa" => Float32[0.10, 0.20]))
+        a = roundtrip(docs; query_expansion=Dict("casa" => ["jardin", "roja"]), query_expansion_distances=Dict("casa" => Float32[0.30, 0.40]))
+        b = roundtrip(docs; query_expansion=Dict("casa" => ["jardin", "pera"]), query_expansion_distances=Dict("casa" => Float32[0.10, 0.20]))
         merged = merge_profiles([a, b])
 
-        got = merged.synonyms["casa"]
+        got = merged.query_expansion["casa"]
         @test first(got) == "jardin"
         # the distances that come back are the mean of what the contributors reported, in a
         # parallel list rather than interleaved with the words
-        @test first(merged.synonym_distances["casa"]) ≈ 0.20f0
-        # synonyms_k=0 keeps as many neighbors as the richest input had (2 here), so the
+        @test first(merged.query_expansion_distances["casa"]) ≈ 0.20f0
+        # query_expansion_k=0 keeps as many neighbors as the richest input had (2 here), so the
         # fused pool of 3 candidates is truncated -- the merged list does not grow with the
         # number of inputs. Single-support ties break by mean distance, so pera (0.20)
         # beats roja (0.40) for the remaining slot.
         @test got == ["jardin", "pera"]
 
-        @testset "synonyms_k overrides the default cap" begin
-            m1 = merge_profiles([a, b]; synonyms_k=1)
-            @test m1.synonyms["casa"] == ["jardin"]
+        @testset "query_expansion_k overrides the default cap" begin
+            m1 = merge_profiles([a, b]; query_expansion_k=1)
+            @test m1.query_expansion["casa"] == ["jardin"]
 
-            m3 = merge_profiles([a, b]; synonyms_k=3)
-            @test m3.synonyms["casa"] == ["jardin", "pera", "roja"]
+            m3 = merge_profiles([a, b]; query_expansion_k=3)
+            @test m3.query_expansion["casa"] == ["jardin", "pera", "roja"]
         end
     end
 
-    @testset "OOV synonyms/lemmas are dropped, not carried over" begin
-        a = roundtrip(docs; synonyms=Dict("casa" => ["noexisteenvocab"]),
+    @testset "OOV query_expansion/lemmas are dropped, not carried over" begin
+        a = roundtrip(docs; query_expansion=Dict("casa" => ["noexisteenvocab"]),
                             lemmas=Dict("casa" => "tampocoexiste"))
         merged = merge_profiles([a, roundtrip(docs)])
-        @test !haskey(merged.synonyms, "casa") || isempty(merged.synonyms["casa"])
+        @test !haskey(merged.query_expansion, "casa") || isempty(merged.query_expansion["casa"])
         @test !haskey(merged.lemmas, "casa")
     end
 
@@ -275,9 +275,9 @@ using Test, TextSearch, SimilaritySearch
               round(Int, 0.3 * gettrainsize(a.model.voc))
     end
 
-    @testset "synonym fusion counts agreeing inputs, and is not normalized" begin
+    @testset "query_expansion fusion counts agreeing inputs, and is not normalized" begin
         # Pins the rule against a plausible-looking change that was measured and rejected: see
-        # `_fuse_synonyms`. Normalizing by the inputs that could have voted rewrote 64.9% of a
+        # `_fuse_query_expansion`. Normalizing by the inputs that could have voted rewrote 64.9% of a
         # Portuguese Wikipedia network and cost `cidade` the neighbour `cidades`, because being
         # in a top-8 out of 150k tokens is selective enough that two agreeing embeddings beat one.
         #
@@ -285,7 +285,7 @@ using Test, TextSearch, SimilaritySearch
         # is rank 1 there. Summed, `ubicuo` wins on consensus. Per opportunity, `raro` would.
         function synp(d, syn)
             voc = Vocabulary(tc, d; verbose=false)
-            TextProfile(VectorModel(IdfWeighting(), TfWeighting(), voc); synonyms=syn)
+            TextProfile(VectorModel(IdfWeighting(), TfWeighting(), voc); query_expansion=syn)
         end
         withraro = ["casa raro z ubicuo", "casa raro z ubicuo"]
         without  = ["casa z ubicuo", "casa z ubicuo"]
@@ -293,7 +293,7 @@ using Test, TextSearch, SimilaritySearch
         append!(inputs, [synp(without, Dict("casa" => ["z", "ubicuo"])) for _ in 1:7])
 
         merged = merge_profiles(inputs)
-        cands = merged.synonyms["casa"]
+        cands = merged.query_expansion["casa"]
         @test findfirst(==("ubicuo"), cands) < findfirst(==("raro"), cands)
         @test token2id(inputs[2].model.voc, "raro") == 0   # the absence is real
     end

@@ -71,8 +71,14 @@ end
 
 Estimated final size (number of unique tokens) of a [`BOW`](@ref) computed under `voc`,
 used to `sizehint!` it up front and avoid rehashing while it's filled. Uses `voc`'s own
-[`avgdoclen`](@ref) (average tokens per document across its training corpus) as the
-estimate, falling back to a small default before `voc` has seen any training documents.
+[`avgdoclen`](@ref), falling back to a small default before `voc` has seen any training
+documents.
+
+`avgdoclen` is a mean *document length*, so it over-estimates the number of distinct tokens a
+document holds -- measured on Spanish Wikipedia, by about 3.4x for whole articles and 1.6x for
+paragraphs. That is the harmless direction for a `sizehint!`: too large wastes a little memory
+per document, too small brings back the rehashing this exists to avoid. A tighter estimate would
+need a distinct-tokens-per-document statistic, which a `Vocabulary` does not keep.
 """
 _bow_sizehint(voc::Vocabulary) = gettrainsize(voc) > 0 ? ceil(Int, avgdoclen(voc)) : 16
 

@@ -415,7 +415,7 @@ While inverted files (like `InvertedFile` and `BM25InvertedFile`) excel at spars
 ### Latent Semantic Indexing (LSI)
 
 #### Where is LSI useful?
-- **Synonymy and polysemy resolution**: By projecting the term-document matrix onto its principal singular vectors, LSI groups words that frequently co-occur into shared latent semantic dimensions. Documents using different words for the same concept (e.g., *"wine"* and *"amontillado"*) are mapped close together in the dense space.
+- **Query expansion and polysemy resolution**: By projecting the term-document matrix onto its principal singular vectors, LSI groups words that frequently co-occur into shared latent semantic dimensions. Documents using different words for the same concept (e.g., *"wine"* and *"amontillado"*) are mapped close together in the dense space.
 - **Noise reduction and compact representations**: Reduces large vocabularies (e.g., tens of thousands of terms) into a dense, low-dimensional space (typically 64 to 300 dimensions, default `maxoutdim=128`).
 - **Dense index compatibility**: Creates dense `MatrixDatabase{Matrix{Float32}}` collections that can be indexed with approximate nearest-neighbor graph structures like [`SearchGraph`](https://github.com/sadit/SimilaritySearch.jl).
 
@@ -454,7 +454,7 @@ search(lsi_index, sctx, q_vec, res)
 [(id, first(CASK_OF_AMONTILLADO[id], 60) * "...") for id in collect(IdView(res))]
 ```
 
-#### Word Embeddings and a Synonym Network
+#### Word Embeddings and a Query expansion Network
 
 `lsi.P` is a `(outdim(lsi), vocsize(lsi))` projection matrix -- column `t` is already the LSI
 embedding of vocabulary token `t` (a document's vector is just a weighted sum of its tokens'
@@ -468,19 +468,19 @@ size(W.matrix)
 ```
 
 Running [`allknn`](https://sadit.github.io/SimilaritySearch.jl/dev/) over that word-embedding
-space is exactly how the "synonymy resolution" mentioned earlier becomes concrete: words that
-tend to co-occur in similar contexts end up with nearby embeddings. [`synonyms`](@ref) wraps this
+space is exactly how the "query expansion resolution" mentioned earlier becomes concrete: words that
+tend to co-occur in similar contexts end up with nearby embeddings. [`query_expansion`](@ref) wraps this
 into a `token => [(neighbor, distance), ...]` network in one call:
 
 ```@example gutenberg
-net = synonyms(lsi, 5; verbose=false)
+net = query_expansion(lsi, 5; verbose=false)
 net["wine"]
 ```
 
-For a small demo corpus like this one, don't expect polished synonym pairs -- a handful of short
+For a small demo corpus like this one, don't expect polished query_expansion pairs -- a handful of short
 paragraphs isn't enough text for the co-occurrence statistics LSI relies on to fully separate
 content words from frequent function words. On a real corpus (thousands of documents, a pruned
-vocabulary), the same call is a quick way to get a first synonym/related-terms network without
+vocabulary), the same call is a quick way to get a first query_expansion/related-terms network without
 training a dedicated word-embedding model.
 
 ---

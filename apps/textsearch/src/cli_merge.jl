@@ -4,7 +4,7 @@ function parse_merge_args(args::Vector{String})
                      "usable: batching a large corpus produces one independent profile per " *
                      "batch, and merging folds them back into a single corpus-wide profile. " *
                      "Vocabulary counts and weights are merged exactly (the merged IDF is the " *
-                     "true corpus-wide IDF); synonyms are fused by rank consensus and lemmas " *
+                     "true corpus-wide IDF); query_expansion are fused by rank consensus and lemmas " *
                      "by plurality vote, since each input encoded in its own embedding space. " *
                      "Inputs must share normalization/tokenization and weighting scheme.")
     @add_arg_table! s begin
@@ -19,7 +19,7 @@ function parse_merge_args(args::Vector{String})
             help = "document-frequency cutoff for recomputing stopword candidates on the merged counters"
             arg_type = Float64
             default = 0.5
-        "--synonyms-k"
+        "--query_expansion-k"
             help = "neighbors to keep per token after fusion (0 = as many as the richest input had)"
             arg_type = Int
             default = 0
@@ -64,7 +64,7 @@ function cmd_merge(args::Vector{String})
     end
 
     merged = merge_profiles(profiles;
-        doc_freq_threshold=o["doc-freq-threshold"], synonyms_k=o["synonyms-k"])
+        doc_freq_threshold=o["doc-freq-threshold"], query_expansion_k=o["query_expansion-k"])
 
     out = o["out"]
     endswith(out, ".zip") || error("--out must end in .zip, got '$out'")
@@ -80,7 +80,7 @@ function cmd_merge(args::Vector{String})
     voc = merged.model.voc
     println("merged -> $out")
     println("  trainsize=$(gettrainsize(voc))  vocsize=$(vocsize(voc))  numtokens=$(getnumtokens(voc))")
-    println("  synonyms=$(length(merged.synonyms)) tokens  lemmas=$(length(merged.lemmas)) remapped  " *
+    println("  query_expansion=$(length(merged.query_expansion)) tokens  lemmas=$(length(merged.lemmas)) remapped  " *
             "stopwords=$(length(merged.stopwords))")
     println("  lineage: ", lineage_summary(merged))
     0

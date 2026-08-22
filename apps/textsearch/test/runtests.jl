@@ -44,7 +44,7 @@ outdim = 8
 scaling = "none"
 external_path = ""
 
-[synonyms]
+[query_expansion]
 k = 3
 
 [lemmas]
@@ -210,9 +210,9 @@ end
                     @test TextSearch.token2id(p.model.voc, lemma) != 0
                 end
 
-                # the synonym network was realigned onto lemmas: no entry may name a form
-                # the vocabulary no longer has, or expand_synonyms! would drop it silently
-                for (tok, syns) in p.synonyms
+                # the query_expansion network was realigned onto lemmas: no entry may name a form
+                # the vocabulary no longer has, or expand_query! would drop it silently
+                for (tok, syns) in p.query_expansion
                     @test !haskey(p.lemmas, tok)
                     for (syn, _) in syns
                         @test !haskey(p.lemmas, syn)
@@ -252,28 +252,28 @@ end
             @testset "search: token-intersection matching" begin
                 # The threshold is about set intersection, so it is asserted with both
                 # artifacts off: this 7-document corpus has ~10 tokens, and an LSI over
-                # that few tokens makes everything everything else's synonym, which would
+                # that few tokens makes everything everything else's query_expansion, which would
                 # swamp the very thing under test. The full pipe gets its own testset.
-                texts = search_texts("casa roja", "--no-synonyms", "--no-lemmas")
+                texts = search_texts("casa roja", "--no-query_expansion", "--no-lemmas")
                 @test "la casa roja" in texts   # shares both "casa" and "roja"
                 @test "la casa verde" in texts  # shares "casa" (t=1 default: any shared token)
                 @test !("la pera verde esta rica" in texts)
 
-                texts2 = search_texts("casa roja", "--no-synonyms", "--no-lemmas", "-t", "2")
+                texts2 = search_texts("casa roja", "--no-query_expansion", "--no-lemmas", "-t", "2")
                 @test texts2 == ["la casa roja"]  # t=2: must share BOTH tokens
             end
 
             @testset "search: the full pipe expands the query" begin
                 # What the artifacts contribute is corpus-dependent (and on a corpus this
-                # small, arbitrary), so assert the invariant instead of specific synonyms:
+                # small, arbitrary), so assert the invariant instead of specific query_expansion:
                 # expansion only ever adds query tokens, so at t=1 it can only add hits.
-                narrow = search_texts("casa", "--no-synonyms", "--no-lemmas")
+                narrow = search_texts("casa", "--no-query_expansion", "--no-lemmas")
                 wide = search_texts("casa")
                 @test narrow ⊆ wide
                 @test length(wide) > length(narrow)   # this corpus does expand "casa"
 
-                # --synonyms-k bounds the expansion, so it sits between the two.
-                capped = search_texts("casa", "--synonyms-k", "1")
+                # --query_expansion-k bounds the expansion, so it sits between the two.
+                capped = search_texts("casa", "--query_expansion-k", "1")
                 @test narrow ⊆ capped ⊆ wide
             end
 
@@ -282,9 +282,9 @@ end
                 # printing happens afterwards in index order, so neither the thread count
                 # nor the chunk boundaries may affect the output. Chunk 1 forces a flush
                 # per document; 999 puts the whole corpus in one chunk.
-                reference = search_texts("casa roja", "--no-synonyms", "--no-lemmas")
+                reference = search_texts("casa roja", "--no-query_expansion", "--no-lemmas")
                 for chunk in ("1", "2", "3", "999")
-                    @test search_texts("casa roja", "--no-synonyms", "--no-lemmas",
+                    @test search_texts("casa roja", "--no-query_expansion", "--no-lemmas",
                                        "--chunk", chunk) == reference
                 end
                 # hits come out as a subsequence of the corpus, never reordered
@@ -321,7 +321,7 @@ end
 
                 for chunk in ("64", "512", "4096", "9999")
                     out = capture_stdout() do
-                        TextSearchApp.cmd_search([zippath, "casa", "--no-synonyms", "--no-lemmas",
+                        TextSearchApp.cmd_search([zippath, "casa", "--no-query_expansion", "--no-lemmas",
                                                   "--collection", bigpath, "--format", "jsonl",
                                                   "--chunk", chunk])
                     end
@@ -422,7 +422,7 @@ end
                     TextSearchApp.cmd_refit([zippath, "--sample", samplepath,
                                              "--out", lean, "--drop-distances"])
                     q = TextSearch.load_profile(lean)
-                    @test q.synonym_distances === nothing
+                    @test q.query_expansion_distances === nothing
                     @test filesize(lean) <= filesize(outpath)
                 end
 

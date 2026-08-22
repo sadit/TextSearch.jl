@@ -34,10 +34,10 @@ A **detected** language distribution ("this corpus turned out 87% Spanish") woul
 observation about data, and would belong in a profile's lineage instead.
 
 This is the corpus-independent half of a text model -- it can be written by hand with no data.
-The artifacts a corpus produces (stopword sets, lemma maps, synonym networks) live in a
+The artifacts a corpus produces (stopword sets, lemma maps, query_expansion networks) live in a
 [`TextProfile`](@ref), which materializes the `transformation` from whichever of them it
-applies. Query-time synonym expansion is likewise a profile-level decision
-(`applied.synonyms`), not a flag here: it is a search-time behaviour whose data does not live
+applies. Query-time expansion is likewise a profile-level decision
+(`applied.query_expansion`), not a flag here: it is a search-time behaviour whose data does not live
 in the tokenizer.
 
 # Example

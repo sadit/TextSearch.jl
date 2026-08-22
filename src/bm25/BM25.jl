@@ -13,7 +13,7 @@ import SimilaritySearch.InvertedFiles: getpositions, getcontainer, identiterator
 using SimilaritySearch.Special.Sparse: SparseVecView, SparseVectorLike
 using SparseArrays: sparsevec, SparseVector
 using ..TextSearch: Vocabulary, gettrainsize, avgdoclen, getndocs, vocsize, bagofwords, bagofwords_corpus, TokenizedText, BOW,
-                    expand_synonyms!
+                    expand_query!
 
 pairiterator(d::Dict) = d
 pairiterator(d::SparseVecView) = zip(d.nzind, d.nzval)

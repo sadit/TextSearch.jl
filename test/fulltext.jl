@@ -62,15 +62,15 @@ using Test, SimilaritySearch, TextSearch
         @test 6 in ids || 4 in ids || 2 in ids
     end
 
-    @testset "Query-time synonym expansion" begin
+    @testset "Query-time expansion" begin
         # corpus[4] = "la manzana roja"; a query for "pera roja" should rank it higher
-        # once "pera" is registered as a synonym of "manzana".
-        synonyms = Dict("pera" => ["manzana"])
+        # once "pera" is registered as a query_expansion of "manzana".
+        query_expansion = Dict("pera" => ["manzana"])
 
         # Handing a network over IS the request to expand with it; there is no separate flag.
-        # Whether a profile wants that is recorded as its applied.synonyms, not on the config.
+        # Whether a profile wants that is recorded as its applied.query_expansion, not on the config.
         expand_model = VectorModel(IdfWeighting(), TfWeighting(), voc)
-        idx_expand = TextInvertedFile(expand_model; dist=Dist.NormCosine(), synonyms)
+        idx_expand = TextInvertedFile(expand_model; dist=Dist.NormCosine(), query_expansion)
         ctx = InvertedFileContext()
         append_items!(idx_expand, ctx, corpus)
 
@@ -87,7 +87,7 @@ using Test, SimilaritySearch, TextSearch
         dists_plain = collect(DistView(res_plain))
 
         @test 4 in ids_plain && 4 in ids_expand
-        # doc4 ("la manzana roja") ranks strictly better once "pera" expands into its synonym "manzana"
+        # doc4 ("la manzana roja") ranks strictly better once "pera" expands into its query_expansion "manzana"
         @test findfirst(==(4), ids_expand) < findfirst(==(4), ids_plain)
         @test dists_expand[findfirst(==(4), ids_expand)] < dists_plain[findfirst(==(4), ids_plain)]
 
@@ -96,5 +96,27 @@ using Test, SimilaritySearch, TextSearch
         append_items!(idx_flag_only, ctx, corpus)
         res_flag_only = search(idx_flag_only, ctx, "pera roja", knnqueue(KnnSorted, 3))
         @test collect(IdView(res_flag_only)) == ids_plain
+    end
+end
+
+@testset "avgdoclen agrees with the lengths BM25 actually measures" begin
+    # BM25's length normalization is `doclen / avgdoclen`, with `doclen` measured at index time
+    # as a document's total occurrences and `avgdoclen` read off the training vocabulary. The
+    # two have to be the same notion of length or the ratio is not 1 for an average document:
+    # when `numtokens` counted distinct tokens instead, this ratio was 3.47 on Spanish
+    # Wikipedia, driving the normalization as if b were 2.6 rather than 0.75.
+    tc = TextConfig(tokenization=TokenizationConfig(nlist=[1]))
+    docs = ["la casa la casa roja tiene un jardin muy grande y bonito",
+            "la pera verde verde esta muy rica",
+            "el jardin de la casa verde",
+            "casa"]
+    voc = Vocabulary(tc, docs; verbose=false)
+    idx = BM25InvertedFile(voc)
+    append_items!(idx, docs)
+
+    @test sum(idx.doclens) == getnumtokens(voc)
+    @test sum(idx.doclens) / length(idx.doclens) ≈ avgdoclen(voc)
+    for (i, d) in enumerate(docs)
+        @test idx.doclens[i] == length(tokenize(tc, d))
     end
 end

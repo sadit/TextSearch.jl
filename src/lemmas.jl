@@ -58,7 +58,7 @@ end
 #
 # Embeddings do not find lemmas. LSI captures distributional similarity, so a token's
 # nearest neighbours are its *topical* relatives ("guerra" -> "belico", "aliados"), which is
-# what the synonym network is for. Measured on Spanish Wikipedia, purely semantic clusters
+# what the query_expansion network is for. Measured on Spanish Wikipedia, purely semantic clusters
 # put two morphological variants together only ~2% of the time even when shrunk to an
 # average of 1.5 tokens each, so electing one representative per semantic cluster produced
 # mappings like "casas" -> "dia".

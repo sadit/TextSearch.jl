@@ -6,7 +6,19 @@ export save_profile, load_profile, zip_profile
 # schema change was additive and older files still loaded; this one changes the layout and
 # drops compatibility, so the version's job flips from "irrelevant" to "refuse an older file
 # with a sentence that says what happened" rather than half-parsing it.
-const _PROFILE_FORMAT_VERSION = "2.0"
+# Held at 1.0 deliberately. The format has no released consumers -- nothing is published and no
+# profile exists outside this repository -- so the version is not yet a compatibility mechanism
+# and bumping it on every layout change buys nothing. `load_profile` still refuses a mismatch, so
+# the field is ready to do that job from the first release onward; until then a layout change just
+# means the profiles in `corpus-profiles/` get refitted, which they need anyway.
+#
+# For the record of what has changed under 1.0: the policy/artifacts split, and the rename of the
+# artifact from "synonyms" to "query_expansion" (manifest key and both files). That rename
+# mattered beyond tidiness -- calling it a synonym network invited judging its entries as
+# substitutable words, and a long stretch of work went into filtering it on that basis before the
+# objective was restated: the artifact exists to enrich a query, and topically related terms are
+# what serve that. See the note in `src/lsi.jl`.
+const _PROFILE_FORMAT_VERSION = "1.0"
 const _PROFILE_MANIFEST_NAME = "manifest.json"
 
 # ── weighting tag tables ─────────────────────────────────────────────────────
@@ -132,14 +144,14 @@ end
 
 Serializes a [`TextProfile`](@ref) into `dir` (created if missing) as a small directory of
 plain, human-readable JSON files: one per "large" piece -- `vocabulary.json`, `weights.json`,
-and `stopwords.json`/`lemmas.json`/`synonyms.json`/`synonym_distances.json` for whichever
+and `stopwords.json`/`lemmas.json`/`query_expansion.json`/`query_expansion_distances.json` for whichever
 artifacts are non-empty -- tied together by a `manifest.json` holding everything else.
 
 The manifest keeps policy and artifacts apart, which is the point of the layout:
 
 ```
 policy:     { normalization: {...}, tokenization: {...} }
-artifacts:  { stopwords: {file, applied}, lemmas: {file, applied}, synonyms: {file, ...} }
+artifacts:  { stopwords: {file, applied}, lemmas: {file, applied}, query_expansion: {file, ...} }
 lineage:    [ {stage, params}, ... ]
 ```
 
@@ -182,26 +194,26 @@ function save_profile(dir::AbstractString, p::TextProfile)
         artifacts["lemmas"] = Dict("file" => "lemmas.json", "applied" => p.applied.lemmas)
     end
 
-    if !isempty(p.synonyms)
-        _write_json(joinpath(dir, "synonyms.json"),
-            Dict(tok => syns for (tok, syns) in p.synonyms))
-        entry = Dict{String,Any}("file" => "synonyms.json", "applied" => p.applied.synonyms)
+    if !isempty(p.query_expansion)
+        _write_json(joinpath(dir, "query_expansion.json"),
+            Dict(tok => syns for (tok, syns) in p.query_expansion))
+        entry = Dict{String,Any}("file" => "query_expansion.json", "applied" => p.applied.query_expansion)
 
         # Only for tokens the ranking carries: a distance list without its words could not be
         # interpreted, and the distances live in their own file so a consumer that needs only
         # the ranking -- which is the normal case -- can skip the bulk of the network.
-        if p.synonym_distances !== nothing
+        if p.query_expansion_distances !== nothing
             dd = Dict{String,Vector{Float32}}()
-            for (tok, ds) in p.synonym_distances
-                haskey(p.synonyms, tok) && !isempty(ds) || continue
+            for (tok, ds) in p.query_expansion_distances
+                haskey(p.query_expansion, tok) && !isempty(ds) || continue
                 dd[tok] = ds
             end
             if !isempty(dd)
-                _write_json(joinpath(dir, "synonym_distances.json"), dd)
-                entry["distances_file"] = "synonym_distances.json"
+                _write_json(joinpath(dir, "query_expansion_distances.json"), dd)
+                entry["distances_file"] = "query_expansion_distances.json"
             end
         end
-        artifacts["synonyms"] = entry
+        artifacts["query_expansion"] = entry
     end
 
     _write_json(joinpath(dir, _PROFILE_MANIFEST_NAME), Dict(
@@ -281,8 +293,8 @@ function load_profile(path::AbstractString)
         Dict{String,String}(), false
     end
 
-    synonyms, syndists, syn_applied = if haskey(art, :synonyms)
-        e = art[:synonyms]
+    query_expansion, syndists, syn_applied = if haskey(art, :query_expansion)
+        e = art[:query_expansion]
         net = read_file(String(e[:file]))
         words = Dict{String,Vector{String}}(
             String(tok) => String[String(s) for s in syns] for (tok, syns) in pairs(net))
@@ -298,8 +310,8 @@ function load_profile(path::AbstractString)
         Dict{String,Vector{String}}(), nothing, false
     end
 
-    TextProfile(model, stopwords, lemmas, synonyms, syndists,
-                AppliedArtifacts(stopwords=sw_applied, lemmas=lem_applied, synonyms=syn_applied),
+    TextProfile(model, stopwords, lemmas, query_expansion, syndists,
+                AppliedArtifacts(stopwords=sw_applied, lemmas=lem_applied, query_expansion=syn_applied),
                 _decode_lineage(manifest[:lineage]))
 end
 

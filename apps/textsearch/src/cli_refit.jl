@@ -5,7 +5,7 @@ function parse_refit_args(args::Vector{String})
                      "the base acts as a prior worth --kappa documents against the sample's " *
                      "evidence, so a word the base considered important but the sample never " *
                      "shows survives with reduced weight, while one that mattered in neither " *
-                     "is dropped. No embedding is fit here -- lemmas and synonyms come from " *
+                     "is dropped. No embedding is fit here -- lemmas and query_expansion come from " *
                      "the base -- which is what makes a refit cheap next to a fit. The result " *
                      "is typically smaller and more accurate for the dataset than the generic " *
                      "profile it came from.")
@@ -88,7 +88,7 @@ function parse_refit_args(args::Vector{String})
             arg_type = Float64
             default = 0.5
         "--drop-distances"
-            help = "omit the synonym network's distances from the output, for the smallest " *
+            help = "omit the query_expansion network's distances from the output, for the smallest " *
                    "possible profile; only the ranking is used on the normal query path"
             action = :store_true
         "--chunk"
@@ -160,7 +160,7 @@ function cmd_refit(args::Vector{String})
         error("--extend-lemmas needs lemmas applied; it cannot be combined with --no-lemmas")
 
     println("base: vocsize=$(vocsize(base.model.voc)) trainsize=$(gettrainsize(base.model.voc)) " *
-            "lemmas=$(length(base.lemmas)) synonyms=$(length(base.synonyms))")
+            "lemmas=$(length(base.lemmas)) query_expansion=$(length(base.query_expansion))")
     flush(stdout)
 
     # The sample must be tokenized under exactly the config the refit runs under, or the two
@@ -201,15 +201,15 @@ function cmd_refit(args::Vector{String})
                       avgdoclen, doc_freq_threshold=o["doc-freq-threshold"],
                       verbose=true)
 
-    syndists = o["drop-distances"] ? nothing : r.synonym_distances
+    syndists = o["drop-distances"] ? nothing : r.query_expansion_distances
 
     mkpath(dirname(abspath(out)))
     tmpdir = out * ".tmpdir"
     try
         # --drop-distances is applied by rebuilding the profile without them
-        save_profile(tmpdir, syndists === r.synonym_distances ? r :
-                             TextProfile(r.model; r.stopwords, r.lemmas, r.synonyms,
-                                         synonym_distances=syndists, r.applied, r.lineage))
+        save_profile(tmpdir, syndists === r.query_expansion_distances ? r :
+                             TextProfile(r.model; r.stopwords, r.lemmas, r.query_expansion,
+                                         query_expansion_distances=syndists, r.applied, r.lineage))
         zip_profile(tmpdir, out)
     finally
         rm(tmpdir; recursive=true, force=true)
@@ -218,7 +218,7 @@ function cmd_refit(args::Vector{String})
     println("refit -> $out")
     println("  vocsize=$(vocsize(r.model.voc))  trainsize=$(gettrainsize(r.model.voc))  " *
             "numtokens=$(getnumtokens(r.model.voc))")
-    println("  synonyms=$(length(r.synonyms)) tokens  " *
+    println("  query_expansion=$(length(r.query_expansion)) tokens  " *
             "distances=$(syndists === nothing ? "dropped" : "$(length(syndists)) tokens")  " *
             "lemmas=$(length(r.lemmas)) remapped " *
             "($(r.applied.lemmas ? "applied" : "carried only"))  " *

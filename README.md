@@ -20,13 +20,13 @@
   - Global weighting schemes: `IdfWeighting`, `BinaryGlobalWeighting`.
   - Supervised & entropy weighting: `EntropyWeighting` and `CombineWeighting` for text classification.
   - High-performance sparse vector representations (`SparseVector`, `SparseVecView`) with SIMD-accelerated and adaptive sparse dot products, cosine similarities, and centroids.
-- **Semantic Artifacts (`LSI`, `synonyms`, `lemma_clusters`, `stopword_candidates`)**:
+- **Semantic Artifacts (`LSI`, `query_expansion`, `lemma_clusters`, `stopword_candidates`)**:
   - Latent semantic indexing with an exact truncated SVD, dense or ARPACK-based, chosen by corpus size.
-  - Synonym networks built by (optionally approximate) all-pairs kNN over token embeddings, storing the neighbour ranking and its distances separately.
+  - Query expansion networks built by (optionally approximate) all-pairs kNN over token embeddings, storing the neighbour ranking and its distances separately.
   - Lemma maps derived by grouping inflections morphologically and splitting them semantically.
-  - Query-time synonym expansion (`expand_synonyms!`) for both sparse-vector and BM25 queries -- applied to queries only, never to documents.
+  - Query-time expansion (`expand_query!`) for both sparse-vector and BM25 queries -- applied to queries only, never to documents.
 - **Portable Profiles (`TextProfile`, `save_profile`, `load_profile`, `zip_profile`, `merge_profiles`, `refit_profile`)**:
-  - A `TextProfile` bundles vocabulary, weights, synonyms, lemmas and stopwords as plain, inspectable JSON -- no code is ever deserialized. Each artifact is stored once, with a marker saying whether the profile *applies* it, and the `TextConfig` it tokenizes with is derived from those -- so what a profile applies is always what it carries.
+  - A `TextProfile` bundles vocabulary, weights, query_expansion, lemmas and stopwords as plain, inspectable JSON -- no code is ever deserialized. Each artifact is stored once, with a marker saying whether the profile *applies* it, and the `TextConfig` it tokenizes with is derived from those -- so what a profile applies is always what it carries.
   - Whether a profile is a bootstrap model or one tuned to a dataset is read off its recorded lineage (`isbase`/`istuned`), not declared.
   - `merge_profiles` folds batched profiles of one corpus into an exact corpus-wide model; `refit_profile` adapts a generic profile to a specific dataset from a sample, adjusting statistics rather than replacing them.
 - **Search Indexes & BM25 Ranking**:
@@ -131,7 +131,7 @@ end
 ### 3. Semantic Artifacts and Portable Profiles
 
 Beyond indexing, a corpus can be distilled into artifacts that travel with the model:
-per-token embeddings (LSI), a synonym network, and a lemma map. Together with the vocabulary
+per-token embeddings (LSI), a query_expansion network, and a lemma map. Together with the vocabulary
 and weights they form a **profile** -- a directory of plain JSON files (or a zip of them)
 that can be shipped, inspected, and adapted.
 
@@ -156,9 +156,9 @@ model = VectorModel(IdfWeighting(), TfWeighting(), voc)
 lsi = LatentSemanticIndexing(model, corpus; maxoutdim=4, verbose=false)
 wordvecs = wordvectors(lsi)
 
-# A synonym network: neighbour tokens in rank order, with distances kept separately, since
+# A query_expansion network: neighbour tokens in rank order, with distances kept separately, since
 # only the ranking takes part in query expansion
-net = synonyms(lsi, 2; verbose=false)
+net = query_expansion(lsi, 2; verbose=false)
 
 # A lemma map: inflections are grouped by surface similarity, then split by meaning
 lemmas = lemma_clusters(voc, wordvecs)
@@ -169,7 +169,7 @@ lemmas = lemma_clusters(voc, wordvecs)
 profile = TextProfile(model;
                       stopwords=Set(stopword_candidates(voc, 0.9)),
                       lemmas,
-                      synonyms=net.synonyms, synonym_distances=net.distances,
+                      query_expansion=net.query_expansion, query_expansion_distances=net.distances,
                       applied=AppliedArtifacts(stopwords=true),
                       lineage=[LineageStep(:fit; trainsize=length(corpus), outdim=4)])
 
@@ -177,7 +177,7 @@ dir = mktempdir()
 save_profile(dir, profile)
 
 p = load_profile(dir)
-println("profile: vocsize=$(vocsize(p.model.voc)) synonyms=$(length(p.synonyms)) " *
+println("profile: vocsize=$(vocsize(p.model.voc)) query_expansion=$(length(p.query_expansion)) " *
         "lemmas=$(length(p.lemmas)) base=$(isbase(p))")
 
 # Adapt the profile to a different dataset, given a sample of it. Statistics are adjusted
@@ -221,7 +221,7 @@ this release:
 
 - **Policy** -- a `TextConfig`: normalization, tokenization. Corpus-independent, writable by
   hand.
-- **Artifacts** -- a `TextProfile`: stopword set, lemma map, synonym network, vocabulary
+- **Artifacts** -- a `TextProfile`: stopword set, lemma map, query_expansion network, vocabulary
   counters, weights. Estimated from data.
 
 They were tangled before. `TextConfig.transformation` held corpus-derived artifacts (a
@@ -239,7 +239,7 @@ what it saves, because there is only one copy.
 **Changed:**
 
 - **`TextProfile`** replaces the anonymous NamedTuple that `load_profile`/`merge_profiles`/
-  `refit_profile` passed around. Field access is unchanged (`p.model`, `p.synonyms`,
+  `refit_profile` passed around. Field access is unchanged (`p.model`, `p.query_expansion`,
   `p.lemmas`), with two renames: `stopword_candidates` became `stopwords` (one home, plus an
   `applied` marker), and `encoder` became `lineage`.
 - **`save_profile(dir, profile)`** takes a profile rather than a model plus keywords.
@@ -248,14 +248,14 @@ what it saves, because there is only one copy.
   with a refit is tuned; a refit of a refit stays tuned with no rule for it.
 - **`expand_query_synonyms` is gone from `TextConfig`.** It was a search-time decision sitting
   in the tokenizer's config, read through three levels of nesting, governing data stored
-  elsewhere. Handing an index a synonym network is now itself the request to expand with it;
-  a profile records the intent as `applied.synonyms`.
-- **Synonym networks store words and distances separately.** `synonyms(...)` returns
-  `(; synonyms, distances)` -- neighbours *in rank order*, distances parallel. Only the ranking
+  elsewhere. Handing an index a query_expansion network is now itself the request to expand with it;
+  a profile records the intent as `applied.query_expansion`.
+- **Query expansion networks store words and distances separately.** `query_expansion(...)` returns
+  `(; query_expansion, distances)` -- neighbours *in rank order*, distances parallel. Only the ranking
   participates in query expansion (BM25 ignores query-side weights, and a merged or refitted
   network's distances are no longer distances in any single space), so a consumer can carry the
   ranking alone -- most of a real network's size.
-- **`expand_synonyms!` weights by rank by default**, `1/rank` instead of `exp(-d)`; pass
+- **`expand_query!` weights by rank by default**, `1/rank` instead of `exp(-d)`; pass
   `distances` for the old behaviour.
 - **The profile format is `"2.0"` and v1.0 profiles are refused by name.** There is no
   conversion path: carrying two layouts is what let the copies drift. Refit or refit-from-fit
@@ -297,21 +297,21 @@ what it saves, because there is only one copy.
 - The tokenizer's borrowed-buffer API (`tokenizerbuffer`, `borrowtokenizedtext`,
   `TokenizerBuffer`) is exported.
 
-**Migrating a synonym-network reader:**
+**Migrating a query_expansion-network reader:**
 
 ```julia
 # v1.0
-net = synonyms(lsi, 8)
+net = query_expansion(lsi, 8)
 for (neighbour, distance) in net["dog"]; end
 
 # v1.1
-net = synonyms(lsi, 8)
-for (rank, neighbour) in enumerate(net.synonyms["dog"])
+net = query_expansion(lsi, 8)
+for (rank, neighbour) in enumerate(net.query_expansion["dog"])
     distance = net.distances["dog"][rank]   # optional; the ranking alone is usually enough
 end
 
-# and to keep expand_synonyms!' previous distance-based weighting
-expand_synonyms!(vec, voc, net.synonyms; distances=net.distances)
+# and to keep expand_query!' previous distance-based weighting
+expand_query!(vec, voc, net.query_expansion; distances=net.distances)
 ```
 
 ### About v1.0 series

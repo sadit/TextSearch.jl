@@ -80,7 +80,11 @@ ts_render_fit_config() {
   local sw_enabled="${TS_STOPWORDS:-true}"
   local sw_thresh="${TS_DOC_FREQ_THRESHOLD:-0.5}"
   local outdim="${TS_OUTDIM:-256}"
-  local syn_k="${TS_SYN_K:-8}"
+  local syn_k="${TS_QUERY_EXPANSION_K:-8}"
+  # No default: a document-frequency ratio means something different per document unit, so only a
+  # caller that knows the unit may set it (the wikipedia driver does, for paragraph runs).
+  local head_df="${TS_HEAD_DF:-0.0}"
+  local max_target_ratio="${TS_MAX_TARGET_RATIO:-50.0}"
   local lem_alg="${TS_LEMMA_ALG:-fft}"
   local lem_sel="${TS_LEMMA_SEL:-most_frequent}"
   # These profiles are BASE models: the lemma map is computed and saved but NOT applied, so
@@ -139,8 +143,10 @@ scaling = "none"
 external_path = ""
 factorization = "auto"
 
-[synonyms]
+[query_expansion]
 k = $syn_k
+head_df = $head_df
+max_target_ratio = $max_target_ratio
 approx = "auto"
 construction_recall = 0.97
 search_recall = 0.9
