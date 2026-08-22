@@ -83,7 +83,12 @@ Options:
   --parts N              split the output into N profile files (default 16). Batch size is
                          derived from the document count, so this bounds peak memory and
                          gives N snapshots: each part is written as it finishes, so an
-                         interrupted run keeps the completed ones
+                         interrupted run keeps the completed ones. FEWER parts also make the
+                         first part a better sample of the corpus, which matters because
+                         stopwords are detected once on it and reused -- see the note in
+                         `textsearch fit`'s [stopwords] section. Wikipedia orders articles
+                         longest-first so its first part is already the densest in function
+                         words; a corpus in arbitrary order should use fewer, larger parts
   --batch-size N         articles per part, overriding --parts (0 = one single profile)
   --resume               skip parts whose .zip already exists instead of refitting them
   --outdim N             LSI dimension (default 256)
@@ -187,14 +192,6 @@ fi
 if [[ -z "${TS_HEAD_DF:-}" && "$SPLIT_PARAGRAPHS" == "true" ]]; then
   TS_HEAD_DF=0.05
   log "query-expansion head cut for paragraph units: $TS_HEAD_DF"
-fi
-# Stopword detection from a sample is EXACT under paragraph units (measured: 20%, 10% and 5% all
-# recover the same 31 tokens on 272,466 Spanish paragraphs at threshold 0.1) because the band
-# around the cut is empty. It is not exact under article units, so only paragraph runs get it.
-# 5% is used rather than 10% since both were exact and it is twice as cheap.
-if [[ -z "${TS_DETECT_SAMPLE:-}" && "$SPLIT_PARAGRAPHS" == "true" ]]; then
-  TS_DETECT_SAMPLE=0.05
-  log "stopword detection sample for paragraph units: $TS_DETECT_SAMPLE"
 fi
 if [[ -z "$DOC_FREQ_THRESHOLD" ]]; then
   case "$LANG_CODE" in
@@ -332,7 +329,7 @@ if has_step fit; then
   TS_RESUME="$RESUME" TS_MIN_NDOCS="$MIN_NDOCS" TS_STOPWORDS="$STOPWORDS" \
   TS_DOC_FREQ_THRESHOLD="$DOC_FREQ_THRESHOLD" TS_OUTDIM="$OUTDIM" TS_QUERY_EXPANSION_K="$QUERY_EXPANSION_K" \
   TS_LEMMA_ALG="$LEMMA_ALG" TS_LEMMA_SEL="$LEMMA_SEL" TS_LANGUAGE="$LANG_CODE" \
-  TS_HEAD_DF="${TS_HEAD_DF:-0.0}" TS_DETECT_SAMPLE="${TS_DETECT_SAMPLE:-0.0}" \
+  TS_HEAD_DF="${TS_HEAD_DF:-0.0}" \
   TS_DEL_DIAC="$DEL_DIAC" TS_DEL_PUNC="$DEL_PUNC" \
     ts_render_fit_config "$FIT_CFG"
   ts_fit "$FIT_CFG"

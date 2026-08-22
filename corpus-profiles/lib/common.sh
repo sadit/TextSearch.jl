@@ -79,9 +79,6 @@ ts_render_fit_config() {
   local min_ndocs="${TS_MIN_NDOCS:-5}"
   local sw_enabled="${TS_STOPWORDS:-true}"
   local sw_thresh="${TS_DOC_FREQ_THRESHOLD:-0.5}"
-  # Sampling for stopword DETECTION only; exact at 5% under paragraph units and not exact under
-  # article units, so like head_df it is set by a caller that knows the unit. 0 = tokenize all.
-  local sw_sample="${TS_DETECT_SAMPLE:-0.0}"
   local outdim="${TS_OUTDIM:-256}"
   local syn_k="${TS_QUERY_EXPANSION_K:-8}"
   # No default: a document-frequency ratio means something different per document unit, so only a
@@ -138,7 +135,6 @@ min_ndocs = $min_ndocs
 [stopwords]
 enabled = $sw_enabled
 doc_freq_threshold = $sw_thresh
-detect_sample = $sw_sample
 
 [encoder]
 kind = "lsi"

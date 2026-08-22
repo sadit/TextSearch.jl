@@ -172,13 +172,14 @@ function _remap_query_expansion_to_lemmas(synmap, syndists, lemmas)
 end
 
 """
-    _fit_one_batch(docs::Vector{String}, cfg, batch_dir::AbstractString) -> (vocsize::Int, model)
+    _fit_one_batch(docs::Vector{String}, cfg, batch_dir::AbstractString; reuse=nothing)
+        -> (vocsize::Int, model, stopwords::Vector{String})
 
 Runs the full `fit` pipeline over one batch of document texts and saves the resulting
 profile (uncompressed) into `batch_dir`. See `cmd_fit`'s docstring / the project plan for
 the stopword-before-vocabulary ordering rationale.
 """
-function _fit_one_batch(docs::Vector{String}, cfg, batch_dir::AbstractString)
+function _fit_one_batch(docs::Vector{String}, cfg, batch_dir::AbstractString; reuse=nothing)
     sw = cfg["stopwords"]
     enc = cfg["encoder"]
     syn = cfg["query_expansion"]
@@ -187,30 +188,15 @@ function _fit_one_batch(docs::Vector{String}, cfg, batch_dir::AbstractString)
     base_textconfig = _fit_textconfig(cfg)
 
     if sw["enabled"]
-        # This pass exists only to find the tokens above `doc_freq_threshold`, and it is the
-        # single most expensive stage of a fit: measured on 10,000 Spanish articles it was 35.6s
-        # of 90.9s (39%), and on their 272,466 paragraphs 36.5s of 123.2s. A document frequency
-        # is estimable from a sample, so `detect_sample` trades exactness for that cost.
-        #
-        # How safe the trade is depends on the document unit, and the reason is the same one that
-        # makes the threshold easy to set under paragraph units. Measured: with paragraphs at
-        # threshold 0.1, samples of 20%, 10% and 5% all recover the set EXACTLY (31 tokens), and
-        # 5% takes 1.9s against 37.3s. With articles at 0.5, even 20% differs (`anos` appears),
-        # 10% and 5% add `anos otros`, and 2% loses `hasta pero`. At article level the band around
-        # the threshold is crowded -- 21 tokens sit in (0.4, 0.5] -- so sampling noise flips the
-        # marginal ones; under paragraphs that band is empty, with the highest content word at
-        # 0.069 against a cut of 0.1, and no sampling noise can cross it.
-        #
-        # So it is off by default and set by whoever knows the unit, exactly like `head_df`.
-        frac = Float64(get(sw, "detect_sample", 0.0))
-        detect_docs = if 0.0 < frac < 1.0 && length(docs) > 1
-            n = max(1, round(Int, frac * length(docs)))
-            docs[randperm(length(docs))[1:n]]
-        else
-            docs
-        end
-        voc0 = Vocabulary(base_textconfig, detect_docs; verbose=false)
-        candidates = stopword_candidates(voc0, Float64(sw["doc_freq_threshold"]))
+        # `reuse` is the stopword set a previous part already detected, or `nothing` to detect
+        # here. Detection needs a full tokenization pass whose only product is the list of tokens
+        # above the threshold, and it is the largest single stage of a fit -- measured on 10,000
+        # Spanish articles, 35.6s of 90.9s (39%), and on their 272,466 paragraphs 36.5s of 123.2s.
+        # See `cmd_fit` for why reusing one part's set across the rest is sound.
+        candidates = reuse === nothing ?
+            stopword_candidates(Vocabulary(base_textconfig, docs; verbose=false),
+                                Float64(sw["doc_freq_threshold"])) :
+            collect(reuse)
         fit_tc = TextConfig(base_textconfig; transformation=IgnoreStopwords(Set(candidates)))
     else
         fit_tc = base_textconfig
@@ -301,7 +287,7 @@ function _fit_one_batch(docs::Vector{String}, cfg, batch_dir::AbstractString)
                                                         Float64(sw["doc_freq_threshold"]) : 0.0))])
     save_profile(batch_dir, profile)
 
-    vocsize(voc), model
+    vocsize(voc), model, candidates
 end
 
 function cmd_fit(args::Vector{String})
@@ -315,6 +301,26 @@ function cmd_fit(args::Vector{String})
     mkpath(output["dir"])
 
     resume = Bool(get(output, "resume", false))
+
+    # The first part detects stopwords with a full pass; every later part reuses that set.
+    #
+    # Sound because a stopword is a property of the language, not of the batch, and verified:
+    # across five 400k-paragraph batches drawn from two different Spanish shards, the first
+    # batch's 31 tokens are a SUPERSET of every other batch's set and equal their union exactly
+    # -- no later batch would have flagged anything the first one missed, and reuse removes at
+    # most five extra function words (`entre este lo son sus`).
+    #
+    # Wikipedia makes that easy by ordering articles longest-first: longer paragraphs hold more
+    # function words, so the first batch maximizes their document frequency by construction. A
+    # corpus in ARBITRARY order has no such guarantee, and one whose first batch is topically
+    # narrow could miss a genuine stopword. The remedy is not another knob but a bigger
+    # `batch_size` (equivalently, fewer parts): a larger first batch is a better sample of the
+    # corpus, and the detection cost is paid once regardless of how many parts follow.
+    #
+    # It also makes merging exact. When every part removes the same set, no token is removed in
+    # some parts and kept in others, so no counts are partial and `merge_profiles` has nothing to
+    # impute -- which is the entire bug class its imputation exists to paper over.
+    shared_stopwords::Union{Nothing,Vector{String}} = nothing
 
     n = _each_batch(each_record(format, input["path"], input["text_key"]), Int(output["batch_size"])) do i, docs
         zippath = joinpath(output["dir"], "$(output["prefix"])-$(lpad(i, 4, '0')).zip")
@@ -332,7 +338,11 @@ function cmd_fit(args::Vector{String})
 
         batch_dir = joinpath(output["dir"], "_textsearch_fit_batch_$(lpad(i, 4, '0'))")
         try
-            m, _ = _fit_one_batch(docs, cfg, batch_dir)
+            m, _, sw = _fit_one_batch(docs, cfg, batch_dir; reuse=shared_stopwords)
+            if shared_stopwords === nothing
+                shared_stopwords = sw
+                isempty(sw) || println("  detected $(length(sw)) stopwords; later parts reuse them")
+            end
             zip_profile(batch_dir, zippath)
             println("saved profile $i ($(length(docs)) docs, vocsize=$m) -> $zippath")
             flush(stdout)

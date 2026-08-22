@@ -6,7 +6,6 @@ using JSON3
 using CSV
 using Parquet2
 using Tables
-using Random: randperm
 using TextSearch
 
 include("home.jl")
