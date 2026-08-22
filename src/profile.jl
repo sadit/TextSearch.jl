@@ -85,11 +85,13 @@ _decode_tokenization(d) = TokenizationConfig(nlist=Int8.(d[:nlist]), mark_token_
 
 function _encode_policy(tc::TextConfig)
     Dict("normalization" => _encode_normalization(tc.normalization),
-         "tokenization" => _encode_tokenization(tc.tokenization))
+         "tokenization" => _encode_tokenization(tc.tokenization),
+         "language" => String(tc.language))
 end
 
 _decode_policy(d) = TextConfig(normalization=_decode_normalization(d[:normalization]),
-                               tokenization=_decode_tokenization(d[:tokenization]))
+                               tokenization=_decode_tokenization(d[:tokenization]),
+                               language=Symbol(get(d, :language, "unknown")))
 
 # ── lineage ──────────────────────────────────────────────────────────────────
 

@@ -32,6 +32,12 @@ lc = true
 [tokenization]
 nlist = [1]
 mark_token_type = true
+# Which language this profile is FOR, as an ISO 639-1 code ("es", "pt", "en", ...) or
+# "unknown". It currently changes nothing about tokenization -- it is recorded, not acted on --
+# but it is what stops `merge` from silently folding profiles of different languages into one,
+# since their normalization and tokenization are otherwise identical. Later it is where
+# language-specific decisions will be taken from.
+language = "unknown"
 
 [vocabulary]
 # Drop tokens appearing in fewer than this many documents. 1 keeps everything; on a real

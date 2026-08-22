@@ -168,6 +168,34 @@ using Test, TextSearch, SimilaritySearch
         @test merged.lemmas["roja"] == "casa"    # 2 votes vs 1, no error
     end
 
+    @testset "profiles of different languages cannot be merged" begin
+        # Nothing else can tell them apart: two Wikipedia profiles in Spanish and Portuguese
+        # have identical normalization and tokenization, so before the language was recorded
+        # this merge succeeded silently and produced a model of neither language. Measured on
+        # the real 10k probes: 94,330 + 67,868 -> 129,940 tokens, no complaint.
+        es = roundtrip(docs[1:3]; textconfig=TextConfig(tc; language=:es))
+        pt = roundtrip(docs[4:6]; textconfig=TextConfig(tc; language=:pt))
+        @test_throws ErrorException merge_profiles([es, pt])
+
+        # the same language merges as before
+        es2 = roundtrip(docs[4:6]; textconfig=TextConfig(tc; language=:es))
+        merged = merge_profiles([es, es2])
+        @test gettrainsize(merged.model.voc) == 6
+        @test getpolicy(merged).language === :es
+
+        # `:unknown` cannot contradict anything, so it stays permissive -- a hand-built
+        # config that never declared a language must not become unmergeable
+        plain = roundtrip(docs[4:6])
+        @test getpolicy(plain).language === :unknown
+        @test gettrainsize(merge_profiles([es, plain]).model.voc) == 6
+    end
+
+    @testset "language survives the round-trip" begin
+        p = roundtrip(docs; textconfig=TextConfig(tc; language=:pt))
+        @test getpolicy(p).language === :pt
+        @test gettextconfig(p).language === :pt
+    end
+
     @testset "incompatible POLICY is rejected" begin
         # policy is the only thing that has to match, and it has to match exactly
         @test_throws ArgumentError merge_profiles([])

@@ -89,6 +89,7 @@ function _fit_textconfig(cfg)
             group_emo=norm["group_emo"], lc=norm["lc"],
         ),
         tokenization=TokenizationConfig(nlist=Int8.(tok["nlist"]), mark_token_type=tok["mark_token_type"]),
+        language=Symbol(get(tok, "language", "unknown")),
     )
 end
 

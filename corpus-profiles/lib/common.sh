@@ -88,6 +88,9 @@ ts_render_fit_config() {
   # would bake that choice into every downstream model. Set TS_LEMMA_APPLY=true for a profile
   # meant to be used exactly as fitted.
   local lem_apply="${TS_LEMMA_APPLY:-false}"
+  # The corpus driver already knows the language; recording it keeps `merge` from folding
+  # profiles of different languages together, which nothing else can detect.
+  local language="${TS_LANGUAGE:-unknown}"
   local del_diac="${TS_DEL_DIAC:-false}"
   local del_punc="${TS_DEL_PUNC:-true}"
 
@@ -120,6 +123,7 @@ lc = true
 [tokenization]
 nlist = [1]
 mark_token_type = true
+language = "$language"
 
 [vocabulary]
 min_ndocs = $min_ndocs

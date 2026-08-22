@@ -229,6 +229,13 @@ function merge_profiles(profiles; doc_freq_threshold::Real=0.5, synonyms_k::Inte
             error("profile $i has different normalization settings; profiles must share a policy to be merged")
         _same_tokenization(pol.tokenization, q.tokenization) ||
             error("profile $i has different tokenization settings; profiles must share a policy to be merged")
+        # Two profiles of different languages have identical normalization and tokenization,
+        # so nothing else here can tell them apart: merging Spanish with Portuguese used to
+        # succeed silently and produce a model of neither. Only a declared mismatch is
+        # refused -- `:unknown` cannot contradict anything.
+        (pol.language === :unknown || q.language === :unknown || pol.language === q.language) ||
+            error("profile $i is for language :$(q.language) but the first is for " *
+                  ":$(pol.language); profiles of different languages cannot be merged")
     end
 
     gw, lw = first(profiles).model.global_weighting, first(profiles).model.local_weighting
