@@ -268,7 +268,13 @@ function _fit_one_batch(docs::Vector{String}, cfg, batch_dir::AbstractString)
                           synonyms=synmap, synonym_distances=syndists, applied,
                           lineage=[LineageStep(:fit; encoder=String(kind), outdim, scaling=String(scaling),
                                                      source_path=external_path,
-                                                     trainsize=gettrainsize(model.voc))])
+                                                     trainsize=gettrainsize(model.voc),
+                                                     # `merge` needs this: a batch that removed
+                                                     # a stopword recorded no count for it, and
+                                                     # threshold*trainsize is the bound that
+                                                     # lets the merge impute one
+                                                     doc_freq_threshold=(sw["enabled"] ?
+                                                        Float64(sw["doc_freq_threshold"]) : 0.0))])
     save_profile(batch_dir, profile)
 
     vocsize(voc), model

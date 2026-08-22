@@ -62,6 +62,22 @@ function _fuse_synonyms(profiles, voc::Vocabulary, k::Integer, rrf_k::Real)
     dists = Dict{String,Dict{String,Vector{Float32}}}()
     widest = 0
 
+    # Which inputs held each token, as a bitmask per merged-vocabulary id. A candidate can only
+    # appear in a token's neighbour list in an input that held BOTH, so this is how many chances
+    # the pair actually had -- see the normalization below.
+    nw = cld(length(profiles), 64)
+    held = zeros(UInt64, nw, vocsize(voc))
+    for (j, p) in enumerate(profiles)
+        w, b = fldmod(j - 1, 64)
+        pv = p.model.voc
+        for i in eachindex(pv)
+            id = token2id(voc, gettoken(pv, i))
+            id == 0 && continue
+            @inbounds held[w + 1, id] |= UInt64(1) << b
+        end
+    end
+    chances(a::Integer, b::Integer) = sum(w -> count_ones(@inbounds(held[w, a] & held[w, b])), 1:nw)
+
     for p in profiles
         pd = p.synonym_distances
         for (tok, neighbors) in p.synonyms
@@ -86,6 +102,7 @@ function _fuse_synonyms(profiles, voc::Vocabulary, k::Integer, rrf_k::Real)
 
     for (tok, s) in scores
         isempty(s) && continue
+        tokid = token2id(voc, tok)
         # a candidate's mean distance, or `nothing` when no input reported one for it
         dtok = get(dists, tok, nothing)
         function meandist(c)
@@ -94,12 +111,25 @@ function _fuse_synonyms(profiles, voc::Vocabulary, k::Integer, rrf_k::Real)
             ds === nothing ? nothing : sum(ds) / length(ds)
         end
 
+        # Fused score per OPPORTUNITY, not summed. Summing rewards a candidate for having been
+        # present in more inputs, and presence is not uniform: `min_ndocs` pruning and per-batch
+        # stopword removal leave 71.9% of a merged Portuguese vocabulary and 88.7% of an English
+        # one present in only some inputs. Summed, seven rank-1 votes (0.115 at rrf_k=60) lose to
+        # eight rank-3 votes (0.127), so a ubiquitous mediocre neighbour displaces a better one
+        # that one batch never saw.
+        #
+        # The `+ 1` is what keeps this from over-correcting into the opposite error: a pure mean
+        # would let a single lucky rank-1 sighting tie eight consistent ones, so a candidate
+        # confirmed by more inputs keeps a mild edge. Pairs both present everywhere -- the
+        # majority -- get the same divisor and are therefore ranked exactly as before.
+        fused(c) = s[c] / (chances(tokid, token2id(voc, c)) + 1)
+
         cands = collect(keys(s))
         # highest fused score first; ties broken deterministically (closer mean distance
         # when known, then lexicographically) so a merge is reproducible regardless of Dict
         # ordering. Candidates without a distance sort after those with one, rather than
         # comparing `nothing` against a number.
-        sort!(cands; by=c -> (-s[c], something(meandist(c), Inf), c))
+        sort!(cands; by=c -> (-fused(c), something(meandist(c), Inf), c))
         resize!(cands, min(keep, length(cands)))
         net[tok] = cands
 
@@ -175,6 +205,95 @@ function _vote_lemmas(profiles, voc::Vocabulary)
     out
 end
 
+"""
+    _input_threshold(p::TextProfile, default::Real) -> Float64
+
+The `doc_freq_threshold` `fit` used on `p`, read from its lineage, or `default` when it is not
+recorded -- profiles fitted before the threshold was recorded, and merges of merges, whose
+summarized lineage drops per-batch params.
+"""
+function _input_threshold(p::TextProfile, default::Real)
+    for s in p.lineage
+        s.stage === :fit && haskey(s.params, "doc_freq_threshold") &&
+            return Float64(s.params["doc_freq_threshold"])
+    end
+    Float64(default)
+end
+
+"""
+    _impute_removed_stopwords(profiles, vocs, voc, pol, doc_freq_threshold) -> Vocabulary
+
+Restores what per-batch stopword removal destroyed, so the merged counters can be read at
+corpus scale.
+
+`fit` applies stopwords by tokenizing the batch under `IgnoreStopwords`, so a flagged token
+never enters that batch's vocabulary and its counts are simply gone. When *every* input flagged
+it there is nothing to do -- it is absent from the merge and stays a stopword. The hard case is
+a token some inputs flagged and others did not: the merged counters then hold only the batches
+that kept it, which is a fraction of the truth. Measured on Portuguese Wikipedia, 18 of 35
+merged stopwords were in that state, `como` among them at df=0.049 against a real corpus df
+above 0.5 -- an idf near 3.0 where 0.5 is right.
+
+Neither of the obvious rules works. Dropping such a token deletes content words: on English
+Wikipedia 35 of 89 were flagged by at most 2 of 48 batches, `american`, `united`, `states`,
+`family` and `history` among them, each made locally ubiquitous by one run of stub articles.
+Keeping it with the partial counts is the inflated-idf bug.
+
+So the missing counts are imputed instead. A batch that flagged a token recorded no number, but
+it did record a *fact*: the token's document frequency there exceeded that batch's threshold.
+`threshold * trainsize` is therefore a real lower bound, and the tightest one available. Only
+batches whose vocabulary genuinely lacks the token are imputed for: a profile may *list* a
+stopword it never applied, and its counts are then already exact.
+Occurrences are scaled by the occs-per-document ratio the batches that kept it observed. Every
+token then carries its best available estimate and the corpus-scale threshold decides:
+`como` lands at 0.399 and stays as a normal token, `american` at 0.055, `the` was flagged
+everywhere and remains a stopword.
+
+The estimate is a lower bound, so a token near the threshold can be judged a normal token when
+the truth is just above it. That is the safe direction: idf already drives a
+high-document-frequency token's weight toward zero, while deleting a content word is
+unrecoverable.
+"""
+function _impute_removed_stopwords(profiles, vocs, voc::Vocabulary, pol::TextConfig,
+                                   doc_freq_threshold::Real)
+    extra_ndocs = Dict{String,Int}()
+    for (p, v) in zip(profiles, vocs)
+        isempty(p.stopwords) && continue
+        bound = round(Int, _input_threshold(p, doc_freq_threshold) * gettrainsize(v))
+        bound <= 0 && continue
+        for t in p.stopwords
+            # Impute only where information was actually destroyed. A profile may LIST a
+            # stopword without having applied it (`applied.stopwords == false`), and then its
+            # own vocabulary still holds the exact counts -- adding a bound on top of those
+            # would double-count. Checking the vocabulary tests the fact rather than the
+            # declaration, which is also what makes this robust to the two disagreeing.
+            token2id(v, t) == 0 || continue
+            extra_ndocs[t] = get(extra_ndocs, t, 0) + bound
+        end
+    end
+    isempty(extra_ndocs) && return voc
+
+    N = gettrainsize(voc)
+    added_occs = 0
+    imputed = Vocabulary(pol, N, getnumtokens(voc))
+    for i in eachindex(voc)
+        v = voc[i]
+        extra = get(extra_ndocs, v.token, 0)
+        if extra == 0
+            push_token!(imputed, v.token, v.occs, v.ndocs)
+        else
+            # occurrences per document, as the batches that kept the token measured it
+            occs = v.occs + round(Int, extra * (v.occs / max(v.ndocs, 1)))
+            added_occs += occs - v.occs
+            push_token!(imputed, v.token, occs, min(v.ndocs + extra, N))
+        end
+    end
+    # those occurrences really happened; the batches that removed the token left them out of
+    # their own numtokens, so avgdoclen was short by exactly this much
+    imputed.numtokens[] = getnumtokens(voc) + added_occs
+    imputed
+end
+
 # ── merge_profiles ───────────────────────────────────────────────────────────
 
 """
@@ -200,7 +319,11 @@ profile.
 - **Synonyms are a rank-fusion consensus, not a recomputation** -- each input's distances
   come from its own embedding space (see [`_fuse_synonyms`](@ref)). Recomputing them
   exactly would need the corpus, or a persisted projection, neither of which a profile
-  carries.
+  carries. Fusion scores per *opportunity* rather than summing, because a token absent from an
+  input (pruned by `min_ndocs`, or removed as that batch's stopword) cannot appear in any
+  neighbour list there, and summing would penalize it for that. Note that no merge can repair
+  the missing embedding itself: a token only one input kept has a neighbour list resting on that
+  one input's opinion, however it is scored.
 - **Lemmas are a plurality vote** over the inputs' clusterings (see [`_vote_lemmas`](@ref)).
 - **Stopwords** are recomputed from the merged counters at `doc_freq_threshold`, then
   unioned with the inputs' own sets -- a token every input already removed is absent from the
@@ -262,43 +385,15 @@ function merge_profiles(profiles; doc_freq_threshold::Real=0.5, synonyms_k::Inte
         update_voc!(voc, v)
     end
 
-    # Stopwords: whatever the merged counters flag, unioned with the inputs' own sets. A set
-    # is kept even when the merged counters can no longer re-derive it, since a token every
-    # input removed is genuinely a stopword and is simply absent from the merged vocabulary.
-    stopwords = Set{String}(stopword_candidates(voc, doc_freq_threshold))
-    for p in profiles
-        union!(stopwords, p.stopwords)
-    end
+    voc = _impute_removed_stopwords(profiles, vocs, voc, pol, doc_freq_threshold)
 
-    # ... but a token only SOME inputs removed is a different case, and the one that used to
-    # be wrong. `fit` applies stopwords by tokenizing the batch under `IgnoreStopwords`, so a
-    # flagged token never enters that batch's vocabulary at all -- and the merged counters
-    # then hold only the batches that did NOT flag it. Measured on Portuguese Wikipedia, 18 of
-    # 35 merged stopwords were in that state and `como` came out at df=0.049 against a true
-    # corpus df above 0.5, i.e. an idf of ~3.0 where ~0.5 is right: the profile's own stopword
-    # list called it a stopword while its vocabulary treated it as a rare, highly
-    # discriminative term. Merging cannot recover the real count -- the batches that dropped it
-    # never recorded one -- so the only sound move is to drop it, which is also what
-    # `applied.stopwords` already claims. Occurrences come out of `numtokens` too, or
-    # `avgdoclen` would keep counting tokens the vocabulary no longer has.
-    # Only the inputs' own sets are dropped, not what the merged counters newly flag: a token no
-    # input removed has exact counts, so flagging it makes it a candidate and leaves the
-    # vocabulary exact, which is the whole point of merging. What cannot stay is a token some
-    # input already took out.
-    removed_by_inputs = Set{String}()
-    for p in profiles
-        union!(removed_by_inputs, p.stopwords)
-    end
-    dropped_occs = sum((v.occs for v in (voc[i] for i in eachindex(voc))
-                        if v.token in removed_by_inputs); init=0)
-    if dropped_occs > 0
-        kept = Vocabulary(pol, gettrainsize(voc), getnumtokens(voc) - dropped_occs)
-        for i in eachindex(voc)
-            v = voc[i]
-            v.token in removed_by_inputs && continue
-            push_token!(kept, v.token, v.occs, v.ndocs)
-        end
-        voc = kept
+    # What the (imputed) corpus counters flag, plus the tokens no input left any trace of --
+    # those cannot be re-derived and are genuinely stopwords. Nothing else: a token whose
+    # imputed corpus frequency lands under the threshold is a normal token and must not be
+    # listed as a stopword its own vocabulary still contains.
+    stopwords = Set{String}(stopword_candidates(voc, doc_freq_threshold))
+    for p in profiles, t in p.stopwords
+        token2id(voc, t) == 0 && push!(stopwords, t)
     end
 
     model = VectorModel(gw, lw, voc)   # recomputed from the merged counters

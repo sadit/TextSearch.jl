@@ -152,7 +152,14 @@ using Test, TextSearch, SimilaritySearch
         merged = merge_profiles([a, b])
 
         @test gettrainsize(merged.model.voc) == 6
-        @test merged.stopwords ⊇ Set(["la", "una"])         # sets union
+        # Stopword sets no longer simply union: each one is re-judged on the merged counters
+        # (with whatever a batch destroyed imputed back -- see `_impute_removed_stopwords`,
+        # which does not apply here since neither input APPLIED its set, so both vocabularies
+        # hold exact counts). "la" is in 5 of the 6 documents and is a corpus stopword; "una"
+        # is in 1 and is not, however ubiquitous b found it. Union would have taken both.
+        @test "la" in merged.stopwords
+        @test !("una" in merged.stopwords)
+        @test token2id(merged.model.voc, "la") != 0 && token2id(merged.model.voc, "una") != 0
         @test merged.lemmas["roja"] == "casa"                # maps vote
         @test merged.applied.lemmas                          # applied if any input applied
         # and the merged profile applies exactly the map it carries
@@ -224,7 +231,7 @@ using Test, TextSearch, SimilaritySearch
         @test gettrainsize(merged.model.voc) == 6
     end
 
-    @testset "a stopword only SOME inputs removed leaves the merged vocabulary" begin
+    @testset "a stopword only SOME inputs removed gets its counts imputed" begin
         # `fit` applies stopwords by tokenizing under IgnoreStopwords, so a flagged token never
         # enters that batch's vocabulary and the merged counters hold only the batches that did
         # not flag it. Merging used to keep such a token with those partial counts, which made
@@ -241,16 +248,70 @@ using Test, TextSearch, SimilaritySearch
         b = roundtrip(docs[4:6])
         @test "la" in gettoken.(Ref(b.model.voc), eachindex(b.model.voc))
 
+        # a's batch recorded no count for "la", but it did record that its document frequency
+        # there exceeded the threshold -- so threshold*trainsize is a real lower bound, and
+        # the merge imputes it instead of trusting b's partial count or deleting the token
+        merged = merge_profiles([a, b]; doc_freq_threshold=0.9)
+        mvoc = merged.model.voc
+        bnd = token2id(mvoc, "la")
+        @test bnd != 0                        # not deleted
+        @test !("la" in merged.stopwords)     # 3/6 documents is under 0.9
+        # b's exact count plus the bound imputed for a
+        @test getndocs(mvoc, bnd) ==
+              getndocs(b.model.voc, token2id(b.model.voc, "la")) +
+              round(Int, 0.9 * gettrainsize(a.model.voc))
+        # the imputed occurrences enter numtokens too, or avgdoclen stays short by that much
+        @test getnumtokens(mvoc) > getnumtokens(a.model.voc) + getnumtokens(b.model.voc)
+
+        # and when the imputed frequency DOES cross the threshold it is listed as a stopword.
+        # The vocabulary still records it -- with the imputed count, not a fraction of one --
+        # because the vocabulary is the record of the corpus and the artifact is the policy
+        # over it; `gettextconfig` is what actually filters the token out.
+        hi = merge_profiles([a, b]; doc_freq_threshold=0.3)
+        @test "la" in hi.stopwords
+        @test "la" in gettextconfig(hi).transformation.stopwords
+        @test getndocs(hi.model.voc, token2id(hi.model.voc, "la")) ==
+              getndocs(b.model.voc, token2id(b.model.voc, "la")) +
+              round(Int, 0.3 * gettrainsize(a.model.voc))
+    end
+
+    @testset "synonym fusion scores per opportunity, not by ubiquity" begin
+        # A token absent from an input cannot appear in ANY neighbour list there, so summing RRF
+        # penalizes it for an absence that carried no information. That absence is the common
+        # case, not the exception: `min_ndocs` pruning and per-batch stopword removal leave
+        # 71.9% of a merged Portuguese Wikipedia vocabulary and 88.7% of an English one present
+        # in only some inputs.
+        #
+        # `bueno` is in 7 of 8 inputs and is `casa`'s rank-1 neighbour in every one of them.
+        # `ubicuo` is in all 8 but only reaches rank 3, except in the input `bueno` is missing
+        # from, where it takes rank 1 by default. Summed, `ubicuo` wins on that extra vote alone
+        # (0.1275 against 0.1148); per opportunity, `bueno` wins as it should.
+        function synp(d, syn)
+            voc = Vocabulary(tc, d; verbose=false)
+            TextProfile(VectorModel(IdfWeighting(), TfWeighting(), voc); synonyms=syn)
+        end
+        withb = ["casa bueno z ubicuo", "casa bueno z ubicuo"]
+        without = ["casa z ubicuo", "casa z ubicuo"]
+        inputs = [synp(withb, Dict("casa" => ["bueno", "z", "ubicuo"])) for _ in 1:7]
+        push!(inputs, synp(without, Dict("casa" => ["ubicuo", "z"])))
+
+        merged = merge_profiles(inputs)
+        cands = merged.synonyms["casa"]
+        @test findfirst(==("bueno"), cands) < findfirst(==("ubicuo"), cands)
+        # and the absence is real: `bueno` genuinely was not in the eighth input
+        @test token2id(inputs[8].model.voc, "bueno") == 0
+    end
+
+    @testset "a token EVERY input removed stays a stopword" begin
+        # nothing left to impute from, so it cannot be re-derived -- but it is still a stopword
+        tcsw = TextConfig(tc; transformation=IgnoreStopwords(Set(["la"])))
+        a = roundtrip(docs[1:3]; textconfig=tcsw, stopwords=Set(["la"]),
+                      applied=AppliedArtifacts(stopwords=true))
+        b = roundtrip(docs[4:6]; textconfig=tcsw, stopwords=Set(["la"]),
+                      applied=AppliedArtifacts(stopwords=true))
         merged = merge_profiles([a, b])
         @test "la" in merged.stopwords
-        mvoc = merged.model.voc
-        @test !("la" in gettoken.(Ref(mvoc), eachindex(mvoc)))
-        # its occurrences leave numtokens too, or avgdoclen counts tokens that are gone
-        @test getnumtokens(mvoc) ==
-              getnumtokens(a.model.voc) + getnumtokens(b.model.voc) -
-              getoccs(b.model.voc, token2id(b.model.voc, "la"))
-        # and the materialized config agrees with the artifact
-        @test "la" in gettextconfig(merged).transformation.stopwords
+        @test token2id(merged.model.voc, "la") == 0
     end
 
     @testset "the merge keeps the inputs' lineage" begin
