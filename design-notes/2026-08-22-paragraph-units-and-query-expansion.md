@@ -160,42 +160,11 @@ close enough for profile construction.
 
 ### Confirmed across pt and en, with one correction
 
-The paragraph-level numbers above are Spanish. Measured on 10,000 articles of each of the three
-(2026-08-22, after the merge):
-
-| | paragraphs | per article | flagged @0.1 | lowest of that set |
-|---|---|---|---|---|
-| es | 272,466 | 27.2 | 31 | `este` 0.122 |
-| pt | 187,761 | 18.8 | 37 | `seu` 0.132 |
-| en | 189,967 | 19.0 | 40 | `have` 0.123 |
-
-**The 0.1 threshold holds for all three, and everything it flags is a function word** — pt's
-(0.10, 0.20] band is `sua à não ou também entre seu pela pelo ser`, en's is `which are also be or
-this his were he has one not but have first had its their other after`. This is the claim that the
-threshold stops being a per-language tuning problem, and it survives contact with the other two
-languages.
-
-**The factor of 55 does not: it is specific to Spanish.** Wikipedia boilerplate against comparable
-content, at paragraph level:
-
-| | artifacts | comparable content |
-|---|---|---|
-| es | `referencias` 0.018, `enlaces` 0.017, `externos` 0.016 | `musica` 0.020, `nombre` 0.038 |
-| pt | `ligacoes` 0.014, `externas` 0.012, `referencias` 0.003 | `musica` 0.014, `nome` 0.038 |
-| **en** | `references` 0.036, `see` 0.035, `external` 0.031, `links` 0.030 | `name` 0.033, `music` 0.025 |
-
-In Spanish the artifacts fall below nearly all content. In English they land at 0.030–0.036,
-interleaved with `name` (0.033) and `music` (0.025) — the bands touch, and the separation factor is
-about 21 rather than 55. The cause is visible in the first table: English has 19 paragraphs per
-article against Spanish's 27, so there is less to dilute into. Nothing breaks — the artifacts reach
-stopword status in no language, and the point of paragraphs was that they stop *dominating* rather
-than that they be removed — but the number is Spanish, not general.
-
-**A structural point the measurement makes clear:** `head_df` must sit *below* the stopword
-threshold to do anything, since tokens above the latter are no longer in the vocabulary. With
-stopwords at 0.1 and `head_df` at 0.05, the working band is 37 tokens in es, 45 in pt and 49 in
-en — the strip between "already removed" and "still needs enriching", and consistent across the
-three.
+Every paragraph-level number in this section is **Spanish**. The three languages were measured
+separately in `2026-08-22-tuning-paragraph-hyperparameters-pt-es-en.md`, which confirms that the
+0.1 threshold flags nothing but function words in all three, and corrects the factor of 55 above:
+it is Spanish, and English sits nearer 21 with the artifact and content bands touching, because
+English averages 19 paragraphs per article against Spanish's 27.
 
 ### The artifact is `query_expansion`, not `synonyms`
 
