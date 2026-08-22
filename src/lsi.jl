@@ -439,7 +439,40 @@ const SYNONYMS_APPROX_THRESHOLD = 4096
 #    (`guardia` 0.00215 vs `boca` 0.00099) and not at all in the rare band (good 0.00040-0.00085
 #    against bad 0.00049-0.00056) -- i.e. it works where it is not needed.
 #
-# The common cause is that in 256 dimensions under cosine the distances concentrate: the RANKING
+# 5. TYPING THE NETWORK by syntactic class -- "nouns with nouns, verbs with verbs" -- so that
+#    `comun` (an adjective) can reach `popular` but not `aguilucho`, without disambiguating
+#    senses at all. The class can be induced cheaply, with no tagger and no context model: the
+#    function word PRECEDING a token is diagnostic, since in Spanish an adjective follows
+#    `mas`/`muy`, a noun follows a determiner, and a verb follows `se`/`que`/`lo`/`le`. One
+#    bigram pass restricted to (function word, token) pairs gives a small profile per token.
+#
+#    It works on the target case: cosine between profiles is 0.86 for `comun`/`popular` and 0.03
+#    for `comun`/`aguilucho`, 0.01 for `comun`/`cigueniuela`. It does NOT implement "nouns with
+#    nouns", because the profile separates common from proper nouns -- `planeta` follows a
+#    determiner (0.96) and `marte` follows a preposition (0.91), as Spanish proper nouns take no
+#    article -- so `planeta`/`marte` scores 0.058, *below* the 0.14 that must be cut to remove
+#    `comun`/`aguilucho`. A hard same-class filter therefore deletes one of the best synonyms the
+#    paragraph split produces.
+#
+#    Coarsening the anchors into groups (determiners, graders, copulas, clitics, prepositions)
+#    trades one failure for another rather than fixing it: `tiene`/`hizo` improves from 0.53 to
+#    0.92, and `nuevo`/`ciudad` breaks from 0.01 to 0.97, because the fine profile distinguished
+#    `nuevo` (after `un`) from `ciudad` (after `la`) and the group merges both into DET.
+#    `planeta`/`marte` stays at 0.058 either way. The preceding-word distribution encodes a
+#    mixture of category, definiteness, proper-versus-common and construction type, and no fixed
+#    grouping isolates the category, because the signal is not separated in the data.
+#
+#    Coverage bounds it further: only 40,132 of the 106,436 vocabulary tokens have 10 or more
+#    anchor observations (38%), and the 62% without them are the rare tail where an incoherent
+#    neighborhood does the most damage, since high idf amplifies it.
+#
+#    What the data does suggest, unmeasured beyond two pairs: filter only when the profiles are
+#    incompatible AND the neighbour is far rarer. `comun`(1857 anchor observations) ->
+#    `aguilucho`(9) is a ratio of 206x while `planeta`(1610) -> `marte`(578) is 2.8x, a much
+#    wider margin than 0.14 against 0.058. That is two interacting heuristics and would need
+#    measuring over many pairs before being believed.
+#
+# The common cause of 1-4 is that in 256 dimensions under cosine the distances concentrate: the RANKING
 # carries information, the absolute values and their differences do not. What actually separates
 # `innodb` from `bojan` is that `innodb`'s five documents are all about databases while
 # `bojan`'s eight are about unrelated people -- context coherence, which no statistic already on

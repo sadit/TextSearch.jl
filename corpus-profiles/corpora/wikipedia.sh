@@ -48,6 +48,22 @@ SYN_K=8
 # is longer than it is in the corpus it will index. Set it to 0 to keep everything.
 MIN_CHARS=200
 MIN_NDOCS=5
+# One document per PARAGRAPH instead of per article, each prefixed with the article title.
+# Measured on 10,000 Spanish articles: 272,466 paragraph documents, and document frequency over
+# paragraphs separates real stopwords from Wikipedia artifacts by a factor of 55 where article
+# frequency puts them within 1.2 (`de` 0.998 -> 0.934 against `enlaces` 0.826 -> 0.017). A fit
+# under identical settings then detects 11 stopwords -- all function words -- against 46 that
+# included `enlaces externos referencias vease anio parte dos`. Synonyms also improve, since
+# co-occurring in an 87-token paragraph is a far tighter semantic window than in a 2,300-token
+# article: `planeta` goes from `larense protoplanetas haumea verrier` to `marte saturno neptuno
+# urano jupiter`. See ../README.md.
+SPLIT_PARAGRAPHS=false
+# Minimum tokens (whitespace words) a record must have. Replaces --min-chars as the useful floor
+# once paragraphs are the unit: "Referencias" is 11 characters and no content, "no fue asi" is 10
+# and a sentence. Bare section headings are folded into the following paragraph rather than
+# dropped, so this discards very little -- 1,438 records out of 272,466, against 66,363 when the
+# headings were dropped instead.
+MIN_TOKENS=4
 STOPWORDS=true
 DOC_FREQ_THRESHOLD=""   # empty: per-language default from the table below
 LEMMA_ALG=fft
@@ -77,6 +93,10 @@ Options:
                          token occurrences and only ~0.5% of the vocabulary)
   --syn-k N              synonyms per token (default 8)
   --min-chars N          skip articles shorter than this (default 200, drops stubs)
+  --split-paragraphs     emit one document per paragraph (title-prefixed) instead of per
+                         article -- see the note in the script; changes what a "document" is,
+                         so stopword detection and avgdoclen change with it
+  --min-tokens N         drop records with fewer than N whitespace words (default 4)
   --min-ndocs N          drop tokens in fewer than N documents (default 5; 1 keeps all).
                          The synonym network is an all-pairs search over the vocabulary,
                          so this cuts fit cost quadratically -- see ../README.md
@@ -104,6 +124,8 @@ while [[ $# -gt 0 ]]; do
     --del-punc)             DEL_PUNC="$2"; shift 2 ;;
     --syn-k)                SYN_K="$2"; shift 2 ;;
     --min-chars)            MIN_CHARS="$2"; shift 2 ;;
+    --split-paragraphs)     SPLIT_PARAGRAPHS=true; shift ;;
+    --min-tokens)           MIN_TOKENS="$2"; shift 2 ;;
     --min-ndocs)            MIN_NDOCS="$2"; shift 2 ;;
     --no-stopwords)         STOPWORDS=false; shift ;;
     --doc-freq-threshold)   DOC_FREQ_THRESHOLD="$2"; shift 2 ;;
@@ -143,6 +165,18 @@ done
 # The gain from removing function words is a cost gain, not a relevance one: they dominate
 # `numtokens`/`avgdoclen` (which BM25 normalizes by), spend the all-pairs synonym kNN budget,
 # and crowd the leading LSI dimensions.
+if [[ -z "$DOC_FREQ_THRESHOLD" && "$SPLIT_PARAGRAPHS" == "true" ]]; then
+  # The per-language values below were calibrated with ARTICLES as documents and are simply the
+  # wrong scale here: measured on 272,466 Spanish paragraphs, 0.5 flags 11 tokens, 0.4 flags 14,
+  # 0.3 flags 19 and 0.1 flags 31 -- and the first 30 by document frequency are all function
+  # words, while the highest content word sits at 0.069 (`anio`) and the highest Wikipedia
+  # artifact at 0.019 (`vease`). So 0.5 leaves roughly twenty legitimate function words in, and
+  # the gap below them is wide enough that the exact value stops being a tuning problem: this is
+  # the main practical benefit of paragraphs as documents.
+  DOC_FREQ_THRESHOLD=0.1
+  log "stopword threshold for paragraph units: $DOC_FREQ_THRESHOLD (measured on es; the band"
+  log "  between function words and content is wide here, unlike at article level)"
+fi
 if [[ -z "$DOC_FREQ_THRESHOLD" ]]; then
   case "$LANG_CODE" in
     es)       DOC_FREQ_THRESHOLD=0.5 ;;
@@ -182,11 +216,18 @@ fi
 CONFIG_DIR="${SNAPSHOT}.${LANG_CODE}"
 PROFILE_NAME="wiki${SNAPSHOT}-${LANG_CODE}"
 SHARD_DIR="$RAW_DIR/wikipedia/$CONFIG_DIR"
-JSONL="$WORK_DIR/wikipedia/${PROFILE_NAME}.jsonl"
+# The suffix is not cosmetic: `prepare` reuses an existing JSONL, so without it a
+# --split-paragraphs run would silently fit on an article-level conversion left by an earlier run.
+if [[ "$SPLIT_PARAGRAPHS" == "true" ]]; then
+  JSONL="$WORK_DIR/wikipedia/${PROFILE_NAME}-paragraphs.jsonl"
+else
+  JSONL="$WORK_DIR/wikipedia/${PROFILE_NAME}.jsonl"
+fi
 OUT_DIR="$PROFILES_DIR/$PROFILE_NAME"
 FIT_CFG="$WORK_DIR/wikipedia/${PROFILE_NAME}.fit.toml"
 
 log "corpus=wikipedia snapshot=$SNAPSHOT lang=$LANG_CODE -> profile '$PROFILE_NAME'"
+[[ "$SPLIT_PARAGRAPHS" == "true" ]] && log "unit=paragraph (min-tokens=$MIN_TOKENS)" || true
 
 # ── fetch ────────────────────────────────────────────────────────────────────
 
@@ -240,6 +281,9 @@ if has_step prepare; then
     log "converting ${#shards[@]} shard(s) -> $JSONL (min-chars=$MIN_CHARS limit=$LIMIT)"
     extra=()
     [[ "$LIMIT" != "0" ]] && extra+=(--limit "$LIMIT")
+    if [[ "$SPLIT_PARAGRAPHS" == "true" ]]; then
+      extra+=(--split-paragraphs --title-column title --min-tokens "$MIN_TOKENS")
+    fi
     ts_julia "$CP_ROOT/lib/parquet_to_jsonl.jl" "$JSONL" "${shards[@]}" \
       --text-column text --min-chars "$MIN_CHARS" --keep-columns id,title,url "${extra[@]}"
   fi

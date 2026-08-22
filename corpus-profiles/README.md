@@ -259,6 +259,60 @@ document is longer than it is in the corpus being indexed. It also shifts stopwo
 since a stub is lexically almost all function words, so their document frequency rises when
 stubs are included. Pass `--min-chars 0` to keep everything.
 
+## Paragraphs as documents make the stopword threshold stop mattering
+
+`--split-paragraphs` emits one document per paragraph, prefixed with the article title, instead
+of one per article. On 10,000 Spanish articles that is 272,466 documents, and it changes what
+document frequency measures. Article frequency cannot tell a real stopword from a Wikipedia
+artifact; paragraph frequency separates them by a factor of 55:
+
+| token | df per article | df per paragraph | drop |
+|---|---|---|---|
+| `de` | 0.998 | 0.934 | /1.1 |
+| `la` | 0.964 | 0.795 | /1.2 |
+| `que` | 0.829 | 0.570 | /1.5 |
+| `enlaces` | 0.826 | 0.017 | **/49** |
+| `externos` | 0.822 | 0.016 | **/53** |
+| `referencias` | 0.711 | 0.018 | **/39** |
+| `vease` | 0.512 | 0.019 | **/27** |
+| `anio` | 0.580 | 0.069 | /8.5 |
+| `nombre` | 0.421 | 0.038 | /11 |
+
+A function word is in nearly every paragraph; a section heading is in one paragraph of its
+article, and a domain term in a handful. So the three populations land in disjoint bands, and a
+fit under otherwise identical settings detects **11** stopwords -- `0 a de del el en la los que
+se y`, function words and nothing else -- against **46** at article level that included
+`enlaces externos referencias vease anio parte dos`. It also removes 31% of all token
+occurrences rather than 43%, i.e. it keeps more content.
+
+That is why the per-language thresholds above do not apply in this mode, and why the driver uses
+0.1 instead: at paragraph level 0.5 flags 11 tokens, 0.3 flags 19 and 0.1 flags 31, and the
+first 30 by frequency are all function words while the highest content word sits at 0.069. The
+band is wide enough that the exact value stops being a tuning problem.
+
+Synonyms improve too, since co-occurring in an 87-token paragraph is a much tighter semantic
+window than co-occurring in a 2,300-token article, which pulls in terms that share a document
+but not a meaning:
+
+| token | per article | per paragraph |
+|---|---|---|
+| `planeta` | `larense protoplanetas haumea verrier` | `marte saturno neptuno urano jupiter` |
+| `montana` | `downhill andinismo quebrantahuesos alimoche` | `orografia cumbres altitud macizos` |
+| `iglesia` | `catolica fieles eclesiologia kirche` | `ortodoxa anglicana apostolica luterana` |
+| `novela` | `policiaca spade ignatius minkoff` | `picaresca cuento narrativa autobiografica` |
+
+(`quebrantahuesos` and `alimoche` are birds that appear in mountain articles; `larense` is a
+Venezuelan demonym.) Not everything improves -- `futbol` loses the accented `futbol`, `medicina`
+fills with inflections, `ciudad` picks up toponyms -- and lemmas come out essentially unchanged,
+which is correct: `order=:morphology_first` groups by surface similarity, which does not depend
+on how the corpus is cut into documents.
+
+Costs: the fit is only ~33% slower for 27x the documents, since its cost is dominated by
+vocabulary size (106,436 against 94,330) rather than document count, and the profile grows from
+22 MB to 24 MB. What does grow is the index built from such a profile: 27x the documents.
+`min_ndocs` also changes meaning, from "in 5 articles" to "in 5 paragraphs", which is a weaker
+filter -- 106,436 tokens survive instead of 94,330.
+
 ## Lemmas need morphology, not just embeddings
 
 The `[lemmas]` step deserves a note, because the obvious version of it does not work. LSI
