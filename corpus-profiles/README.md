@@ -185,12 +185,56 @@ hours**, near enough independent of the split. That is an upper bound -- vocabul
 falls monotonically through the corpus (93,886 down to 54,944 across the ten parts above),
 since the early articles are the long ones.
 
-Stopword detection, for the record, works well at this scale without any tuning: on the
-Spanish slice it flagged 55 candidates, headed by `de . , en la el y del a un` -- real
-function words and punctuation, exactly what `[stopwords] doc_freq_threshold = 0.5` is
-supposed to catch. The synonym network is likewise good out of the box: `rio` ->
-`confluencia, afluente, desembocadura, fluvial`, `futbol` -> `copa, supercopa, balompie,
-clubes`.
+Stopword detection works out of the box: on the Spanish slice it flagged 55 candidates,
+headed by `de . , en la el y del a un` -- real function words and punctuation, exactly what
+`[stopwords] doc_freq_threshold` is supposed to catch. The synonym network is likewise good
+without tuning: `rio` -> `confluencia, afluente, desembocadura, fluvial`, `futbol` -> `copa,
+supercopa, balompie, clubes`.
+
+## The stopword threshold is not scale-invariant
+
+`doc_freq_threshold` is a document-frequency *ratio* relative to the batch, so the same number
+means different things at different batch sizes. A bigger batch is more diverse, and every
+token's ratio falls. Measured on Portuguese:
+
+| | first 10k articles | 122,831 articles |
+|---|---|---|
+| `area` | 0.520 | 0.353 |
+| `populacao` | 0.511 | 0.225 |
+| `habitantes` | 0.454 | 0.299 |
+| `historia` | 0.443 | 0.292 |
+| `portuguesa` | 0.462 | 0.109 |
+
+That is the whole trap: on a 10k probe those five sit in or beside the (0.4, 0.5] band, so the
+probe argues for 0.5 to protect them, and at the size the fit actually runs not one of them is
+close to the cutoff. **Calibrate at the production batch size**, which for a vocabulary-only
+pass costs a couple of minutes against hours for the full fit -- stopword detection reads
+document frequencies off the unpruned vocabulary, so `Vocabulary` alone sees exactly the input
+the fit will see.
+
+Read the (0.4, 0.5] band, since that band *is* the difference between the two candidate
+values. At the production batch size:
+
+| lang | band (0.4, 0.5] | threshold |
+|---|---|---|
+| pt | `ao das mais a sao ligacoes externas seu ou pela` (10) | 0.4 |
+| en | `first one this has after are were be two his its new or` (13) | 0.4 |
+| es | `pero ser son anos durante sin donde e historia otros ha ano cuando esta vease gran ya le uno asi nombre` (21) | 0.5 |
+
+Spanish keeps 0.5 because four of its twenty-one are content words -- `historia`, `ano`,
+`anos`, `nombre` -- and the error is asymmetric. Removing a token deletes it from the base
+vocabulary, where no later `refit` can bring it back; keeping one costs almost nothing, because
+idf already drives a high-document-frequency token's weight toward zero (measured on Arabic,
+the most frequent token carried 0.64% of the maximum weight). The reason to remove function
+words at all is cost, not relevance: they dominate `numtokens`/`avgdoclen`, which is what BM25
+normalizes by, they spend the all-pairs synonym kNN budget, and they crowd the leading LSI
+dimensions.
+
+These values are the per-language defaults in `corpora/wikipedia.sh`;
+`--doc-freq-threshold` overrides them. Languages outside the measured set default to 0.5, the
+end that removes less, and that default should not be trusted as a measurement -- Arabic
+flagged 19 candidates at 0.5 where Spanish flagged 46 on the same 10k, because its function
+words are proclitics glued inside other tokens rather than separate tokens at all.
 
 ## Lemmas need morphology, not just embeddings
 

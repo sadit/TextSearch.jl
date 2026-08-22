@@ -42,7 +42,7 @@ SYN_K=8
 MIN_CHARS=200
 MIN_NDOCS=5
 STOPWORDS=true
-DOC_FREQ_THRESHOLD=0.5
+DOC_FREQ_THRESHOLD=""   # empty: per-language default from the table below
 LEMMA_ALG=fft
 LEMMA_SEL=most_frequent
 STEPS="fetch,prepare,fit"
@@ -74,7 +74,8 @@ Options:
                          The synonym network is an all-pairs search over the vocabulary,
                          so this cuts fit cost quadratically -- see ../README.md
   --no-stopwords         disable stopword detection/removal (on by default)
-  --doc-freq-threshold F stopword document-frequency cutoff (default 0.5)
+  --doc-freq-threshold F stopword document-frequency cutoff. Default is per-language (see
+                         the table in the script); pass a value to override it
   --lemma-algorithm A    fft | dnet | randsel | multirandsel (default fft)
   --lemma-selector S     most_frequent (default) | shortest | shortest_then_most_frequent
   --steps LIST           comma list of fetch,prepare,fit (default all)
@@ -109,6 +110,44 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -n "$LANG_CODE" ]] || { usage; die "--lang is required"; }
+
+# ── per-language stopword threshold ──────────────────────────────────────────
+#
+# `doc_freq_threshold` is a document-frequency RATIO relative to the batch, and that ratio is
+# not scale-invariant: a bigger, more diverse batch dilutes every token, so a threshold
+# calibrated on a small probe means something different in production. Measured on Portuguese,
+# `area` sits at 0.520 over the first 10k articles and at 0.353 over 122,831 -- so a 10k probe
+# says "0.5 is needed to protect it" about a word that is nowhere near the cutoff at the size
+# the fit actually runs. Calibrate at the production batch size or not at all.
+#
+# What decides the value is what sits in the (0.4, 0.5] band at that size, because that band is
+# exactly what 0.4 removes and 0.5 keeps:
+#
+#   pt  0.4   ao das mais a sao ligacoes externas seu ou pela          -- function + boilerplate
+#   en  0.4   first one this has after are were be two his its new or  -- function only
+#   es  0.5   ... e historia otros ha ano cuando esta vease gran ya le uno asi nombre
+#
+# Spanish is the exception because four of those twenty-one are content (`historia`, `ano`,
+# `anos`, `nombre`), and the error is not symmetric: removing a token deletes it from the base
+# vocabulary, where no later `refit` can recover it, while keeping one costs almost nothing
+# because idf already drives a high-document-frequency token's weight toward zero. So drop the
+# threshold where the band is pure function, and leave it where the band holds content.
+#
+# The gain from removing function words is a cost gain, not a relevance one: they dominate
+# `numtokens`/`avgdoclen` (which BM25 normalizes by), spend the all-pairs synonym kNN budget,
+# and crowd the leading LSI dimensions.
+if [[ -z "$DOC_FREQ_THRESHOLD" ]]; then
+  case "$LANG_CODE" in
+    es)       DOC_FREQ_THRESHOLD=0.5 ;;
+    pt|en)    DOC_FREQ_THRESHOLD=0.4 ;;
+    # Untuned: 0.5 is the conservative end, which for an unmeasured language is the right
+    # default -- it removes less. Do not assume it transfers: Arabic flagged 19 candidates at
+    # 0.5 against Spanish's 46 on the same 10k, because its function words are proclitics glued
+    # inside other tokens rather than separate words at all.
+    *)        DOC_FREQ_THRESHOLD=0.5 ;;
+  esac
+  log "stopword threshold for '$LANG_CODE': $DOC_FREQ_THRESHOLD (per-language default)"
+fi
 require_cmd curl python3 julia
 
 has_step() { [[ ",$STEPS," == *",$1,"* ]]; }
