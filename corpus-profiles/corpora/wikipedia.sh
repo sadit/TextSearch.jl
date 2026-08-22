@@ -177,6 +177,15 @@ if [[ -z "$DOC_FREQ_THRESHOLD" && "$SPLIT_PARAGRAPHS" == "true" ]]; then
   log "stopword threshold for paragraph units: $DOC_FREQ_THRESHOLD (measured on es; the band"
   log "  between function words and content is wide here, unlike at article level)"
 fi
+# The query-expansion head cut has the same scale problem and the same answer: it is a document
+# frequency, so it only means something once the document unit is fixed. Measured on 272,466
+# Spanish paragraphs, 0.05 leaves 57 tokens without a list -- the function words plus `anos ano
+# parte forma ciudad ser ha donde`, none of which needs enriching -- at a cost of 0.1% of all
+# pairs. The article-level equivalent was never measured, so article runs leave it off.
+if [[ -z "${TS_HEAD_DF:-}" && "$SPLIT_PARAGRAPHS" == "true" ]]; then
+  TS_HEAD_DF=0.05
+  log "query-expansion head cut for paragraph units: $TS_HEAD_DF"
+fi
 if [[ -z "$DOC_FREQ_THRESHOLD" ]]; then
   case "$LANG_CODE" in
     es)       DOC_FREQ_THRESHOLD=0.5 ;;
@@ -313,6 +322,7 @@ if has_step fit; then
   TS_RESUME="$RESUME" TS_MIN_NDOCS="$MIN_NDOCS" TS_STOPWORDS="$STOPWORDS" \
   TS_DOC_FREQ_THRESHOLD="$DOC_FREQ_THRESHOLD" TS_OUTDIM="$OUTDIM" TS_QUERY_EXPANSION_K="$QUERY_EXPANSION_K" \
   TS_LEMMA_ALG="$LEMMA_ALG" TS_LEMMA_SEL="$LEMMA_SEL" TS_LANGUAGE="$LANG_CODE" \
+  TS_HEAD_DF="${TS_HEAD_DF:-0.0}" \
   TS_DEL_DIAC="$DEL_DIAC" TS_DEL_PUNC="$DEL_PUNC" \
     ts_render_fit_config "$FIT_CFG"
   ts_fit "$FIT_CFG"

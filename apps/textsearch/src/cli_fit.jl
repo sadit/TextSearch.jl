@@ -208,6 +208,8 @@ function _fit_one_batch(docs::Vector{String}, cfg, batch_dir::AbstractString)
         approx = _query_expansion_approx(get(syn, "approx", "auto")),
         construction_recall = Float64(get(syn, "construction_recall", 0.97)),
         search_recall = Float64(get(syn, "search_recall", 0.9)),
+        head_df = Float64(get(syn, "head_df", 0.0)),
+        max_target_ratio = Float64(get(syn, "max_target_ratio", 50.0)),
     )
 
     lsiopts = (factorization = Symbol(get(enc, "factorization", "auto")),)

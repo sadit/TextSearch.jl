@@ -9,7 +9,7 @@ using SimilaritySearch
 using SimilaritySearch: @BATCHES, getminbatch, MatrixDatabase, AbstractDatabase, ParallelExhaustiveSearch
 using SimilaritySearch.Special.Sparse: SparseVecView, SparseVectorLike
 
-using ..TextSearch: TextModel, VectorModel, Vocabulary, TextConfig, gettoken,
+using ..TextSearch: TextModel, VectorModel, Vocabulary, TextConfig, gettoken, getndocs,
                     GlobalWeighting, LocalWeighting, IdfWeighting, TfWeighting,
                     VECTORIZE_CACHES, VectorizeBuffer
 import ..TextSearch: vectorize, vectorize!, vectorize_corpus, vocsize, gettrainsize
@@ -587,6 +587,23 @@ weights entirely, and the distances stop being distances in any single space as 
 network is merged or refitted. Keeping them apart lets a consumer (or a profile on disk)
 carry the ranking alone, which is where nearly all of a network's size lives.
 
+Two arguments express what the network is *for* rather than filtering it for quality, which is
+the distinction that makes them work where eight quality filters did not (see the long note above
+this function):
+
+- `head_df`: a token whose document frequency exceeds this gets no list at all. **No default is
+  possible**, because a document frequency is a ratio relative to whatever a document is: `0.05`
+  means "in one paragraph in twenty" for a paragraph-level profile and something entirely
+  different for an article-level one. Whoever knows the unit sets it; `0` disables. Measured on
+  272,466 Spanish Wikipedia paragraphs, `0.05` leaves 57 tokens without a list -- the function
+  words plus `anos ano parte forma ciudad ser ha donde` -- at a cost of 0.1% of all pairs.
+- `max_target_ratio`: drop a neighbour whose document frequency exceeds the source's by more than
+  this factor. This one **is** scale-invariant, being a ratio of two frequencies within the same
+  corpus, so it carries a real default. `planeta` -> `marte` moves toward something rarer (0.29)
+  and survives any value; a maximum-idf token pointing at `por` jumps 20,000x and does not.
+  Known cost: it also cuts the legitimate rare -> common direction, such as a misspelling pointing
+  at the correct word. `0` disables.
+
 `approx` selects how the all-pairs search is done, and matters enormously on real
 vocabularies -- an exhaustive search is O(vocabulary²):
 
@@ -610,7 +627,8 @@ function query_expansion(voc::Vocabulary, wordvecs::AbstractDatabase, k::Integer
                    dist=Dist.Cosine(), verbose::Bool=true, approx=:auto,
                    construction_recall::Real=0.97, search_recall::Real=0.9,
                    prune::Symbol=:topk, join_rank::Integer=1, join_quantile::Real=0.9,
-                   join_mingroup::Integer=8)
+                   join_mingroup::Integer=8,
+                   head_df::Real=0.0, max_target_ratio::Real=50.0)
     k > 0 || throw(ArgumentError("k must be positive"))
     prune in (:topk, :localradius) ||
         throw(ArgumentError("prune must be :topk or :localradius; got $(repr(prune))"))
@@ -646,9 +664,20 @@ function query_expansion(voc::Vocabulary, wordvecs::AbstractDatabase, k::Integer
 
     net = Dict{String,Vector{String}}()
     netdist = Dict{String,Vector{Float32}}()
+    N = gettrainsize(voc)
+    dfof(t) = N > 0 ? getndocs(voc, t) / N : 0.0
     for t in 1:m
         words = String[]
         wdists = Float32[]
+        # A token this common does not need enriching: it already reaches most of the corpus and
+        # its own idf is near zero, so whatever is appended for it arrives with almost no weight.
+        # This is also where every incoherent list lives (`comun` -> bird names, `tiene` ->
+        # `engarce`), so the filter removes them without inspecting them.
+        if head_df > 0 && dfof(t) > head_df
+            net[gettoken(voc, t)] = String[]
+            netdist[gettoken(voc, t)] = Float32[]
+            continue
+        end
         for j in 1:size(ids, 1)
             nb = ids[j, t]
             d = dists[j, t]
@@ -658,6 +687,18 @@ function query_expansion(voc::Vocabulary, wordvecs::AbstractDatabase, k::Integer
             # it gets no query_expansion and is never anyone else's query_expansion, rather than poisoning
             # the network (and downstream JSON serialization, which rejects NaN) with NaN.
             (nb == 0 || nb == t || isnan(d)) && continue
+            # ... and enriching *toward* something far more common than the source is the worst
+            # case rather than a neutral one: it contributes no discriminating power, and
+            # `expand_query!` appends it carrying the SOURCE's weight, so a rare token at high idf
+            # injects a corpus-wide term at high weight. Measured on Spanish Wikipedia paragraphs,
+            # 27,733 of 851,488 pairs were tail -> head, e.g. a Cyrillic token at maximum idf
+            # pointing at `por`, which is in 43% of paragraphs. Several such pairs are
+            # semantically right and useless anyway, which is the sharpest statement of why "good
+            # synonym" and "useful expansion" are different criteria.
+            if max_target_ratio > 0
+                dt = dfof(t)
+                dt > 0 && (dfof(nb) / dt) > max_target_ratio && continue
+            end
             push!(words, gettoken(voc, nb))
             push!(wdists, d)
             length(words) >= k && break
@@ -688,9 +729,13 @@ net["dog"]   # ["dogs" => 0.02, "puppy" => 0.11, ...]
 """
 function query_expansion(lsi::LatentSemanticIndexing, k::Integer=8;
                    dist=Dist.Cosine(), normalize::Bool=true, verbose::Bool=true, approx=:auto,
-                   construction_recall::Real=0.97, search_recall::Real=0.9)
+                   construction_recall::Real=0.97, search_recall::Real=0.9,
+                   prune::Symbol=:topk, join_rank::Integer=1, join_quantile::Real=0.9,
+                   join_mingroup::Integer=8,
+                   head_df::Real=0.0, max_target_ratio::Real=50.0)
     query_expansion(lsi.model.voc, wordvectors(lsi; normalize), k;
-             dist, verbose, approx, construction_recall, search_recall)
+             dist, verbose, approx, construction_recall, search_recall,
+             prune, join_rank, join_quantile, join_mingroup, head_df, max_target_ratio)
 end
 
 indim(lsi::LatentSemanticIndexing) = vocsize(lsi.model)

@@ -221,3 +221,43 @@ using Test, TextSearch, SimilaritySearch, LinearAlgebra, SparseArrays
         @test_throws ArgumentError LatentSemanticIndexing(vmodel, corpus; scaling=:invalid_scaling, verbose=false)
     end
 end
+
+@testset "query expansion is filtered by purpose, not by quality" begin
+    # `head_df` and `max_target_ratio` encode what the artifact is FOR: a very common token does
+    # not need enriching, and enriching toward something far more common than the source injects a
+    # corpus-wide term carrying the source's weight. See the note above `query_expansion`.
+    #
+    # `casa` is deliberately common but NOT in every document: a token with near-uniform document
+    # frequency already gets an all-zero LSI embedding and so has no neighbours and is nobody's
+    # neighbour, which would make the filter untestable on it.
+    tc = TextConfig(tokenization=TokenizationConfig(nlist=[1]))
+    docs = ["casa jardin patio", "casa jardin huerto", "casa patio huerto",
+            "casa jardin raro", "casa patio jardin", "huerto patio jardin"]
+    voc = Vocabulary(tc, docs; verbose=false)
+    model = VectorModel(IdfWeighting(), TfWeighting(), voc)
+    lsi = LatentSemanticIndexing(model, docs; maxoutdim=3, verbose=false)
+    wv = wordvectors(lsi)
+    N = gettrainsize(voc)
+    df(t) = getndocs(voc, token2id(voc, t)) / N
+    @test df("casa") > 0.8 && df("casa") < 1.0   # common, not universal
+    @test df("raro") < 0.2                        # tail
+
+    # unfiltered: both get a list, and the tail token can reach the common one
+    plain = query_expansion(voc, wv, 3; verbose=false, max_target_ratio=0)
+    @test !isempty(plain.query_expansion["casa"])
+    @test "casa" in plain.query_expansion["raro"]
+
+    # head_df: the common token gets none, the rare one still does
+    headcut = query_expansion(voc, wv, 3; verbose=false, head_df=0.8, max_target_ratio=0)
+    @test isempty(headcut.query_expansion["casa"])
+    @test isempty(headcut.distances["casa"])
+    @test !isempty(headcut.query_expansion["raro"])
+
+    # max_target_ratio: "raro" must not be enriched toward "casa", 5x more common than it
+    ratio = query_expansion(voc, wv, 3; verbose=false, max_target_ratio=2.0)
+    @test !("casa" in ratio.query_expansion["raro"])
+    # the ranking stays aligned with the distances after a neighbour is dropped
+    for (t, ns) in ratio.query_expansion
+        @test length(ns) == length(ratio.distances[t])
+    end
+end

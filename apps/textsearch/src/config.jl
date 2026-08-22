@@ -71,6 +71,23 @@ k = 8
 approx = "auto"              # "auto" | "always" | "never"
 construction_recall = 0.97
 search_recall = 0.9
+# These two say what the network is FOR, and are the reason it is called query_expansion rather
+# than a synonym network. A token this common does not need enriching -- it already reaches most
+# of the corpus and its idf is near zero, so whatever is appended for it arrives weightless --
+# and it is also where every incoherent list lives. There is no safe default: a document
+# frequency is a ratio relative to whatever a document IS, so 0.05 means "one paragraph in
+# twenty" for a paragraph corpus and something else entirely for an article corpus. Set it
+# knowing your unit; 0 disables. (Measured: on Spanish Wikipedia paragraphs 0.05 leaves 57 tokens
+# without a list -- function words plus `anos ano parte forma ciudad` -- costing 0.1% of pairs.)
+head_df = 0.0
+# Drop a neighbour whose document frequency exceeds the source's by more than this factor.
+# Enriching toward something far more common than the source is the worst case, not a neutral
+# one: it adds no discriminating power and `expand_query!` appends it carrying the SOURCE's
+# weight, so a rare token at high idf injects a corpus-wide term at high weight. This one IS
+# scale-invariant (a ratio of two frequencies in the same corpus), hence a real default. Known
+# cost: it also cuts the legitimate rare -> common direction, e.g. a misspelling pointing at the
+# correct word. 0 disables.
+max_target_ratio = 50.0
 
 [lemmas]
 algorithm = "fft"           # "fft" | "dnet" | "randsel" | "multirandsel"

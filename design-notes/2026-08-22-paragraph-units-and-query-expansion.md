@@ -297,8 +297,24 @@ one ratio knob covers it: `planeta` -> `marte` moves toward something rarer (0.2
 `mysql` roughly level, `snezhko` -> `por` jumps 20,000x. Known cost of the ratio rule: it also cuts
 the legitimate rare -> common direction, such as a misspelling pointing at the correct word.
 
-**Not implemented yet.** This is a filter of *purpose*, not of quality, which is why it works where
-eight quality filters failed.
+**Implemented** as `head_df` and `max_target_ratio` on `query_expansion`, exposed through the fit
+config and the wikipedia driver. It is a filter of *purpose*, not of quality, which is why it works
+where eight quality filters failed.
+
+The defaults encode the lesson this session learned twice. `max_target_ratio` carries a real
+default (50) because it is a ratio of two frequencies within one corpus and therefore
+scale-invariant -- it means the same thing for articles and for paragraphs. `head_df` carries
+**no** default, because it is a document frequency, i.e. a ratio relative to whatever a document
+*is*: 0.05 means "one paragraph in twenty" for a paragraph profile and something else entirely for
+an article profile. Whoever knows the unit sets it; the driver sets 0.05 for paragraph runs and
+leaves it off for article runs, where it was never measured.
+
+Two incidental notes from implementing it. `getndocs` was not imported into `module LSI`, which
+Julia reports only at run time from inside the closure -- the same submodule trap hit earlier with
+BM25/LSI/RI. And the first version of the test picked a head token present in *every* document,
+which the pre-existing NaN guard already empties: a token with near-uniform document frequency gets
+an all-zero LSI embedding, so it has no neighbours and is nobody's neighbour. The test was
+exercising that guard rather than the new filter while passing.
 
 ---
 
