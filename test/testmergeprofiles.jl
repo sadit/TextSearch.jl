@@ -275,31 +275,27 @@ using Test, TextSearch, SimilaritySearch
               round(Int, 0.3 * gettrainsize(a.model.voc))
     end
 
-    @testset "synonym fusion scores per opportunity, not by ubiquity" begin
-        # A token absent from an input cannot appear in ANY neighbour list there, so summing RRF
-        # penalizes it for an absence that carried no information. That absence is the common
-        # case, not the exception: `min_ndocs` pruning and per-batch stopword removal leave
-        # 71.9% of a merged Portuguese Wikipedia vocabulary and 88.7% of an English one present
-        # in only some inputs.
+    @testset "synonym fusion counts agreeing inputs, and is not normalized" begin
+        # Pins the rule against a plausible-looking change that was measured and rejected: see
+        # `_fuse_synonyms`. Normalizing by the inputs that could have voted rewrote 64.9% of a
+        # Portuguese Wikipedia network and cost `cidade` the neighbour `cidades`, because being
+        # in a top-8 out of 150k tokens is selective enough that two agreeing embeddings beat one.
         #
-        # `bueno` is in 7 of 8 inputs and is `casa`'s rank-1 neighbour in every one of them.
-        # `ubicuo` is in all 8 but only reaches rank 3, except in the input `bueno` is missing
-        # from, where it takes rank 1 by default. Summed, `ubicuo` wins on that extra vote alone
-        # (0.1275 against 0.1148); per opportunity, `bueno` wins as it should.
+        # `ubicuo` is in all 8 inputs and reaches rank 3 in 7 of them; `raro` is in one input and
+        # is rank 1 there. Summed, `ubicuo` wins on consensus. Per opportunity, `raro` would.
         function synp(d, syn)
             voc = Vocabulary(tc, d; verbose=false)
             TextProfile(VectorModel(IdfWeighting(), TfWeighting(), voc); synonyms=syn)
         end
-        withb = ["casa bueno z ubicuo", "casa bueno z ubicuo"]
-        without = ["casa z ubicuo", "casa z ubicuo"]
-        inputs = [synp(withb, Dict("casa" => ["bueno", "z", "ubicuo"])) for _ in 1:7]
-        push!(inputs, synp(without, Dict("casa" => ["ubicuo", "z"])))
+        withraro = ["casa raro z ubicuo", "casa raro z ubicuo"]
+        without  = ["casa z ubicuo", "casa z ubicuo"]
+        inputs = [synp(withraro, Dict("casa" => ["raro", "z", "ubicuo"]))]
+        append!(inputs, [synp(without, Dict("casa" => ["z", "ubicuo"])) for _ in 1:7])
 
         merged = merge_profiles(inputs)
         cands = merged.synonyms["casa"]
-        @test findfirst(==("bueno"), cands) < findfirst(==("ubicuo"), cands)
-        # and the absence is real: `bueno` genuinely was not in the eighth input
-        @test token2id(inputs[8].model.voc, "bueno") == 0
+        @test findfirst(==("ubicuo"), cands) < findfirst(==("raro"), cands)
+        @test token2id(inputs[2].model.voc, "raro") == 0   # the absence is real
     end
 
     @testset "a token EVERY input removed stays a stopword" begin

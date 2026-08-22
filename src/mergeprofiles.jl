@@ -57,26 +57,34 @@ even across spaces) but, unlike a single profile's, no longer a distance in any 
 It comes back empty when no input had distances. Candidates are restricted to tokens that
 survive in the merged vocabulary.
 """
+# Scores are SUMMED across inputs, and deliberately not averaged over the inputs that could
+# have voted. Averaging looks better on paper: a token absent from an input (pruned by
+# `min_ndocs`, or removed as that batch's stopword) cannot appear in any neighbour list there, so
+# summing charges it for an absence that carried no information -- seven rank-1 votes (0.115 at
+# rrf_k=60) lose to eight rank-3 votes (0.127) -- and the absences are the common case, leaving
+# 71.9% of a merged Portuguese vocabulary and 88.7% of an English one present in only some
+# inputs.
+#
+# It was tried, with Laplace smoothing (`sum / (opportunities + 1)`), and it wrecks the network.
+# On Portuguese Wikipedia it rewrote 64.9% of the lists, and the candidates it promoted had a
+# mean presence of 1.78 inputs against 7.07 for the ones it demoted: `cidade` lost `cidades` for
+# `ağsu göyçay gawc speu viljandimaa`, `municipio` lost `municipios` for `tiverton deelgemeentes
+# flitsch eethen`, `escola` lost `escolar ensino aula` for `pixule eter juizforano grcesm`.
+#
+# The flaw is treating "present but not in the top k" as evidence comparable to a positive
+# sighting. Entering a top-8 out of 150k tokens is a highly selective event, so a candidate that
+# 2 of 8 embeddings placed near a token is far better supported than one a single embedding
+# placed there -- especially since a token present in only one batch is rare, its embedding is
+# estimated from few documents, and LSI clusters rare tokens with other rare tokens. The summed
+# score is a count of how many independent embeddings agreed, which is the strongest signal
+# available; the extra chances a ubiquitous candidate gets are more evidence, not an unfair
+# advantage. The residual unfairness to a good neighbour missing from one input is real but
+# marginal -- 12.5% of the vote mass at 8 inputs, 2.1% at 48 -- and is the price of a consensus
+# rule rather than a defect in it.
 function _fuse_synonyms(profiles, voc::Vocabulary, k::Integer, rrf_k::Real)
     scores = Dict{String,Dict{String,Float64}}()
     dists = Dict{String,Dict{String,Vector{Float32}}}()
     widest = 0
-
-    # Which inputs held each token, as a bitmask per merged-vocabulary id. A candidate can only
-    # appear in a token's neighbour list in an input that held BOTH, so this is how many chances
-    # the pair actually had -- see the normalization below.
-    nw = cld(length(profiles), 64)
-    held = zeros(UInt64, nw, vocsize(voc))
-    for (j, p) in enumerate(profiles)
-        w, b = fldmod(j - 1, 64)
-        pv = p.model.voc
-        for i in eachindex(pv)
-            id = token2id(voc, gettoken(pv, i))
-            id == 0 && continue
-            @inbounds held[w + 1, id] |= UInt64(1) << b
-        end
-    end
-    chances(a::Integer, b::Integer) = sum(w -> count_ones(@inbounds(held[w, a] & held[w, b])), 1:nw)
 
     for p in profiles
         pd = p.synonym_distances
@@ -102,7 +110,6 @@ function _fuse_synonyms(profiles, voc::Vocabulary, k::Integer, rrf_k::Real)
 
     for (tok, s) in scores
         isempty(s) && continue
-        tokid = token2id(voc, tok)
         # a candidate's mean distance, or `nothing` when no input reported one for it
         dtok = get(dists, tok, nothing)
         function meandist(c)
@@ -111,25 +118,12 @@ function _fuse_synonyms(profiles, voc::Vocabulary, k::Integer, rrf_k::Real)
             ds === nothing ? nothing : sum(ds) / length(ds)
         end
 
-        # Fused score per OPPORTUNITY, not summed. Summing rewards a candidate for having been
-        # present in more inputs, and presence is not uniform: `min_ndocs` pruning and per-batch
-        # stopword removal leave 71.9% of a merged Portuguese vocabulary and 88.7% of an English
-        # one present in only some inputs. Summed, seven rank-1 votes (0.115 at rrf_k=60) lose to
-        # eight rank-3 votes (0.127), so a ubiquitous mediocre neighbour displaces a better one
-        # that one batch never saw.
-        #
-        # The `+ 1` is what keeps this from over-correcting into the opposite error: a pure mean
-        # would let a single lucky rank-1 sighting tie eight consistent ones, so a candidate
-        # confirmed by more inputs keeps a mild edge. Pairs both present everywhere -- the
-        # majority -- get the same divisor and are therefore ranked exactly as before.
-        fused(c) = s[c] / (chances(tokid, token2id(voc, c)) + 1)
-
         cands = collect(keys(s))
         # highest fused score first; ties broken deterministically (closer mean distance
         # when known, then lexicographically) so a merge is reproducible regardless of Dict
         # ordering. Candidates without a distance sort after those with one, rather than
         # comparing `nothing` against a number.
-        sort!(cands; by=c -> (-fused(c), something(meandist(c), Inf), c))
+        sort!(cands; by=c -> (-s[c], something(meandist(c), Inf), c))
         resize!(cands, min(keep, length(cands)))
         net[tok] = cands
 
@@ -319,11 +313,10 @@ profile.
 - **Synonyms are a rank-fusion consensus, not a recomputation** -- each input's distances
   come from its own embedding space (see [`_fuse_synonyms`](@ref)). Recomputing them
   exactly would need the corpus, or a persisted projection, neither of which a profile
-  carries. Fusion scores per *opportunity* rather than summing, because a token absent from an
-  input (pruned by `min_ndocs`, or removed as that batch's stopword) cannot appear in any
-  neighbour list there, and summing would penalize it for that. Note that no merge can repair
-  the missing embedding itself: a token only one input kept has a neighbour list resting on that
-  one input's opinion, however it is scored.
+  carries. Scores are summed across inputs, i.e. a consensus count -- see `_fuse_synonyms` for
+  why normalizing by the inputs that could have voted, though it looks fairer, was measured and
+  rejected. No merge can repair a missing embedding either: a token only one input kept has a
+  neighbour list resting on that one input's opinion.
 - **Lemmas are a plurality vote** over the inputs' clusterings (see [`_vote_lemmas`](@ref)).
 - **Stopwords** are recomputed from the merged counters at `doc_freq_threshold`, then
   unioned with the inputs' own sets -- a token every input already removed is absent from the
