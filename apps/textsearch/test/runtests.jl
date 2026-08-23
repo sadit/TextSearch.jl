@@ -394,14 +394,32 @@ end
                 @test occursin("vocsize", info_text)
                 @test occursin(TextSearchApp.profile_path("mynick"), info_text)
 
+                # without --force: reports, deletes nothing, and names the flag that would
                 uninstall_text = capture_stdout() do
                     TextSearchApp.cmd_uninstall(["mynick"])
                 end
                 @test occursin(TextSearchApp.profile_path("mynick"), uninstall_text)
+                @test occursin("--force", uninstall_text)
                 @test isfile(TextSearchApp.profile_path("mynick"))  # NOT deleted
+
+                # info takes a path, not only a nickname: a fresh profile has to be inspectable
+                # before there is any reason to install it
+                @test occursin("trainsize", capture_stdout() do
+                    TextSearchApp.cmd_info([zippath])
+                end)
 
                 @test_throws Exception TextSearchApp.cmd_install([zippath, "mynick"])  # no --force -> errors
                 TextSearchApp.cmd_install([zippath, "mynick", "--force"])              # --force -> ok
+
+                # with --force: the file goes, and the nickname stops existing with it, because
+                # here the registration IS the file
+                capture_stdout() do
+                    TextSearchApp.cmd_uninstall(["mynick", "--force"])
+                end
+                @test !isfile(TextSearchApp.profile_path("mynick"))
+                @test isempty(TextSearchApp.list_nicknames())
+                @test_throws Exception TextSearchApp.cmd_uninstall(["mynick"])
+                TextSearchApp.cmd_install([zippath, "mynick"])   # put it back for what follows
             end
 
             @testset "merge: folds batched profiles back into one" begin

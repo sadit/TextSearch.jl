@@ -222,19 +222,22 @@ with the `TEXTSEARCH_HOME` environment variable).
 ```
 textsearch install <path.zip> [nickname] [--force]   # copy a profile zip in, under a nickname
 textsearch list                                       # nicknames of everything installed
-textsearch info <nickname>                            # corpus stats, TextConfig, file path
-textsearch uninstall <nickname>                       # print the file's path -- does NOT delete it
+textsearch info <nickname|path>                       # corpus stats, TextConfig, file path
+textsearch uninstall <nickname> [--force]             # print the file's path; --force deletes it
 ```
 
 - `install` derives the nickname from the zip's filename if you don't give one explicitly;
   `--force` overwrites an existing nickname (without it, a name collision is an error).
 - `info` prints `trainsize`/`vocsize`/`numtokens`/`avgdoclen`, how many query_expansion/lemma/
-  stopword-candidate entries were saved, the encoder used, the full `TextConfig`
-  (normalization + tokenization + transformation), and the file's absolute path.
-- `uninstall` is deliberately non-destructive: it only looks up and prints the installed
-  file's path, it never deletes anything. `textsearch` never silently removes a profile you
-  may have spent real compute producing -- remove it yourself once you're sure, with the
-  `rm` command it hands you.
+  stopword entries were saved, how many orthographic variants the vocabulary yields, the
+  lineage, the full `TextConfig` (normalization + tokenization + pipeline), and the file's
+  absolute path. It takes a path as well as an installed nickname, so a freshly fitted or
+  merged profile can be inspected before deciding whether to install it.
+- `uninstall` deletes only with `--force`. Without it, the command prints the installed file's
+  path and size and the exact invocation that would delete it. The reason for that default is
+  that here the registration *is* the file: a profile zip can represent hours of compute and the
+  installed copy may be the only one left, so the destructive reading of "uninstall" has to be
+  asked for.
 
 ### `merge` -- fold batched profiles into one
 
@@ -551,4 +554,5 @@ textsearch does not delete profile files automatically -- remove it yourself if 
   rm '~/.textsearch/profiles/jardin.zip'
 ```
 
-The file is still there -- `uninstall` only ever prints the path, per the Manual above.
+The file is still there -- `uninstall` only prints the path unless `--force` is given, per the
+Manual above.
