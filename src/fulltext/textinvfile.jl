@@ -104,6 +104,35 @@ function TextInvertedFile(textconfig::TextConfig, corpus; local_weighting=TfWeig
     TextInvertedFile(voc, local_weighting, global_weighting; dist, query_expansion, distances, query, kwargs...)
 end
 
+"""
+    TextInvertedFile(p::TextProfile; dist=Dist.NormCosine(), policy=QueryPolicy(), expansion=p.applied.query_expansion, kwargs...)
+
+Creates an empty [`TextInvertedFile`](@ref) from a fitted [`TextProfile`](@ref), using the
+profile's own model -- so the weighting scheme, the idf and the tokenization are the corpus's, not
+the indexed subset's.
+
+How queries are answered follows the profile, with one deliberate asymmetry. **Expansion is
+gated by the profile**: the network is handed to the index only when `applied.query_expansion`
+says the profile endorses it, since it is an artifact the profile may carry without meaning it
+to be used -- pass `expansion=true` to take it anyway, which is what a *base* profile needs.
+**Correction is gated by the policy**, because it depends on nothing but the vocabulary, which
+every profile has; the variant map is derived once here rather than once per query, and comes
+out empty at no cost for a profile that folds case and diacritics.
+
+See [`BM25InvertedFile`](@ref)`(p::TextProfile)` for the same thing under BM25 ranking, where the
+profile also lends its `avgdoclen`.
+"""
+function TextInvertedFile(p::TextProfile; dist=Dist.NormCosine(),
+                          policy::QueryPolicy=QueryPolicy(),
+                          expansion::Bool=p.applied.query_expansion, kwargs...)
+    voc = p.model.voc
+    TextInvertedFile(p.model; dist, kwargs..., query=QueryPipeline(;
+        policy,
+        variants = policy.correction === :off ? nothing : derive_variants(voc),
+        expansion = expansion ? p.query_expansion : nothing,
+        distances = expansion ? p.query_expansion_distances : nothing))
+end
+
 # InvertedFile insertion & appending methods
 function SimilaritySearch.push_item!(idx::TextInvertedFile, ctx::InvertedFileContext, doc::T) where {T<:Union{AbstractString,TokenizedText}}
     if is_set_distance(distance(idx))

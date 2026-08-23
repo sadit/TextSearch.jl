@@ -153,6 +153,50 @@ function BM25InvertedFile(voc::Vocabulary; k1=1.2f0, b=0.75f0, δ=1f0,
 end
 
 """
+    BM25InvertedFile(p::TextProfile; k1=1.2f0, b=0.75f0, δ=1f0, policy=QueryPolicy(), expansion=p.applied.query_expansion)
+
+Creates an empty [`BM25InvertedFile`](@ref) from a fitted [`TextProfile`](@ref) -- which is the
+point of having profiles at all, so it is worth being precise about what comes from where.
+
+The **scorer's statistics are the profile's**: `trainsize` and `avgdoclen` are the corpus the
+profile was fitted on, and the document frequency behind every idf is read from its vocabulary at
+search time. The **document lengths are the index's**, filled in by `append_items!` as documents
+arrive. That split is the whole idea: a profile fitted on 6,665,754 Portuguese paragraphs lends
+its idf and its length normalization to an index holding 20,000 of them, instead of each small
+index inventing statistics from what little it has.
+
+Tokenization is the profile's too, since the vocabulary's ids and counts came from it.
+
+How queries are answered follows the profile, with one deliberate asymmetry. **Expansion is
+gated by the profile**: the network is handed to the index only when `applied.query_expansion`
+says the profile endorses it, since it is an artifact the profile may carry without meaning it
+to be used -- pass `expansion=true` to take it anyway, which is what a *base* profile needs.
+**Correction is gated by the policy**, because it depends on nothing but the vocabulary, which
+every profile has; the variant map is derived once here rather than once per query, and comes
+out empty at no cost for a profile that folds case and diacritics.
+
+# Example
+
+```julia
+julia> idx = BM25InvertedFile(profile);                    # corrects, does not expand
+
+julia> idx = BM25InvertedFile(profile; expansion=true);    # ...and expands anyway
+
+julia> idx = BM25InvertedFile(profile; policy=QueryPolicy(correction=:off));   # literal queries
+```
+"""
+function BM25InvertedFile(p::TextProfile; k1=1.2f0, b=0.75f0, δ=1f0,
+                          policy::QueryPolicy=QueryPolicy(),
+                          expansion::Bool=p.applied.query_expansion)
+    voc = p.model.voc
+    BM25InvertedFile(voc; k1, b, δ, query=QueryPipeline(;
+        policy,
+        variants = policy.correction === :off ? nothing : derive_variants(voc),
+        expansion = expansion ? p.query_expansion : nothing,
+        distances = expansion ? p.query_expansion_distances : nothing))
+end
+
+"""
     append_items!(idx::BM25InvertedFile, ctx::InvertedFileContext, corpus; kwargs...)
 
 Adds every document in `corpus` to `idx`, computing each one's bag of words under

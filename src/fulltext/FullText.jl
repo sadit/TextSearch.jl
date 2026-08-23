@@ -14,7 +14,8 @@ using LinearAlgebra: normalize!
 using ..TextSearch: Vocabulary, VectorModel, TextConfig, TokenizedText, BOW,
                     vocsize, vectorize, vectorize_corpus, bagofwords, bagofwords_corpus,
                     LocalWeighting, GlobalWeighting, TfWeighting, IdfWeighting,
-                    expand_query!, QueryPipeline, query_tokens, queryvector, querybow
+                    expand_query!, QueryPipeline, query_tokens, queryvector, querybow, QueryPolicy,
+                    TextProfile, derive_variants
 
 using ..BM25
 using ..BM25: BM25InvertedFile, BM25Scorer, bm25score, tokenscore
