@@ -115,3 +115,34 @@ using Test, TextSearch, SimilaritySearch
         @test isidentity(gettextconfig(p).pipeline)
     end
 end
+
+@testset "variants are carried but never enter the tokenization config" begin
+    # They are query-side and need the vocabulary to decide anything (see `resolve_query_tokens`),
+    # so unlike lemmas and stopwords they are not a pipeline stage: one config serves fitting,
+    # indexing and searching, and a consumer using the vocabulary's own config cannot apply them
+    # by accident.
+    docs = ["la casa roja", "la casa verde", "una pera"]
+    voc = Vocabulary(TextConfig(tokenization=TokenizationConfig(nlist=[1])), docs; verbose=false)
+    model = VectorModel(IdfWeighting(), TfWeighting(), voc)
+    variants = Dict("leon" => ["león", "León"])
+
+    p = TextProfile(model; stopwords=Set(["la"]), variants,
+                    applied=AppliedArtifacts(stopwords=true, variants=true))
+    @test p.variants == variants
+    @test p.applied.variants
+    @test gettextconfig(p) === p.model.voc.textconfig
+    @test gettextconfig(p).pipeline.stopwords == Set(["la"])
+    @test collect(tokenize(gettextconfig(p), "leon")) == ["leon"]   # no fan-out anywhere
+
+    @test !with_applied(p; variants=false).applied.variants
+    @test with_applied(p; variants=false).variants == variants      # still carried
+
+    dir = tempname()
+    try
+        save_profile(dir, p)
+        r = load_profile(dir)
+        @test r.variants == variants && r.applied.variants
+    finally
+        rm(dir; recursive=true, force=true)
+    end
+end

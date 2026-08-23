@@ -47,7 +47,7 @@ Base.show(io::IO, s::LineageStep) =
               "(" * join(("$k=$v" for (k, v) in sort(collect(s.params); by=first)), ", ") * ")")
 
 """
-    AppliedArtifacts(; stopwords=false, lemmas=false, query_expansion=false)
+    AppliedArtifacts(; stopwords=false, lemmas=false, query_expansion=false, variants=false)
 
 Which of a profile's artifacts are in play, as opposed to merely carried.
 
@@ -56,19 +56,22 @@ query_expansion network, but whether to apply them belongs to the model being tu
 profile that declines lemmatization simply does not apply the map, and one that never needed
 it does not carry it either.
 
-`stopwords` and `lemmas` are tokenization-time and enter the [`textconfig`](@ref).
-`query_expansion` is query-time only -- documents are never expanded, see
-[`expand_query!`](@ref) -- so it does not enter the config at all; it tells a consumer
-building an index whether to hand the network over.
+`stopwords` and `lemmas` are tokenization-time and enter the config a profile derives, which
+serves fitting, indexing and searching alike -- they must, since the vocabulary was counted under
+it. `query_expansion` and `variants` are query-time and work on tokens rather than text, so
+neither enters the config: expansion is applied by [`expand_query!`](@ref), and variants by
+[`resolve_query_tokens`](@ref), which needs the vocabulary and so cannot be a tokenization
+stage.
 """
 Base.@kwdef struct AppliedArtifacts
     stopwords::Bool = false
     lemmas::Bool = false
     query_expansion::Bool = false
+    variants::Bool = false
 end
 
 Base.show(io::IO, a::AppliedArtifacts) = print(io, "applied(",
-    join((n for n in (:stopwords, :lemmas, :query_expansion) if getfield(a, n)), ", "), ")")
+    join((n for n in (:stopwords, :lemmas, :query_expansion, :variants) if getfield(a, n)), ", "), ")")
 
 """
     TextProfile(model; stopwords, lemmas, query_expansion, query_expansion_distances, applied, lineage)
@@ -95,6 +98,7 @@ struct TextProfile
     lemmas::Dict{String,String}
     query_expansion::Dict{String,Vector{String}}
     query_expansion_distances::Union{Nothing,Dict{String,Vector{Float32}}}
+    variants::Dict{String,Vector{String}}
     applied::AppliedArtifacts
     lineage::Vector{LineageStep}
 
@@ -103,13 +107,16 @@ struct TextProfile
                           lemmas::Dict{String,String},
                           query_expansion::Dict{String,Vector{String}},
                           query_expansion_distances::Union{Nothing,Dict{String,Vector{Float32}}},
+                          variants::Dict{String,Vector{String}},
                           applied::AppliedArtifacts,
                           lineage::Vector{LineageStep})
         # Materialize here, so the config the tokenizer sees is always this profile's own
-        # artifacts. A caller cannot pass a mismatched one, because it is not an input.
+        # artifacts. A caller cannot pass a mismatched one, because it is not an input. This is
+        # the DOCUMENT config: the vocabulary was counted under it and an index must reproduce
+        # it exactly, so it never carries the query-only variant stage.
         tc = _materialize(_policy(model.voc.textconfig), stopwords, lemmas, applied)
         new(_with_textconfig(model, tc), stopwords, lemmas, query_expansion, query_expansion_distances,
-            applied, lineage)
+            variants, applied, lineage)
     end
 end
 
@@ -118,6 +125,7 @@ function TextProfile(model::VectorModel;
                       lemmas=Dict{String,String}(),
                       query_expansion=Dict{String,Vector{String}}(),
                       query_expansion_distances=nothing,
+                      variants=Dict{String,Vector{String}}(),
                       applied::AppliedArtifacts=AppliedArtifacts(),
                       lineage::AbstractVector{LineageStep}=LineageStep[])
     TextProfile(model,
@@ -128,6 +136,8 @@ function TextProfile(model::VectorModel;
                 query_expansion_distances === nothing ? nothing :
                     Dict{String,Vector{Float32}}(String(k) => Float32[Float32(d) for d in v]
                                                  for (k, v) in query_expansion_distances),
+                Dict{String,Vector{String}}(String(k) => String[String(s) for s in v]
+                                            for (k, v) in variants),
                 applied, collect(LineageStep, lineage))
 end
 
@@ -183,9 +193,11 @@ apply a base's carried map: change the marker, not the pipeline by hand.
 function with_applied(p::TextProfile;
                        stopwords::Bool=p.applied.stopwords,
                        lemmas::Bool=p.applied.lemmas,
-                       query_expansion::Bool=p.applied.query_expansion)
+                       query_expansion::Bool=p.applied.query_expansion,
+                       variants::Bool=p.applied.variants)
     TextProfile(p.model, p.stopwords, p.lemmas, p.query_expansion, p.query_expansion_distances,
-                AppliedArtifacts(; stopwords, lemmas, query_expansion), p.lineage)
+                p.variants, AppliedArtifacts(; stopwords, lemmas, query_expansion, variants),
+                p.lineage)
 end
 
 """

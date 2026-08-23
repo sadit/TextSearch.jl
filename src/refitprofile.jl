@@ -379,7 +379,11 @@ function refit_profile(base::TextProfile, sample_voc::Vocabulary;
             "lemmas=$(applied.lemmas ? "applied" : "carried only")")
     end
 
-    TextProfile(model, stopwords, kept_lemmas, syn, sdist, applied, lineage)
+    # A refit keeps the base's variants: they are derived from the vocabulary's spellings, and the
+    # refitted vocabulary is a subset of the base's, so no entry can become newly wrong. Entries
+    # pointing at pruned tokens are dead rather than harmful -- `apply_pipeline!` only ever adds
+    # forms, and a form absent from the vocabulary contributes nothing.
+    TextProfile(model, stopwords, kept_lemmas, syn, sdist, base.variants, applied, lineage)
 end
 
 function refit_profile(base::TextProfile, sample_docs; apply_lemmas::Bool=true, extend_lemmas::Bool=false,

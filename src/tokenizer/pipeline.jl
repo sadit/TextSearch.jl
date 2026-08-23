@@ -11,7 +11,12 @@ open set of composable hooks.
     lemmas      rewrite a token to its lemma      `Dict{String,String}`
     stopwords   drop a token entirely             `Set{String}`
 
-`nothing` means the stage does not run.
+`nothing` means the stage does not run, and the order above is the order they run in.
+
+Both stages apply to documents and queries alike, so one config serves fitting, indexing and
+searching. Orthographic bridging -- letting a query typed `leon` reach `León` -- deliberately
+does **not** live here: deciding it needs to know whether the typed token is in the vocabulary at
+all, which is not something a pipeline of plain data can answer. See [`resolve_query_tokens`](@ref).
 
 # Why a fixed pipeline and not composable transformations
 

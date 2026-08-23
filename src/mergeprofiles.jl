@@ -416,7 +416,15 @@ function merge_profiles(profiles; doc_freq_threshold::Real=0.5, query_expansion_
     lineage = push!(prior, LineageStep(:merge; n_sources=length(profiles),
                                               trainsize=gettrainsize(voc)))
 
+    # Variants are derived from a vocabulary rather than estimated from a corpus, so merging them
+    # is a plain union: there is nothing to vote on and nothing to weight.
+    variants = Dict{String,Vector{String}}()
+    for p in profiles, (k, v) in p.variants
+        got = get!(() -> String[], variants, k)
+        for x in v; x in got || push!(got, x); end
+    end
+
     TextProfile(model, stopwords, lemmas, fused.query_expansion,
-                (isempty(fused.distances) ? nothing : fused.distances),
+                (isempty(fused.distances) ? nothing : fused.distances), variants,
                 applied, lineage)
 end
