@@ -94,7 +94,10 @@ using Test, TextSearch, SimilaritySearch
         @test r.tokens == ["música"]
         @test !r.resolved[1].kept
         @test r.resolved[1].dominant == "música"
-        @test occursin("only 1 document", only(explain(r)))
+        # the message has to be a comparison, not an absolute: "in 1,020 documents" is no reason
+        # at corpus scale, where that is an ordinary word -- "1,020 against música's 219,000" is
+        @test occursin("1 document against música's 60", only(explain(r)))
+        @test r.resolved[1].dominantdocs == 60
         # the ratio is what decides it, so lifting it leaves the typed form alone
         @test res("musica", QueryPolicy(negligible_ratio=Inf)).tokens == ["musica"]
         # ...and :off reaches the same place by intent rather than by evidence

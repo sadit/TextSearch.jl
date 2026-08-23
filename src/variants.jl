@@ -116,14 +116,18 @@ function derive_variants(voc::Vocabulary; min_ndocs::Integer=1, maxforms::Intege
 end
 
 """
-    ResolvedToken(typed, ndocs, kept, added, dominant)
+    ResolvedToken(typed, ndocs, kept, added, dominant, dominantdocs)
 
 What happened to one token of a query: the form as `typed`, how many documents hold that exact
 spelling (`ndocs`, zero when it is not a vocabulary token), whether that spelling was `kept` in
-the search set, every form that was `added` for it as `form => reason`, and `dominant` -- the
+the search set, every form that was `added` for it as `form => reason`, `dominant` -- the
 commonest spelling of its group, which is the one allowed to contribute query expansion (see
-[`expansion_sources`](@ref)). `dominant` is empty only when no spelling of the group is in the
-vocabulary at all.
+[`expansion_sources`](@ref)) -- and `dominantdocs`, how many documents hold *that*. `dominant` is
+empty only when no spelling of the group is in the vocabulary at all.
+
+Both counts are carried because a correction is only explicable as a comparison. "appears in only
+1,020 documents" is not a reason at corpus scale, where 1,020 documents is a perfectly ordinary
+word; "1,020 against `música`'s 219,000" is.
 
 `kept` is false exactly when the token was **corrected**: something was bridged for it *and* the
 evidence said the typed spelling was wrong -- absent from the vocabulary, or negligible beside a
@@ -151,6 +155,7 @@ struct ResolvedToken
     kept::Bool
     added::Vector{Pair{String,Symbol}}
     dominant::String
+    dominantdocs::Int
 end
 
 """
@@ -183,7 +188,9 @@ function explain(r::QueryResolution)
         push!(out,
             t.kept       ? "$(t.typed) also searched as $by" :
             t.ndocs == 0 ? "$(t.typed) not found, searched as $by instead" :
-                           "$(t.typed) appears in only $(t.ndocs) document$(t.ndocs == 1 ? "" : "s"), searched as $by instead")
+                           "$(t.typed) is in $(t.ndocs) document$(t.ndocs == 1 ? "" : "s") against " *
+                           "$(t.dominant)'s $(t.dominantdocs), so it reads as a misspelling; " *
+                           "searched as $by instead")
     end
     out
 end
@@ -290,7 +297,7 @@ function resolve_query_tokens(voc::Vocabulary, tokens, variants=nothing,
         if isempty(cands)
             tok in out || push!(out, tok)
             push!(resolved, ResolvedToken(tok, typedn, true, Pair{String,Symbol}[],
-                                          id == 0 ? "" : tok))
+                                          id == 0 ? "" : tok, typedn))
             continue
         end
 
@@ -303,7 +310,7 @@ function resolve_query_tokens(voc::Vocabulary, tokens, variants=nothing,
 
         if policy.correction === :auto && !wrong
             tok in out || push!(out, tok)
-            push!(resolved, ResolvedToken(tok, typedn, true, Pair{String,Symbol}[], tok))
+            push!(resolved, ResolvedToken(tok, typedn, true, Pair{String,Symbol}[], tok, typedn))
             continue
         end
 
@@ -317,7 +324,7 @@ function resolve_query_tokens(voc::Vocabulary, tokens, variants=nothing,
             c in out || push!(out, c)
             push!(added, c => why)
         end
-        push!(resolved, ResolvedToken(tok, typedn, !wrong, added, dominant))
+        push!(resolved, ResolvedToken(tok, typedn, !wrong, added, dominant, best))
     end
 
     QueryResolution(out, resolved)
