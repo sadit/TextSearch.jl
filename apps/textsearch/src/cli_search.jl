@@ -80,50 +80,25 @@ function _resolve_profile_path(spec::AbstractString)
 end
 
 """
-    _query_tokens(p, query, tc, policy::QueryPolicy, variants) -> (Set{String}, report)
+    _query_report(p, query, tc, policy::QueryPolicy, variants) -> (Set{String}, report)
 
-Builds the query's token set by running it through the same `tc` a document goes through --
-so normalization, stopwords and lemmas all apply identically to both sides -- plus the two steps
-only a query gets, both of them marked on `policy`: orthographic correction and expansion.
+Runs the library's [`query_tokens`](@ref) and keeps the pieces this command reports on.
 
-Each query_expansion is itself tokenized through `tc`, which is what lets it meet document tokens
-on the same footing: a query_expansion stored in an inflected form arrives lemmatized, and one that
-is a stopword drops out. `report` carries the intermediate sets for the stderr summary,
-which is the point of this being a probe command: it shows which artifact contributed what --
-including `resolution`, which says per typed token what was searched for it and whether the typed
-spelling itself survived, since a search that corrects what was asked for has to be able to say so
-and to offer the literal query back.
+The pipeline itself is not here and must not be: it is the same one the inverted files use, so
+`textsearch search` cannot drift from what an index would have done with the same query. What is
+left is presentation -- which set came from where, for the stderr summary that is the point of
+this being a probe command.
 """
-function _query_tokens(p, query::AbstractString, tc, policy::QueryPolicy, variants)
+function _query_report(p, query::AbstractString, tc, policy::QueryPolicy, variants)
     raw = collect(tokenize(tc, query))
-
-    # Correction first: it turns what the person typed into spellings the corpus actually
-    # contains, and everything downstream works on those. Under `:auto` a token that is in the
-    # vocabulary and not negligible beside its variants is left alone, so this is inert for a
-    # well-typed query.
-    res = resolve_query_tokens(p.model.voc, raw, variants, policy)
-    base = Set{String}(res.tokens)
-    bridged = setdiff(base, Set(raw))
-
-    # Expansion runs on one spelling per typed token -- the commonest of its bridged group --
-    # rather than on every token searched. See `expansion_sources`: expanding the whole bridged
-    # set mixes senses, because a bridge deliberately reaches spellings the corpus barely holds.
-    expanded = Set{String}()
-    if policy.expansion
-        for tok in expansion_sources(res)
-            neighbors = get(p.query_expansion, tok, nothing)
-            neighbors === nothing && continue
-            for (i, syn) in enumerate(neighbors)
-                policy.expansion_k > 0 && i > policy.expansion_k && break
-                for st in tokenize(tc, syn)
-                    push!(expanded, st)
-                end
-            end
-        end
-        setdiff!(expanded, base)
-    end
-
-    union(base, expanded), (; raw, base, expanded, bridged, resolution=res)
+    rq = query_tokens(p.model.voc, raw,
+                      QueryPipeline(; policy, variants,
+                                    expansion = policy.expansion ? p.query_expansion : nothing,
+                                    distances = policy.expansion ? p.query_expansion_distances : nothing))
+    base = Set{String}(t.token for t in rq.terms if t.reason !== :expansion)
+    expanded = setdiff(Set{String}(t.token for t in rq.terms if t.reason === :expansion), base)
+    (union(base, expanded),
+     (; raw, base, expanded, bridged=setdiff(base, Set(raw)), resolution=rq.resolution))
 end
 
 """
@@ -198,7 +173,7 @@ function cmd_search(args::Vector{String})
     # stale one, since a merge cannot union per-part maps correctly. 0.24s over the 479,245-token
     # Portuguese Wikipedia vocabulary, once per invocation.
     variants = policy.correction === :off ? nothing : derive_variants(p.model.voc)
-    qtokens, rep = _query_tokens(p, o["query"], tc, policy, variants)
+    qtokens, rep = _query_report(p, o["query"], tc, policy, variants)
     isempty(qtokens) && error("the query has no tokens under this profile's TextConfig " *
                               "(every term may have been a stopword); nothing could match")
 

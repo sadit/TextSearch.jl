@@ -122,6 +122,33 @@ using Test, TextSearch, SimilaritySearch
         # restate the implementation
     end
 
+    @testset "flat keywords say the same thing as the nested ones" begin
+        # The nested form is what actually got written, over and over, to change one flag --
+        # and `nlist=[1]` was spelled out in fifty places while already being the default.
+        @test TextConfig(lc=false) == TextConfig(normalization=NormalizationConfig(lc=false))
+        @test TextConfig(nlist=[1, 2]) == TextConfig(tokenization=TokenizationConfig(nlist=[1, 2]))
+        @test TextConfig(lc=false, del_diac=false, nlist=[1]) ==
+              TextConfig(normalization=NormalizationConfig(lc=false, del_diac=false),
+                         tokenization=TokenizationConfig(nlist=[1]))
+        @test TextConfig(nlist=[1]) == TextConfig()          # it was always the default
+
+        # the copy constructor keeps what it was given and changes only what is named
+        c = TextConfig(TextConfig(lc=false); del_punc=true)
+        @test !c.normalization.lc && c.normalization.del_punc
+
+        # saying it twice is an error, not a silent winner
+        @test_throws ArgumentError TextConfig(lc=false, normalization=NormalizationConfig())
+        @test_throws ArgumentError TextConfig(nlist=[1], tokenization=TokenizationConfig())
+        @test_throws ArgumentError TextConfig(noexiste=1)
+    end
+
+    @testset "VectorModel(voc) is TF-IDF" begin
+        voc = Vocabulary(TextConfig(), corpus; verbose=false)
+        @test VectorModel(voc).global_weighting isa IdfWeighting
+        @test VectorModel(voc).local_weighting isa TfWeighting
+        @test VectorModel(voc).weight == VectorModel(IdfWeighting(), TfWeighting(), voc).weight
+    end
+
     @testset "config equality is by value, which it was not" begin
         # Every field of these is compared, and several are heap objects (`nlist`, the emoji
         # table, the compiled regexes), so Julia's default field-wise `===` said two configs

@@ -170,6 +170,17 @@ function VectorModel(gw::GlobalWeighting, lw::LocalWeighting, voc::Vocabulary; w
     model
 end
 
+"""
+    VectorModel(voc::Vocabulary) -> VectorModel
+
+TF-IDF over `voc`: shorthand for `VectorModel(IdfWeighting(), TfWeighting(), voc)`.
+
+It has a name because that combination is what nearly every use wants -- 31 of the 43 in this
+repository -- and spelling out two weighting schemes to say "the usual one" reads as though a
+choice were being made. The three-argument form is how the other twelve say what they mean.
+"""
+VectorModel(voc::Vocabulary) = VectorModel(IdfWeighting(), TfWeighting(), voc)
+
 @inline gettrainsize(model::VectorModel) = gettrainsize(model.voc)
 @inline vocsize(model::VectorModel) = vocsize(model.voc)
 
