@@ -242,15 +242,16 @@ print(dates[-1])
 fi
 
 CONFIG_DIR="${SNAPSHOT}.${LANG_CODE}"
+# The suffix is not cosmetic, and it has to reach every output rather than just the JSONL.
+# `prepare` reuses an existing JSONL and `fit --resume` skips any part whose .zip is already
+# there, so sharing a name with an article-level run of the same snapshot means silently fitting
+# on the wrong conversion, or silently keeping article-level parts inside what is supposed to be
+# a paragraph-level profile. A paragraph run and an article run are different corpora: different
+# document count, different avgdoclen, different stopwords. They get different names.
 PROFILE_NAME="wiki${SNAPSHOT}-${LANG_CODE}"
+[[ "$SPLIT_PARAGRAPHS" == "true" ]] && PROFILE_NAME="${PROFILE_NAME}-paragraphs"
 SHARD_DIR="$RAW_DIR/wikipedia/$CONFIG_DIR"
-# The suffix is not cosmetic: `prepare` reuses an existing JSONL, so without it a
-# --split-paragraphs run would silently fit on an article-level conversion left by an earlier run.
-if [[ "$SPLIT_PARAGRAPHS" == "true" ]]; then
-  JSONL="$WORK_DIR/wikipedia/${PROFILE_NAME}-paragraphs.jsonl"
-else
-  JSONL="$WORK_DIR/wikipedia/${PROFILE_NAME}.jsonl"
-fi
+JSONL="$WORK_DIR/wikipedia/${PROFILE_NAME}.jsonl"
 OUT_DIR="$PROFILES_DIR/$PROFILE_NAME"
 FIT_CFG="$WORK_DIR/wikipedia/${PROFILE_NAME}.fit.toml"
 
