@@ -38,6 +38,14 @@ OUTDIM=256
 # handled by spelling correction rather than by destroying the distinction in the profile.)
 DEL_DIAC=false
 DEL_PUNC=true
+# Keep casing, for the same reason as `del_diac`: folding destroys sense distinctions the corpus
+# actually makes, and it cannot be undone once fitted. Measured on 272,466 Spanish paragraphs,
+# keeping it costs x1.12 vocabulary and recovers senses no statistical method reached -- `granada`
+# unfolded returns the heraldic charge (`gules azur bordura`) as well as the city, likewise `cuba`
+# (the barrel), `leon` (the animal), `sol`, `palma`, `iglesia`. A query typed folded gets back to
+# the corpus spellings through the profile's variant map, which `fit` derives here; a profile
+# fitted with `--lc` has no such recourse. Pass --lc for a folded profile.
+LC=false
 QUERY_EXPANSION_K=8
 # UNEXAMINED, and it silently discards a lot: verified against the parquet row counts, 200
 # characters drops 62,946 Spanish articles (3.4%), 323,825 English (5.1%) and 129,605
@@ -98,6 +106,9 @@ Options:
                          token occurrences and only ~0.5% of the vocabulary)
   --query-expansion-k N              query_expansion per token (default 8)
   --min-chars N          skip articles shorter than this (default 200, drops stubs)
+  --lc                   lowercase while normalizing, giving up the case-based sense
+                         separation and the variant map that makes it searchable. Not
+                         reversible: refit blends counters in the space the base was fitted in.
   --split-paragraphs     emit one document per paragraph (title-prefixed) instead of per
                          article -- see the note in the script; changes what a "document" is,
                          so stopword detection and avgdoclen change with it
@@ -130,6 +141,7 @@ while [[ $# -gt 0 ]]; do
     --query-expansion-k)                QUERY_EXPANSION_K="$2"; shift 2 ;;
     --min-chars)            MIN_CHARS="$2"; shift 2 ;;
     --split-paragraphs)     SPLIT_PARAGRAPHS=true; shift ;;
+    --lc)                   LC=true; shift ;;
     --min-tokens)           MIN_TOKENS="$2"; shift 2 ;;
     --min-ndocs)            MIN_NDOCS="$2"; shift 2 ;;
     --no-stopwords)         STOPWORDS=false; shift ;;
@@ -244,6 +256,7 @@ FIT_CFG="$WORK_DIR/wikipedia/${PROFILE_NAME}.fit.toml"
 
 log "corpus=wikipedia snapshot=$SNAPSHOT lang=$LANG_CODE -> profile '$PROFILE_NAME'"
 [[ "$SPLIT_PARAGRAPHS" == "true" ]] && log "unit=paragraph (min-tokens=$MIN_TOKENS)" || true
+log "normalization: lc=$LC del_diac=$DEL_DIAC del_punc=$DEL_PUNC"
 
 # ── fetch ────────────────────────────────────────────────────────────────────
 
@@ -330,7 +343,8 @@ if has_step fit; then
   TS_DOC_FREQ_THRESHOLD="$DOC_FREQ_THRESHOLD" TS_OUTDIM="$OUTDIM" TS_QUERY_EXPANSION_K="$QUERY_EXPANSION_K" \
   TS_LEMMA_ALG="$LEMMA_ALG" TS_LEMMA_SEL="$LEMMA_SEL" TS_LANGUAGE="$LANG_CODE" \
   TS_HEAD_DF="${TS_HEAD_DF:-0.0}" \
-  TS_DEL_DIAC="$DEL_DIAC" TS_DEL_PUNC="$DEL_PUNC" \
+  TS_DEL_DIAC="$DEL_DIAC" TS_DEL_PUNC="$DEL_PUNC" TS_LC="$LC" \
+  TS_VARIANTS_MIN_NDOCS="${TS_VARIANTS_MIN_NDOCS:-20}" \
     ts_render_fit_config "$FIT_CFG"
   ts_fit "$FIT_CFG"
   log "profiles in $OUT_DIR:"
