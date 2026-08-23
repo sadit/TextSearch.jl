@@ -142,7 +142,8 @@ Notes:
 ```
 textsearch search <profile> <query> --collection PATH [--format FORMAT]
                    [--text-key KEY] [-t THRESHOLD]
-                   [--no-lemmas] [--no-query_expansion] [--query_expansion-k K] [--chunk N]
+                   [--no-lemmas] [--correction MODE] [--correction-ratio R]
+                   [--no-query_expansion] [--query_expansion-k K] [--chunk N]
 ```
 
 `profile` is an installed nickname or a path to a profile `.zip`/directory. Prints every
@@ -167,13 +168,34 @@ applying it to documents would make everything match everything. Each query_expa
 through the same `TextConfig`, so one stored in an inflected form arrives lemmatized and
 meets document tokens on the same footing.
 
+**The query is answered as most probably meant, and always answerable literally.** A profile
+that keeps case and diacritics (`lc=false`) holds `música` but also `musica`, the second in
+nine paragraphs of Italian text -- so `--correction` (default `auto`) corrects a typed spelling
+where the evidence says it is wrong: absent from the vocabulary, or far rarer than another
+spelling of the same word. Where it corrects it **replaces**, and says so on stderr along with
+the way back:
+
+```
+$ textsearch search es-wiki "musica de leon" --collection paragraphs.jsonl -t 2
+query: 2 token(s) -> Leon León Léon Música león música
+  ~ musica appears in only 9 documents, searched as música (variant), Música (variant) instead
+  ~ leon not found, searched as Leon (derived), León (variant), león (variant), Léon (variant) instead
+  ~ to search as typed instead: --correction off
+```
+
+`--correction off` is that literal answer, `--correction always` bridges every token whether or
+not anything suggests it is wrong (the only way to reach an accented alternative of a spelling
+that is itself common), and `--correction-ratio` moves the line between "rarer" and "wrong"
+(`1` = anything but the commonest spelling, `Inf` = never). Correction and expansion are the two
+guesses a search makes about intent, so both are on by default and both can be turned off.
+
 This makes `search` the way to exercise a profile's artifacts end to end, so each can be
 switched off to see what it contributes: `--no-lemmas` removes the lemma step from the
 tokenization pipeline (on both sides), `--no-query_expansion` skips expansion, and `--query_expansion-k`
 caps how many query_expansion each query token may contribute (`0`, the default, uses every one the
-profile stored). The effective query token set, what the query_expansion added, and whether the
-profile actually carries a lemma map are all reported on **stderr**, leaving stdout pure
-JSONL for piping.
+profile stored). The effective query token set, what was corrected, what the query_expansion added,
+and whether the profile actually carries a lemma map are all reported on **stderr**, leaving stdout
+pure JSONL for piping.
 
 Matching runs on all available threads (the installed shim passes `--threads=auto`), over
 buffers of `--chunk` records at a time. Output does not depend on either: each task writes

@@ -297,6 +297,54 @@ the two filters compose as intended rather than fighting. And the ratio rule has
 here it is the evidence of a misspelling. Both are right, because expansion is semantic and
 correction is orthographic.
 
+### Reversed the same session: correcting should replace, because the mode is expressible
+
+The "never drop what the user typed" rule above was a hedge, and it was a hedge for a reason that
+turned out to be removable: with no way to express *how* a query should be treated, dropping a
+person's word gave them no way to get it back, so the safe move was to always union. Model it on
+what commercial search does instead — answer the most probable reading, and always offer the same
+query answered literally — and the hedge is unnecessary: correcting can actually correct, because
+"search instead for X" exists.
+
+So the shape is a mark on the query rather than a policy buried in a call:
+
+```julia
+QueryPolicy(; correction=:auto, expansion=true, expansion_k=0, negligible_ratio=50)
+```
+
+- `:auto` corrects only where the evidence says the typed spelling is wrong — absent, or
+  negligible beside a commoner spelling of the same word — and where it corrects it **replaces**.
+- `:off` is the literal answer. A consumer that corrects by default owes it.
+- `:always` bridges without evidence, so it *adds* rather than replaces: nothing said the typed
+  form was wrong.
+
+That "drop exactly when the evidence says wrong" rule is what makes `:auto` and `:always` one
+mechanism rather than two, and it made `rare` collapse into `kept` on `ResolvedToken` — the
+outcome, not the reason, is what a consumer needs in order to phrase three different sentences
+(not there at all / there but too rare / enriched and left standing).
+
+Two things follow that were not obvious before framing it this way:
+
+- **Expansion is the same kind of thing.** It is the other guess a search makes about intent, so
+  it belongs on the same object and is answerable literally in the same way. `--no-query_expansion`
+  already existed; what changed is that it stopped being an unrelated flag.
+- **`negligible_ratio` found its home.** It is neither a fit-time knob (the same profile serves
+  every reading) nor a bare library default — it is part of how *this query* should be treated, and
+  it rides along with the mode. That answers a question left open an hour earlier about where to
+  put it.
+
+Measured on the CLI, `musica de leon` over the paragraph profile:
+
+| `--correction` | searched | expansion |
+|---|---|---|
+| `off` | `leon musica` | `Puccini Semiramide Verdi Vivaldi libreto` |
+| `auto` | `Leon León Léon Música león música` | `leonesa castellanoleonés folclórica musicales …` |
+| `always` | same as auto here | same |
+
+The `off` row is the honest one to keep in mind: asked for the literal query, the profile answers
+with the literal query's neighbours — Italian opera, from nine paragraphs — and that is correct
+behaviour, not a bug to filter away.
+
 ### Still open
 
 - Everything under *Still unmeasured* in the previous note stands: whether `lc=false` degrades the

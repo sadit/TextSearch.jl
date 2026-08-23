@@ -18,14 +18,14 @@ batch_size = %BATCH_SIZE%
 resume = %RESUME%
 
 [normalization]
-del_diac = true
+del_diac = %DEL_DIAC%
 del_dup = false
 del_punc = false
 group_num = true
 group_url = true
 group_usr = false
 group_emo = false
-lc = true
+lc = %LC%
 
 [tokenization]
 nlist = [1]
@@ -33,6 +33,10 @@ mark_token_type = true
 
 [vocabulary]
 min_ndocs = %MIN_NDOCS%
+
+[variants]
+enabled = true
+min_ndocs = %VAR_MIN_NDOCS%
 
 [stopwords]
 enabled = %STOPWORDS%
@@ -63,12 +67,14 @@ function write_jsonl_corpus(path, docs)
 end
 
 function write_fit_config(path; corpus, outdir, batch_size=0, stopwords=false, min_ndocs=1,
-                          resume=false, lemma_apply=true)
+                          resume=false, lemma_apply=true, lc=true, del_diac=true,
+                          var_min_ndocs=1)
     cfg = replace(FIT_CONFIG,
         "%CORPUS%" => corpus, "%OUTDIR%" => outdir,
         "%BATCH_SIZE%" => string(batch_size), "%STOPWORDS%" => string(stopwords),
         "%MIN_NDOCS%" => string(min_ndocs), "%RESUME%" => string(resume),
-        "%LEMMA_APPLY%" => string(lemma_apply))
+        "%LEMMA_APPLY%" => string(lemma_apply), "%LC%" => string(lc),
+        "%DEL_DIAC%" => string(del_diac), "%VAR_MIN_NDOCS%" => string(var_min_ndocs))
     write(path, cfg)
     path
 end
@@ -275,6 +281,55 @@ end
                 # --query_expansion-k bounds the expansion, so it sits between the two.
                 capped = search_texts("casa", "--query_expansion-k", "1")
                 @test narrow ⊆ capped ⊆ wide
+            end
+
+            @testset "search: correction answers the probable query, and the literal one" begin
+                # A profile that keeps case and diacritics holds both spellings of a word, and
+                # the rare one is usually a typo or a foreign fragment: here `música` in three
+                # documents against `musica` in one. Fitted with lc=false so there is something
+                # to correct at all.
+                accented = joinpath(dir, "accented.jsonl")
+                write_jsonl_corpus(accented, ["la música suena", "la música alegre",
+                                              "la música clásica", "musica italiana",
+                                              "la pera verde"])
+                outdir = joinpath(dir, "profiles_accent")
+                cfgpath = write_fit_config(joinpath(dir, "fit_accent.toml");
+                                           corpus=accented, outdir, lc=false, del_diac=false)
+                TextSearchApp.cmd_fit(["--config", cfgpath])
+                zp = joinpath(outdir, "corpus-0001.zip")
+                @test !isempty(TextSearch.load_profile(zp).variants)
+
+                function texts(args...)
+                    out = capture_stdout() do
+                        TextSearchApp.cmd_search([zp, args..., "--collection", accented,
+                                                  "--format", "jsonl", "--no-query_expansion"])
+                    end
+                    [JSON3.read(l)[:text] for l in filter(!isempty, split(out, '\n'))]
+                end
+
+                # `música` has 3 documents to `musica`'s 1, so at ratio 2 the typed spelling is
+                # evidence of a mistake and is REPLACED -- the Italian paragraph is not a hit
+                corrected = texts("musica", "--correction-ratio", "2")
+                @test "la música suena" in corrected
+                @test !("musica italiana" in corrected)
+
+                # the same query answered literally: this is the escape the report points to
+                literal = texts("musica", "--correction-ratio", "2", "--correction", "off")
+                @test literal == ["musica italiana"]
+
+                # and the ratio is what decides: at the default 50, three documents against one
+                # is not evidence of anything
+                @test texts("musica") == ["musica italiana"]
+
+                # :always bridges without evidence, so it ADDS rather than replaces
+                both = texts("musica", "--correction", "always")
+                @test "musica italiana" in both
+                @test "la música suena" in both
+
+                @test_throws ErrorException TextSearchApp.cmd_search(
+                    [zp, "musica", "--collection", accented, "--correction", "nonsense"])
+                @test_throws ErrorException TextSearchApp.cmd_search(
+                    [zp, "musica", "--collection", accented, "--correction-ratio", "0.5"])
             end
 
             @testset "search: output is in corpus order, independent of chunking" begin
