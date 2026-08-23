@@ -9,12 +9,12 @@ export stopword_candidates
 Flags tokens whose document-frequency ratio `getndocs(voc, id) / gettrainsize(voc)` exceeds
 `threshold` as stopword candidates, sorted by decreasing ratio (most extreme first). A
 frequency heuristic only -- it does not inspect token semantics -- so results should be
-reviewed before being wired into an [`IgnoreStopwords`](@ref) transformation.
+reviewed before being wired into a [`TokenPipeline`](@ref)'s `stopwords` stage.
 
 # Example
 ```julia
 candidates = stopword_candidates(voc, 0.5)
-textconfig = TextConfig(voc.textconfig; transformation=IgnoreStopwords(Set(candidates)))
+textconfig = TextConfig(voc.textconfig; pipeline=TokenPipeline(stopwords=Set(candidates)))
 ```
 """
 function stopword_candidates(voc::Vocabulary, threshold::Real=0.5)

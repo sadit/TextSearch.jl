@@ -20,9 +20,11 @@ Implementing a new generator kind requires:
 - optionally [`tokentag`](@ref) (defaults to `nothing`, i.e. untagged) for the
   single-character tag appended to each token when `mark_token_type=true`.
 
-The [`transform`](@ref) hook already dispatches on `AbstractTokenGenerator` with an
-identity default, so a new generator kind is usable with any existing
-[`AbstractTokenTransformation`](@ref) without further changes.
+A new generator kind works with any [`TokenPipeline`](@ref) without further changes: the
+pipeline's stages act on whatever tokens a generator produces. This is also the right home for
+anything that changes how text becomes tokens -- splitting `getUserName` into three words,
+keeping `H2O` whole -- since a generator sees the word stream and may emit one token or several,
+while the pipeline is strictly per-token and data-driven.
 """
 abstract type AbstractTokenGenerator end
 

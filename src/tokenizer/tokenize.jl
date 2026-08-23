@@ -201,21 +201,21 @@ tokenize_corpus(textconfig::TextConfig, arr; isnormalized::Bool=false, verbose::
 
 function tokenize_(config::TextConfig, buff::TokenizerBuffer)
     gens = alltokengenerators(config.tokenization)
-    tt = config.transformation
+    pipe = config.pipeline
     mark_token_type = config.tokenization.mark_token_type
 
     for gen in gens
-        needs_unigrams(gen) || generate!(gen, buff, tt, mark_token_type)
+        needs_unigrams(gen) || generate!(gen, buff, pipe, mark_token_type)
     end
 
     if any(needs_unigrams, gens)
         n1 = length(buff.tokens)
-        unigrams(buff, tt)  # always populates buff.unigrams; also emits unigram tokens to buff.tokens
+        unigrams(buff, pipe)  # always populates buff.unigrams; also emits unigram tokens to buff.tokens
 
         any(g -> g isa UnigramGenerator, gens) || resize!(buff.tokens, n1)
 
         for gen in gens
-            needs_unigrams(gen) && generate!(gen, buff, tt, mark_token_type)
+            needs_unigrams(gen) && generate!(gen, buff, pipe, mark_token_type)
         end
     end
 
@@ -223,7 +223,7 @@ function tokenize_(config::TextConfig, buff::TokenizerBuffer)
 end
 
 """
-    generate!(gen::AbstractTokenGenerator, buff::TokenizerBuffer, tt::AbstractTokenTransformation, mark_token_type::Bool)
+    generate!(gen::AbstractTokenGenerator, buff::TokenizerBuffer, pipe::TokenPipeline, mark_token_type::Bool)
 
 Runs `gen` over `buff`, appending its produced tokens to `buff.tokens`. Called by
 [`tokenize`](@ref) for every generator in [`alltokengenerators`](@ref); a new
@@ -231,30 +231,17 @@ Runs `gen` over `buff`, appending its produced tokens to `buff.tokens`. Called b
 [`UnigramGenerator`](@ref)'s tokens are emitted as a side effect of the shared
 [`unigrams`](@ref) pass, so its own `generate!` is a no-op.
 """
-generate!(::UnigramGenerator, buff::TokenizerBuffer, tt::AbstractTokenTransformation, mark_token_type::Bool) = nothing
-generate!(gen::NWordGenerator, buff::TokenizerBuffer, tt::AbstractTokenTransformation, mark_token_type::Bool) = nwords(gen, buff, tt, mark_token_type)
-
-function push_token_from_transform!(tokens, s::Nothing)
-end
-
-function push_token_from_transform!(tokens, s::AbstractString)
-    push!(tokens, s)
-end
-
-function push_token_from_transform!(tokens, slist::AbstractVector)
-    for s in slist
-        push!(tokens, s)
-    end
-end
+generate!(::UnigramGenerator, buff::TokenizerBuffer, pipe::TokenPipeline, mark_token_type::Bool) = nothing
+generate!(gen::NWordGenerator, buff::TokenizerBuffer, pipe::TokenPipeline, mark_token_type::Bool) = nwords(gen, buff, pipe, mark_token_type)
 
 """
-    flush_token!(buff::TokenizerBuffer, tt::AbstractTokenTransformation, gen::AbstractTokenGenerator, mark_token_type::Bool)
+    flush_token!(buff::TokenizerBuffer, pipe::TokenPipeline, gen::AbstractTokenGenerator, mark_token_type::Bool)
 
 Pushes the token accumulated in `buff.io` to the token list, applying `gen`'s
-[`tokentag`](@ref) (when `mark_token_type`) and [`transform`](@ref) hook; discards empty
-strings and tokens the transformation drops (returns `nothing` for).
+[`tokentag`](@ref) (when `mark_token_type`) and the [`TokenPipeline`](@ref)'s stages; discards
+empty strings and tokens the pipeline drops.
 """
-function flush_token!(buff::TokenizerBuffer, tt::AbstractTokenTransformation, gen::AbstractTokenGenerator, mark_token_type::Bool)
+function flush_token!(buff::TokenizerBuffer, pipe::TokenPipeline, gen::AbstractTokenGenerator, mark_token_type::Bool)
     buff.io.size == 0 && return nothing
 
     if mark_token_type
@@ -262,8 +249,8 @@ function flush_token!(buff::TokenizerBuffer, tt::AbstractTokenTransformation, ge
         tag !== nothing && write(buff.io, '\t', tag)
     end
 
-    s = transform(tt, gen, String(take!(buff.io)))
-    push_token_from_transform!(buff.tokens, s)
+    s = apply_pipeline(pipe, String(take!(buff.io)))
+    s === nothing || push!(buff.tokens, s)
 end
 
 ispunct2(c) = ispunct(c) || c in EXTRA_PUNCT
@@ -271,11 +258,11 @@ ispunct2(c) = ispunct(c) || c in EXTRA_PUNCT
 const UNIGRAM_GENERATOR = UnigramGenerator()
 
 """
-    unigrams(buff::TokenizerBuffer, tt::AbstractTokenTransformation)
+    unigrams(buff::TokenizerBuffer, pipe::TokenPipeline)
 
 Performs the word tokenization
 """
-function unigrams(buff::TokenizerBuffer, tt::AbstractTokenTransformation)
+function unigrams(buff::TokenizerBuffer, pipe::TokenPipeline)
     n = length(buff.normtext)
     mfirst = length(buff.tokens) + 1
     # @info buff.normtext
@@ -284,32 +271,32 @@ function unigrams(buff::TokenizerBuffer, tt::AbstractTokenTransformation)
         p = buff.normtext[i-1]
 
         if c == BLANK
-            flush_token!(buff, tt, UNIGRAM_GENERATOR, false)
+            flush_token!(buff, pipe, UNIGRAM_GENERATOR, false)
         elseif isemoji(c)
             # emoji
-            flush_token!(buff, tt, UNIGRAM_GENERATOR, false)
+            flush_token!(buff, pipe, UNIGRAM_GENERATOR, false)
             write(buff.io, c)
-            flush_token!(buff, tt, UNIGRAM_GENERATOR, false)
+            flush_token!(buff, pipe, UNIGRAM_GENERATOR, false)
         elseif ispunct2(p)
             # previous char is punct
             if ispunct2(c)
                 # a punctuaction string
-                buff.io.size >= 3 && flush_token!(buff, tt, UNIGRAM_GENERATOR, false)  # a bit large, so we flush and restart the punc string (3 is for most emojis and ...)
+                buff.io.size >= 3 && flush_token!(buff, pipe, UNIGRAM_GENERATOR, false)  # a bit large, so we flush and restart the punc string (3 is for most emojis and ...)
                 write(buff.io, c)
             else
-                !(p in ('#', '@', '_')) && flush_token!(buff, tt, UNIGRAM_GENERATOR, false)  # current is not punctuaction so we flush if not a meta word
+                !(p in ('#', '@', '_')) && flush_token!(buff, pipe, UNIGRAM_GENERATOR, false)  # current is not punctuaction so we flush if not a meta word
                 write(buff.io, c)
             end
         elseif ispunct2(c) && p !== BLANK
             ## single punctuaction alone
-            flush_token!(buff, tt, UNIGRAM_GENERATOR, false)
+            flush_token!(buff, pipe, UNIGRAM_GENERATOR, false)
             write(buff.io, c)
         else
             write(buff.io, c)
         end
     end
 
-    flush_token!(buff, tt, UNIGRAM_GENERATOR, false)
+    flush_token!(buff, pipe, UNIGRAM_GENERATOR, false)
     mlast = length(buff.tokens)
 
     for i in mfirst:mlast
@@ -320,9 +307,9 @@ function unigrams(buff::TokenizerBuffer, tt::AbstractTokenTransformation)
 end
 
 """
-    nwords(gen::NWordGenerator, buff::TokenizerBuffer, tt::AbstractTokenTransformation, mark_token_type)
+    nwords(gen::NWordGenerator, buff::TokenizerBuffer, pipe::TokenPipeline, mark_token_type)
 """
-function nwords(gen::NWordGenerator, buff::TokenizerBuffer, tt::AbstractTokenTransformation, mark_token_type)
+function nwords(gen::NWordGenerator, buff::TokenizerBuffer, pipe::TokenPipeline, mark_token_type)
     q = gen.q
     n = length(buff.unigrams)
 
@@ -334,7 +321,7 @@ function nwords(gen::NWordGenerator, buff::TokenizerBuffer, tt::AbstractTokenTra
         end
 
         write(buff.io, buff.unigrams[_last])
-        flush_token!(buff, tt, gen, mark_token_type)
+        flush_token!(buff, pipe, gen, mark_token_type)
     end
 
     buff.tokens

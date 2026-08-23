@@ -6,7 +6,7 @@ export TextConfig
     TextConfig(;
         normalization::NormalizationConfig=NormalizationConfig(),
         tokenization::TokenizationConfig=TokenizationConfig(),
-        transformation::AbstractTokenTransformation=IdentityTokenTransformation()
+        pipeline::TokenPipeline=TokenPipeline()
     )
 
 Defines a preprocessing and tokenization pipeline, composed of 3 independent stages:
@@ -15,7 +15,7 @@ Defines a preprocessing and tokenization pipeline, composed of 3 independent sta
   removal, whitespace normalization, casing, etc.).
 - `tokenization`: a [`TokenizationConfig`](@ref) (unigrams, word n-grams, and any extra
   custom [`AbstractTokenGenerator`](@ref)s).
-- `transformation`: an [`AbstractTokenTransformation`](@ref) applied to every generated
+- `pipeline`: a [`TokenPipeline`](@ref) of per-token stages applied to every generated
   token (lemma normalization or stopword removal).
 - `language`: which language this configuration is *for*, as an ISO 639-1 symbol (`:es`,
   `:pt`, `:en`, ...) or `:unknown`.
@@ -35,7 +35,7 @@ observation about data, and would belong in a profile's lineage instead.
 
 This is the corpus-independent half of a text model -- it can be written by hand with no data.
 The artifacts a corpus produces (stopword sets, lemma maps, query_expansion networks) live in a
-[`TextProfile`](@ref), which materializes the `transformation` from whichever of them it
+[`TextProfile`](@ref), which materializes the `pipeline` from whichever of them it
 applies. Query-time expansion is likewise a profile-level decision
 (`applied.query_expansion`), not a flag here: it is a search-time behaviour whose data does not live
 in the tokenizer.
@@ -52,17 +52,17 @@ julia> collect(tokenize(cfg, "cats"))
 Base.@kwdef struct TextConfig
     normalization::NormalizationConfig = NormalizationConfig()
     tokenization::TokenizationConfig = TokenizationConfig()
-    transformation::AbstractTokenTransformation = IdentityTokenTransformation()
+    pipeline::TokenPipeline = TokenPipeline()
     language::Symbol = :unknown
 end
 
 function TextConfig(c::TextConfig;
         normalization::NormalizationConfig=c.normalization,
         tokenization::TokenizationConfig=c.tokenization,
-        transformation::AbstractTokenTransformation=c.transformation,
+        pipeline::TokenPipeline=c.pipeline,
         language::Symbol=c.language
     )
-    TextConfig(normalization, tokenization, transformation, language)
+    TextConfig(normalization, tokenization, pipeline, language)
 end
 
 function Base.show(io::IO, c::TextConfig; prefix="", indent="  ")
@@ -70,8 +70,8 @@ function Base.show(io::IO, c::TextConfig; prefix="", indent="  ")
     prefix = indent * prefix
     show(io, c.normalization; prefix, indent)
     show(io, c.tokenization; prefix, indent)
-    print(io, prefix, "transformation: ")
-    println(io, c.transformation)
+    print(io, prefix, "pipeline: ")
+    println(io, c.pipeline)
     println(io, prefix, "language: ", c.language)
 end
 

@@ -2,17 +2,9 @@ using Test, TextSearch, SimilaritySearch
 
 # These are library tests on purpose: a refit is an operation of TextSearch itself, so the
 # whole thing must be exercisable without the CLI app.
-# Digs the lemma mapping out of a transformation pipeline, so a test can compare what a
-# profile APPLIES against what it saves.
-_find_lemma_map(tt::LemmaTransformation) = tt.lemmas
-_find_lemma_map(::AbstractTokenTransformation) = nothing
-function _find_lemma_map(tt::ChainTransformation)
-    for s in tt.list
-        m = _find_lemma_map(s)
-        m === nothing || return m
-    end
-    nothing
-end
+# What a profile APPLIES, so a test can compare it against what it saves. This used to need three
+# methods to walk a possibly-nested transformation chain; a `TokenPipeline` is one field.
+_find_lemma_map(p::TokenPipeline) = p.lemmas
 
 @testset "refit_profile" begin
     tc = TextConfig(tokenization=TokenizationConfig(nlist=[1]))
@@ -195,7 +187,7 @@ end
     @testset "lemmas: carried by the base, applied by the refit" begin
         lemmas = Dict("perros" => "perro", "gatos" => "gato")
         lbase = mkprofile(basedocs; lemmas)
-        @test !has_lemma_transformation(lbase.model.voc.textconfig.transformation)
+        @test lbase.model.voc.textconfig.pipeline.lemmas === nothing
 
         lsample = ["el perro ladra", "los perros ladran", "perros y perros",
                    "un perro mas", "perro perro perros"]
@@ -203,7 +195,7 @@ end
         @testset "apply_lemmas=true lemmatizes both sides" begin
             r = refit_profile(lbase, lsample; verbose=false)
             voc = r.model.voc
-            @test has_lemma_transformation(voc.textconfig.transformation)
+            @test voc.textconfig.pipeline.lemmas !== nothing
             @test r.applied.lemmas
             # the inflected form is gone; the lemma carries the family
             @test token2id(voc, "perros") == 0
@@ -220,7 +212,7 @@ end
             # on the real Wikipedia-es profile the dead entries were 47% of the output file.
             r = refit_profile(lbase, lsample; verbose=false)
             voc = r.model.voc
-            applied = _find_lemma_map(voc.textconfig.transformation)
+            applied = _find_lemma_map(voc.textconfig.pipeline)
 
             @test applied == r.lemmas
             # nothing in the applied map can point at a token the vocabulary lacks, so no
@@ -230,7 +222,7 @@ end
 
         @testset "apply_lemmas=false leaves the map as an artifact only" begin
             r = refit_profile(lbase, lsample; apply_lemmas=false, verbose=false)
-            @test !has_lemma_transformation(r.model.voc.textconfig.transformation)
+            @test r.model.voc.textconfig.pipeline.lemmas === nothing
             @test !r.applied.lemmas
             @test token2id(r.model.voc, "perros") != 0   # still its own token
             @test !isempty(r.lemmas)                      # still carried
@@ -321,7 +313,7 @@ end
         @testset "extend_lemmas needs lemmas applied" begin
             # nothing to extend into: the map would not be in the pipeline at all
             r = refit_profile(ebase, esample; extend_lemmas=true, apply_lemmas=false, verbose=false)
-            @test !has_lemma_transformation(r.model.voc.textconfig.transformation)
+            @test r.model.voc.textconfig.pipeline.lemmas === nothing
             @test !haskey(r.lemmas, "audifonos")
         end
     end

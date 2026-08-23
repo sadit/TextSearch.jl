@@ -86,9 +86,22 @@ end
                      )
 end
 
-@testset "ChainTransformation actually chains" begin
-    ct = ChainTransformation([IgnoreStopwords(Set(["the"])), IgnoreStopwords(Set(["a"]))])
-    test_equals(tokenize(TextConfig(tokenization=TokenizationConfig(nlist=[1]), transformation=ct), "the cat sat on a mat"), ["cat", "sat", "on", "mat"])
+@testset "TokenPipeline runs its stages in the order that matters" begin
+    tk = TokenizationConfig(nlist=[1])
+    # The stages are not commutative: filtering first lets "las" through (it is not itself in the
+    # set) and only then rewrites it to "la", smuggling the stopword in. The fixed order makes
+    # that unexpressible -- this pins the outcome.
+    p = TokenPipeline(lemmas=Dict("las" => "la", "casas" => "casa", "rojas" => "roja"),
+                      stopwords=Set(["la"]))
+    test_equals(tokenize(TextConfig(tokenization=tk, pipeline=p), "las casas rojas"), ["casa", "roja"])
+
+    test_equals(tokenize(TextConfig(tokenization=tk, pipeline=TokenPipeline(stopwords=Set(["the","a"]))),
+                         "the cat sat on a mat"), ["cat", "sat", "on", "mat"])
+    test_equals(tokenize(TextConfig(tokenization=tk, pipeline=TokenPipeline(lemmas=Dict("cats" => "cat"))),
+                         "cats and cats"), ["cat", "and", "cat"])
+    # an empty stage is no stage
+    @test TokenPipeline(stopwords=Set{String}()) == TokenPipeline()
+    @test TokenPipeline(lemmas=Dict{String,String}()) == TokenPipeline()
 end
 
 @testset "custom AbstractTokenGenerator extends tokenize_ without editing TextConfig" begin
@@ -105,11 +118,11 @@ end
     cfg = TextConfig(tokenization=TokenizationConfig(nlist=[1], generators=[FirstCharGenerator()]))
     test_equals(tokenize(cfg, "cat sat"), ["cat", "sat", "c\ti"])
 
-    # an existing AbstractTokenTransformation (only overriding the legacy per-kind hooks)
+    # an existing TokenPipeline (only overriding the per-generator hooks)
     # keeps working unmodified against the new custom generator (defaults to identity);
     # "cat" is filtered from buff.unigrams too, since it feeds from the post-transform
     # token list, so the surviving first unigram is "sat".
-    cfg2 = TextConfig(tokenization=TokenizationConfig(nlist=[1], generators=[FirstCharGenerator()]), transformation=IgnoreStopwords(Set(["cat"])))
+    cfg2 = TextConfig(tokenization=TokenizationConfig(nlist=[1], generators=[FirstCharGenerator()]), pipeline=TokenPipeline(stopwords=Set(["cat"])))
     test_equals(tokenize(cfg2, "cat sat"), ["sat", "s\ti"])
 end
 

@@ -8,7 +8,7 @@ using ProgressMeter
 include("buffer.jl")
 include("generators.jl")
 include("defaults.jl")
-include("tokentrans.jl")
+include("pipeline.jl")
 include("normalization.jl")
 include("tokenization.jl")
 include("textconfig.jl")

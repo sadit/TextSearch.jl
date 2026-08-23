@@ -163,7 +163,7 @@ using Test, TextSearch, SimilaritySearch
         @test merged.lemmas["roja"] == "casa"                # maps vote
         @test merged.applied.lemmas                          # applied if any input applied
         # and the merged profile applies exactly the map it carries
-        @test has_lemma_transformation(gettextconfig(merged).transformation)
+        @test gettextconfig(merged).pipeline.lemmas !== nothing
     end
 
     @testset "a disagreeing lemma map votes rather than erroring" begin
@@ -232,15 +232,15 @@ using Test, TextSearch, SimilaritySearch
     end
 
     @testset "a stopword only SOME inputs removed gets its counts imputed" begin
-        # `fit` applies stopwords by tokenizing under IgnoreStopwords, so a flagged token never
+        # `fit` applies stopwords by putting them in the pipeline, so a flagged token never
         # enters that batch's vocabulary and the merged counters hold only the batches that did
         # not flag it. Merging used to keep such a token with those partial counts, which made
         # its idf far too high while the profile's own stopword list called it a stopword.
         # Measured on Portuguese Wikipedia: 18 of 35, with `como` at df=0.049 against a true
         # corpus df above 0.5.
-        # built the way `fit` builds it: tokenized under IgnoreStopwords, so "la" is genuinely
+        # built the way `fit` builds it: the stopword is in the pipeline, so "la" is genuinely
         # absent from a's vocabulary rather than merely listed
-        a = roundtrip(docs[1:3]; textconfig=TextConfig(tc; transformation=IgnoreStopwords(Set(["la"]))),
+        a = roundtrip(docs[1:3]; textconfig=TextConfig(tc; pipeline=TokenPipeline(stopwords=Set(["la"]))),
                       stopwords=Set(["la"]), applied=AppliedArtifacts(stopwords=true))
         @test !("la" in gettoken.(Ref(a.model.voc), eachindex(a.model.voc)))
         # "la" is NOT a stopword for b, so b's vocabulary contains it and the merged counters
@@ -269,7 +269,7 @@ using Test, TextSearch, SimilaritySearch
         # over it; `gettextconfig` is what actually filters the token out.
         hi = merge_profiles([a, b]; doc_freq_threshold=0.3)
         @test "la" in hi.stopwords
-        @test "la" in gettextconfig(hi).transformation.stopwords
+        @test "la" in gettextconfig(hi).pipeline.stopwords
         @test getndocs(hi.model.voc, token2id(hi.model.voc, "la")) ==
               getndocs(b.model.voc, token2id(b.model.voc, "la")) +
               round(Int, 0.3 * gettrainsize(a.model.voc))
@@ -300,7 +300,7 @@ using Test, TextSearch, SimilaritySearch
 
     @testset "a token EVERY input removed stays a stopword" begin
         # nothing left to impute from, so it cannot be re-derived -- but it is still a stopword
-        tcsw = TextConfig(tc; transformation=IgnoreStopwords(Set(["la"])))
+        tcsw = TextConfig(tc; pipeline=TokenPipeline(stopwords=Set(["la"])))
         a = roundtrip(docs[1:3]; textconfig=tcsw, stopwords=Set(["la"]),
                       applied=AppliedArtifacts(stopwords=true))
         b = roundtrip(docs[4:6]; textconfig=tcsw, stopwords=Set(["la"]),

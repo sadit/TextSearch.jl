@@ -431,7 +431,7 @@ clustering saw and chose *not* to link, and silently overruling that decision is
 function's business. Pass `nothing` to consider everything.
 
 Tokens already keyed in `lemmas` are skipped, so no chain `token -> lemma -> other lemma` can
-be created. Note that under an applied [`LemmaTransformation`](@ref) they are not vocabulary
+be created. Note that under an applied lemma stage they are not vocabulary
 tokens to begin with.
 """
 function extend_lemmas_morphological(voc::Vocabulary, lemmas::AbstractDict;

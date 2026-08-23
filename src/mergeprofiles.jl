@@ -220,7 +220,7 @@ end
 Restores what per-batch stopword removal destroyed, so the merged counters can be read at
 corpus scale.
 
-`fit` applies stopwords by tokenizing the batch under `IgnoreStopwords`, so a flagged token
+`fit` applies stopwords by tokenizing the batch with them in the pipeline, so a flagged token
 never enters that batch's vocabulary and its counts are simply gone. When *every* input flagged
 it there is nothing to do -- it is absent from the merge and stays a stopword. The hard case is
 a token some inputs flagged and others did not: the merged counters then hold only the batches

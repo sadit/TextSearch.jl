@@ -141,29 +141,24 @@ write by hand without any data.
 """
 getpolicy(p::TextProfile) = _policy(p.model.voc.textconfig)
 getpolicy(tc::TextConfig) = _policy(tc)
-_policy(tc::TextConfig) = TextConfig(tc; transformation=IdentityTokenTransformation())
+_policy(tc::TextConfig) = TextConfig(tc; pipeline=TokenPipeline())
 
 """
     gettextconfig(p::TextProfile) -> TextConfig
 
 The `TextConfig` this profile tokenizes with: its policy plus the artifacts it applies.
 
-The chain order is not cosmetic. [`LemmaTransformation`](@ref) runs **before**
-[`IgnoreStopwords`](@ref), because with the filter first a form that is not itself a stopword
-survives it and is only then rewritten into one (`"las"` → `"la"`), smuggling the stopword
-back into the vocabulary. Having exactly one function that knows this is most of the reason
-the artifacts moved out of `TextConfig`.
+The stage order lives in [`TokenPipeline`](@ref) and not here, which is the point: lemmas run
+before the stopword filter, because with the filter first a form that is not itself a stopword
+survives it and is only then rewritten into one (`"las"` → `"la"`), smuggling the stopword back
+into the vocabulary. This function only decides *which* artifacts are applied.
 """
 gettextconfig(p::TextProfile) = p.model.voc.textconfig
 
 function _materialize(pol::TextConfig, stopwords, lemmas, applied::AppliedArtifacts)
-    tt = AbstractTokenTransformation[]
-    applied.lemmas && !isempty(lemmas) && push!(tt, LemmaTransformation(lemmas))
-    applied.stopwords && !isempty(stopwords) && push!(tt, IgnoreStopwords(stopwords))
-
-    transformation = isempty(tt) ? IdentityTokenTransformation() :
-                     length(tt) == 1 ? only(tt) : ChainTransformation(tt)
-    TextConfig(pol; transformation)
+    TextConfig(pol; pipeline=TokenPipeline(
+        lemmas = applied.lemmas ? lemmas : nothing,
+        stopwords = applied.stopwords ? stopwords : nothing))
 end
 
 """

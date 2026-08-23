@@ -197,7 +197,7 @@ function _fit_one_batch(docs::Vector{String}, cfg, batch_dir::AbstractString; re
             stopword_candidates(Vocabulary(base_textconfig, docs; verbose=false),
                                 Float64(sw["doc_freq_threshold"])) :
             collect(reuse)
-        fit_tc = TextConfig(base_textconfig; transformation=IgnoreStopwords(Set(candidates)))
+        fit_tc = TextConfig(base_textconfig; pipeline=TokenPipeline(stopwords=Set(candidates)))
     else
         fit_tc = base_textconfig
         candidates = String[]

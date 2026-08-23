@@ -23,18 +23,7 @@ using Test, TextSearch, SimilaritySearch
     Digs the lemma mapping out of what the profile actually tokenizes with, so a test can
     compare it against what the profile carries.
     """
-    function applied_lemma_map(p)
-        find(tt::LemmaTransformation) = tt.lemmas
-        find(::AbstractTokenTransformation) = nothing
-        function find(tt::ChainTransformation)
-            for s in tt.list
-                m = find(s)
-                m === nothing || return m
-            end
-            nothing
-        end
-        find(gettextconfig(p).transformation)
-    end
+    applied_lemma_map(p) = gettextconfig(p).pipeline.lemmas
 
     @testset "what a profile applies IS what it carries" begin
         p = TextProfile(mkmodel(); stopwords, lemmas,
@@ -50,7 +39,7 @@ using Test, TextSearch, SimilaritySearch
         p = TextProfile(mkmodel(); stopwords, lemmas)   # applied defaults to all false
         @test !isempty(p.lemmas)                        # carried
         @test applied_lemma_map(p) === nothing          # but not in the pipeline
-        @test gettextconfig(p).transformation isa IdentityTokenTransformation
+        @test isidentity(gettextconfig(p).pipeline)
         # so the vocabulary is NOT lemmatized
         @test token2id(p.model.voc, "casas") != 0
     end
@@ -87,7 +76,7 @@ using Test, TextSearch, SimilaritySearch
                         applied=AppliedArtifacts(stopwords=true, lemmas=true))
         pol = getpolicy(p)
 
-        @test pol.transformation isa IdentityTokenTransformation
+        @test isidentity(pol.pipeline)
         @test pol.normalization === gettextconfig(p).normalization
         @test pol.tokenization === gettextconfig(p).tokenization
         # a policy tokenizes like a bare config: no artifact leaks into it
@@ -123,6 +112,6 @@ using Test, TextSearch, SimilaritySearch
     @testset "an empty artifact never enters the pipeline, even marked applied" begin
         # asking to apply nothing is not an error, it is a no-op
         p = TextProfile(mkmodel(); applied=AppliedArtifacts(stopwords=true, lemmas=true))
-        @test gettextconfig(p).transformation isa IdentityTokenTransformation
+        @test isidentity(gettextconfig(p).pipeline)
     end
 end

@@ -201,7 +201,7 @@ end
                 @test !isempty(p.lemmas)
                 # applied: the map is part of the pipeline, not just a saved artifact
                 @test p.applied.lemmas
-                @test has_lemma_transformation(gettextconfig(p).transformation)
+                @test gettextconfig(p).pipeline.lemmas !== nothing
 
                 # the vocabulary is lemmatized, so the inflected forms are gone and the
                 # lemma carries the family's counts
@@ -232,7 +232,7 @@ end
 
                     @test !isempty(q.lemmas)                                   # still saved
                     @test !q.applied.lemmas
-                    @test !has_lemma_transformation(gettextconfig(q).transformation)
+                    @test gettextconfig(q).pipeline.lemmas === nothing
                     # unlemmatized: the inflected forms are still their own tokens
                     @test TextSearch.token2id(q.model.voc, first(keys(q.lemmas))) != 0
                 end

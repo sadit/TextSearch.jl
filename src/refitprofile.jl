@@ -31,7 +31,7 @@ else silently compares tokens that do not correspond, and the resulting numbers 
 
 Everything is inherited from `base` unchanged, with one deliberate exception: when
 `apply_lemmas` is set and `base` carries a lemma map it did not itself apply, a
-[`LemmaTransformation`](@ref) is chained in *first* (see
+the lemma stage runs *first* (see
 [`with_lemma_transformation`](@ref)). That is the point of a base profile keeping its lemmas
 unapplied -- whether to lemmatize belongs to the refit, and a tuned model that declines it
 simply does not carry the map. When lemmas are added here, [`refit_profile`](@ref) folds the
@@ -449,39 +449,18 @@ function _check_refit_textconfig(expected::TextConfig, got::TextConfig)
     _same_tokenization(expected.tokenization, got.tokenization) ||
         error("the sample vocabulary was built with different tokenization settings than " *
               "the refit requires; build it with refit_textconfig(base; apply_lemmas)")
-    # The transformation is compared by its ARTIFACTS, which is all it can hold now: a lemma
-    # map and a stopword set. Both come from one place -- `gettextconfig(profile)` -- so the only
-    # way to fail this is to have tokenized the sample under some other config entirely, which
-    # is exactly the mistake worth catching loudly.
-    _same_artifacts(expected.transformation, got.transformation) ||
+    # The pipeline is plain data -- a lemma map and a stopword set -- so this is a value
+    # comparison. It used to need a pair of helpers whose whole job was to normalize over how a
+    # `ChainTransformation` happened to be nested; a fixed pipeline has nothing to normalize.
+    # Both sides come from one place, `gettextconfig(profile)`, so the only way to fail here is
+    # to have tokenized the sample under some other config entirely -- exactly the mistake worth
+    # catching loudly.
+    expected.pipeline == got.pipeline ||
         error("the sample vocabulary was built with a different lemma map or stopword set " *
               "than the refit requires; build it with refit_textconfig(base; apply_lemmas)")
     nothing
 end
 
-"""
-    _same_artifacts(a, b) -> Bool
-
-Whether two materialized transformations apply the same artifacts. Compares the lemma map and
-the stopword set by value, ignoring how the chain happens to be nested -- a lone
-`IgnoreStopwords` and a one-element chain around it are the same pipeline.
-"""
-_same_artifacts(a::AbstractTokenTransformation, b::AbstractTokenTransformation) =
-    _artifact_pair(a) == _artifact_pair(b)
-
-_artifact_pair(::IdentityTokenTransformation) = (nothing, nothing)
-_artifact_pair(t::LemmaTransformation) = (t.lemmas, nothing)
-_artifact_pair(t::IgnoreStopwords) = (nothing, t.stopwords)
-function _artifact_pair(t::ChainTransformation)
-    lem = nothing
-    sw = nothing
-    for s in t.list
-        l, w = _artifact_pair(s)
-        l === nothing || (lem = l)
-        w === nothing || (sw = w)
-    end
-    (lem, sw)
-end
 
 """
     _restrict_query_expansion(query_expansion, distances, voc) -> (query_expansion, distances)
