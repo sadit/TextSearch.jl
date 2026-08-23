@@ -274,7 +274,20 @@ function _fit_one_batch(docs::Vector{String}, cfg, batch_dir::AbstractString; re
         flush(stdout)
     end
 
-    profile = TextProfile(model; stopwords, lemmas,
+    # Derived from the FINAL vocabulary, so it names tokens that actually exist -- after pruning
+    # and after any lemma rewrite. It is query-only and stores just the spellings that cannot be
+    # computed from a folded form, so a profile that folds everything (lc and del_diac both on)
+    # produces an empty map and pays nothing.
+    varcfg = get(cfg, "variants", Dict{String,Any}())
+    variants = Bool(get(varcfg, "enabled", true)) ?
+        derive_variants(model.voc; min_ndocs=Int(get(varcfg, "min_ndocs", 20)),
+                        maxforms=Int(get(varcfg, "maxforms", 8))) :
+        Dict{String,Vector{String}}()
+    isempty(variants) || println("  variants: $(length(variants)) folded spellings bridged")
+    applied = AppliedArtifacts(stopwords=applied.stopwords, lemmas=applied.lemmas,
+                               variants=!isempty(variants))
+
+    profile = TextProfile(model; stopwords, lemmas, variants,
                           query_expansion=synmap, query_expansion_distances=syndists, applied,
                           lineage=[LineageStep(:fit; encoder=String(kind), outdim, scaling=String(scaling),
                                                      source_path=external_path,

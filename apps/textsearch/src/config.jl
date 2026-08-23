@@ -99,6 +99,26 @@ head_df = 0.0
 # correct word. 0 disables.
 max_target_ratio = 50.0
 
+[variants]
+# Query-side orthographic bridging, so a profile can keep case and diacritics without becoming
+# unsearchable: preserving them separates senses that folding destroys (Spanish `granada` unfolded
+# reaches the heraldic charge as well as the city; `cuba` the barrel; `leon` the animal), at the
+# cost that a query typed `leon` matches nothing. This map is that bridge, and it is applied to
+# queries only -- using it while indexing would blur the very distinctions it makes searchable.
+#
+# Only spellings that cannot be COMPUTED are stored: `madrid -> Madrid` is derived at query time,
+# while accent restoration must be stored, since from `practico` there is no telling whether the
+# corpus writes `práctico` or `practicó`. Measured on Spanish Wikipedia paragraphs, that plus the
+# floor below take the map from 62,825 keys to 8,153.
+#
+# A profile with `lc=true` and `del_diac=true` has nothing left to fold, so this produces an empty
+# map and costs nothing.
+enabled = true
+# Do not bridge to a token appearing in fewer documents than this: nobody types the folded form of
+# a word that occurs five times, so those entries are pure size.
+min_ndocs = 20
+maxforms = 8                 # cap on how many corpus spellings one folded form may reach
+
 [lemmas]
 algorithm = "fft"           # "fft" | "dnet" | "randsel" | "multirandsel"
 num_clusters = 0             # 0 = auto (sqrt(vocsize))

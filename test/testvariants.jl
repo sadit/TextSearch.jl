@@ -46,12 +46,13 @@ using Test, TextSearch, SimilaritySearch
         # in the vocabulary: used as typed, nothing added -- writing carefully is not penalized
         r = res("sol")
         @test r.tokens == ["sol"]
-        @test r.resolved[1].invocabulary && isempty(r.resolved[1].added)
+        @test r.resolved[1].ndocs > 0 && isempty(r.resolved[1].added)
+        @test r.resolved[1].dominant == "sol"       # its own group, so it carries the expansion
         @test isempty(explain(r))
 
         # out of vocabulary, bridged by a COMPUTED spelling: nothing is stored for this
         r = res("madrid")
-        @test r.tokens == ["madrid", "Madrid"]
+        @test r.tokens == ["madrid", "Madrid"]   # the typed form is never dropped
         @test r.resolved[1].added == ["Madrid" => :derived]
         @test !haskey(v, "madrid")
         @test occursin("not found", only(explain(r)))
@@ -62,7 +63,55 @@ using Test, TextSearch, SimilaritySearch
         @test all(p -> last(p) === :variant, r.resolved[1].added)
 
         # unbridgeable: passed through, matching nothing, exactly as before
-        @test res("inexistente").tokens == ["inexistente"]
+        r = res("inexistente")
+        @test r.tokens == ["inexistente"]
+        @test isempty(r.resolved[1].dominant)    # nothing in the vocabulary, so nothing expands
+    end
+
+    @testset "the ratio rule: presence is not enough, and a bridge does not drag in noise" begin
+        # 60 documents write `música`, one writes `musica` -- the shape measured on Spanish
+        # Wikipedia, where `musica` (9 documents, Italian-language paragraphs) sat beside
+        # `música` (4,404) and `:strict` stopped at the former, returning nothing.
+        corpus = vcat(fill("la música suena", 60), ["musica italiana"],
+                      fill("el sol calienta", 60), ["Sol brilla"], ["SOL memoria"])
+        cfg = mkcfg(lc=false, diac=false)
+        voc = Vocabulary(cfg, corpus; verbose=false)
+        v = derive_variants(voc; min_ndocs=1)
+        @test v == Dict("musica" => ["música"])
+
+        # present but negligible: strict bridges anyway, and says how many documents decided it
+        r = resolve_query_tokens(voc, ["musica"], v)
+        @test r.tokens == ["musica", "música"]      # typed form kept: this only ever adds
+        @test r.resolved[1].rare
+        @test r.resolved[1].dominant == "música"
+        @test occursin("only 1 document", only(explain(r)))
+        # the ratio is what decides it, so disabling it restores stop-at-step-1
+        @test resolve_query_tokens(voc, ["musica"], v; negligible_ratio=Inf).tokens == ["musica"]
+
+        # and the other direction: a bridge does not reach a spelling the corpus barely has.
+        # `SOL` (1 document) is what gave `digitalizada máx chip flash SDRAM` in the real profile
+        @test resolve_query_tokens(voc, ["sol"], v; policy=:aggressive).tokens == ["sol"]
+        @test resolve_query_tokens(voc, ["sol"], v; policy=:aggressive,
+                                   negligible_ratio=Inf).tokens == ["sol", "Sol", "SOL"]
+
+        @test_throws ArgumentError resolve_query_tokens(voc, ["sol"], v; negligible_ratio=0)
+    end
+
+    @testset "expansion_sources: one spelling per typed token, the commonest" begin
+        corpus = vcat(fill("la música suena", 60), ["musica italiana"], fill("el sol brilla", 4))
+        cfg = mkcfg(lc=false, diac=false)
+        voc = Vocabulary(cfg, corpus; verbose=false)
+        v = derive_variants(voc; min_ndocs=1)
+
+        # bridged: the neighbours come from `música`, not from the 1-document `musica` whose
+        # list would be built out of a single Italian paragraph
+        @test expansion_sources(resolve_query_tokens(voc, ["musica"], v)) == ["música"]
+        # unbridged: exactly the token list, so a well-typed query expands as it always did
+        r = resolve_query_tokens(voc, ["sol", "brilla"], v)
+        @test r.tokens == ["sol", "brilla"]
+        @test expansion_sources(r) == ["sol", "brilla"]
+        # nothing in the vocabulary contributes nothing to expand
+        @test isempty(expansion_sources(resolve_query_tokens(voc, ["inexistente"], v)))
     end
 
     @testset "aggressive reaches what strict cannot" begin

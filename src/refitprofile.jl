@@ -332,7 +332,7 @@ function refit_profile(base::TextProfile, sample_voc::Vocabulary;
         f = fold_lemmas(base_voc, lemmamap)
         base_voc = f.voc
         verbose && println(stderr,
-            "refit: folded $(f.folded) base gettoken(s) into their lemmas " *
+            "refit: folded $(f.folded) base token(s) into their lemmas " *
             "($(vocsize(base.model.voc)) -> $(vocsize(base_voc)) tokens; " *
             "$(f.dropped) dropped whose lemma was not in the base vocabulary; " *
             "ndocs capped at trainsize for $(f.capped))")
@@ -367,7 +367,7 @@ function refit_profile(base::TextProfile, sample_voc::Vocabulary;
         fromsample = count(id -> token2id(sample_voc, gettoken(voc, id)) != 0, eachindex(voc))
         println(stderr,
             "refit: vocsize $(vocsize(base.model.voc)) (base) + $(vocsize(sample_voc)) (sample) " *
-            "-> $(vocsize(voc)); $fromsample gettoken(s) seen in the sample, " *
+            "-> $(vocsize(voc)); $fromsample token(s) seen in the sample, " *
             "$(vocsize(voc) - fromsample) carried from the base alone")
         # TextSearch.avgdoclen, qualified deliberately: the `avgdoclen` KEYWORD shadows the
         # function of that name throughout this body, and calling it bare is a MethodError
@@ -408,7 +408,7 @@ function refit_profile(base::TextProfile, sample_docs; apply_lemmas::Bool=true, 
             sample_voc = Vocabulary(tc, sample_docs; verbose=false)
             verbose && println(stderr,
                 "refit: extended the lemma map with $(length(ext)) morphological entr" *
-                "$(length(ext) == 1 ? "y" : "ies") for gettoken(s) the base had not seen")
+                "$(length(ext) == 1 ? "y" : "ies") for token(s) the base had not seen")
         end
     end
 

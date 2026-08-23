@@ -1,6 +1,7 @@
 # This file is a part of TextSearch.jl
 
-export derive_variants, resolve_query_tokens, QueryResolution, ResolvedToken, explain
+export derive_variants, resolve_query_tokens, QueryResolution, ResolvedToken, explain,
+       expansion_sources
 
 using Base.Unicode
 
@@ -97,10 +98,14 @@ function derive_variants(voc::Vocabulary; min_ndocs::Integer=20, maxforms::Integ
 end
 
 """
-    ResolvedToken(typed, invocabulary, added)
+    ResolvedToken(typed, ndocs, rare, added, dominant)
 
-What happened to one token of a query: the form as `typed`, whether that form was itself a
-vocabulary token, and every form that was `added` for it as `form => reason`.
+What happened to one token of a query: the form as `typed`, how many documents hold that exact
+spelling (`ndocs`, zero when it is not a vocabulary token), whether it is `rare` next to the
+commonest spelling of its group, every form that was `added` for it as `form => reason`, and
+`dominant` -- that commonest spelling, which is the one allowed to contribute query expansion
+(see [`expansion_sources`](@ref)). `dominant` is empty only when no spelling of the group is in
+the vocabulary at all.
 
 Reasons currently produced:
 
@@ -118,8 +123,10 @@ user what was searched should be able to distinguish them. Deliberately not buil
 """
 struct ResolvedToken
     typed::String
-    invocabulary::Bool
+    ndocs::Int
+    rare::Bool
     added::Vector{Pair{String,Symbol}}
+    dominant::String
 end
 
 """
@@ -149,13 +156,47 @@ function explain(r::QueryResolution)
     for t in r.resolved
         isempty(t.added) && continue
         by = join(("$f ($why)" for (f, why) in t.added), ", ")
-        push!(out, t.invocabulary ? "$(t.typed) also searched as $by" :
-                                    "$(t.typed) not found, searched as $by")
+        push!(out,
+            t.ndocs == 0 ? "$(t.typed) not found, searched as $by" :
+            t.rare       ? "$(t.typed) appears in only $(t.ndocs) document$(t.ndocs == 1 ? "" : "s"), also searched as $by" :
+                           "$(t.typed) also searched as $by")
     end
     out
 end
 
-Base.show(io::IO, t::ResolvedToken) = print(io, t.typed, t.invocabulary ? "" : "*",
+"""
+    expansion_sources(r::QueryResolution) -> Vector{String}
+
+The tokens a consumer should look up in a query-expansion network: one per typed token, its
+group's commonest spelling.
+
+Not every token that was searched, and this is measured rather than stylistic. Expansion over the
+whole bridged set mixes senses, because bridging deliberately reaches spellings the corpus barely
+holds and their neighbour lists come from a handful of documents: on Spanish Wikipedia paragraphs
+`SOL` (5 documents) gives `digitalizada máx chip flash SDRAM`, `Ano` (5) gives the Annobón islands,
+`rio` (12, the verb *reír*) gives `llorar tiró Nazgûl`, and `musica` (9, Italian-language
+paragraphs) gives `libreto Puccini Verdi Semiramide`. A search for `musica de leon` returned
+Antonio Vivaldi and a chess article.
+
+Expanding only what the user typed is not the fix either -- it fails in exactly those cases, since
+the typed form *is* the rare one. The dominant spelling is: `sol` bridged gives `Sol` (1,659
+documents) and `afelio perihelio eclipses eclíptica`, `rio` gives `río` and `afluente confluencia
+cauce desemboca`. The rarer spellings stay in the search set as matching terms, where a wrong one
+costs a handful of false positives instead of eight high-idf junk terms.
+
+When nothing was bridged, the group is the typed token alone and this is exactly the token list --
+so an unbridged query expands as it always did.
+"""
+function expansion_sources(r::QueryResolution)
+    out = String[]
+    for t in r.resolved
+        isempty(t.dominant) && continue
+        t.dominant in out || push!(out, t.dominant)
+    end
+    out
+end
+
+Base.show(io::IO, t::ResolvedToken) = print(io, t.typed, t.ndocs == 0 ? "*" : "",
     isempty(t.added) ? "" : " +[" * join(("$f:$w" for (f, w) in t.added), " ") * "]")
 
 function Base.show(io::IO, r::QueryResolution)
@@ -167,28 +208,55 @@ end
 
 """
     resolve_query_tokens(voc::Vocabulary, tokens, variants=nothing;
-                         policy::Symbol=:strict) -> QueryResolution
+                         policy::Symbol=:strict, negligible_ratio::Real=50) -> QueryResolution
 
 Turns the tokens of a query into the tokens to search with, recording why.
 
+Each typed token defines a **group**: the vocabulary spellings it could be searched as -- itself,
+the spellings *computed* from its folded form per [`_derivable_forms`](@ref), and whatever the
+stored `variants` map holds for that folded form. The group's commonest spelling is its
+`dominant`, and `negligible_ratio` is what makes a spelling count: a spelling holding fewer than
+`1 / negligible_ratio` of the dominant's documents is negligible.
+
 # Policies
 
-`:strict` (default) treats bridging as a **fallback**, per token:
+`:strict` (default) treats bridging as a **fallback**: if the typed form is a vocabulary token
+and is not negligible, it is used as typed and nothing is added. Someone who wrote `Sol` or
+`práctico` said something specific and it exists, so writing carefully is not penalized, and this
+is what makes the whole approach safe to have on by default.
 
-1. If the typed form is a vocabulary token, use it and stop. Someone who wrote `Sol` or
-   `práctico` said something specific and it exists, so nothing is added -- writing carefully is
-   not penalized, and this is what makes the whole approach safe to have on by default.
-2. Otherwise fold it and add the **derivable** spellings that exist: `madrid` -> `Madrid`.
-3. Then add whatever the stored `variants` map holds for the folded form: `leon` -> `León`.
+Being in the vocabulary is not by itself enough, and that is measured. `min_ndocs=5` on the
+vocabulary means unaccented misspellings and foreign-language fragments *are* tokens, so the
+premise "it exists, therefore they meant it" fails: on 272,466 Spanish Wikipedia paragraphs
+`ingles` holds 7 documents against `inglés`'s 5,188, `dia` 10 against `día`'s 7,093, `musica` 9
+against `música`'s 4,404. Of the 518 map keys that are themselves vocabulary tokens, 111 have a
+spelling ten times commoner and 36 have one fifty times commoner. End to end, `search musica`
+returned **0 paragraphs** before this rule and 314 after. So `:strict` bridges when the typed form
+is present but negligible, and [`explain`](@ref) reports it with the document count that decided
+it.
 
-`:aggressive` skips step 1: every token is folded and bridged whether or not it was found. This
-trades precision for reach and is the right choice when recall matters more -- and it is the only
-way to reach an accented alternative of a token that is *itself* in the vocabulary, since under
-`:strict` a typed `practico` stops at step 1 and never sees `practicó`. Both are legitimate; the
+`:aggressive` skips the check entirely: every token is bridged whether or not it was found. It is
+the only way to reach an accented alternative of a token that is itself common -- typed `practico`
+is not negligible next to `práctico`, so `:strict` leaves it alone. Both are legitimate; the
 caller knows which it wants.
 
-Both policies only ever *add*. The typed form is always kept, so a token that is out of
-vocabulary and unbridgeable passes through and matches nothing, exactly as it would have before.
+# What the ratio prunes, and what it never touches
+
+Negligible **bridged** spellings are dropped, which is what keeps a bridge from dragging in
+tokens the corpus barely has: `sol` no longer reaches `SOL` (5 documents against 1,659), `ano` no
+longer reaches `Ano` (5 against 18,285). This closes a gap where the query side was looser than
+the artifact -- [`derive_variants`](@ref) applies `min_ndocs` when *building* the map, while
+resolution used to admit any spelling merely present.
+
+**The typed form is never dropped.** It is always in the result, negligible or not, so this only
+ever adds. That is deliberate and it is where the ratio stops: `cuba` holds 18 documents against
+`Cuba`'s thousands, and someone typing lowercase almost certainly means the country -- but the
+barrel is what they typed, it costs a handful of false positives to keep it, and silently
+discarding a person's own word to search something else instead is not a trade this should make on
+its own. The sense separation that `lc=false` buys is preserved where it does the work anyway: in
+idf, in the embeddings, and in the per-sense expansion lists.
+
+Pass `negligible_ratio=Inf` to disable the pruning entirely and admit every spelling present.
 
 # On ambiguity
 
@@ -198,37 +266,79 @@ buys on the document side, and the split is the point: the corpus keeps the dist
 and embeddings stay per-sense, while the query bridges it.
 """
 function resolve_query_tokens(voc::Vocabulary, tokens, variants=nothing;
-                              policy::Symbol=:strict)
+                              policy::Symbol=:strict, negligible_ratio::Real=50)
     policy in (:strict, :aggressive) ||
         throw(ArgumentError("policy must be :strict or :aggressive; got $(repr(policy))"))
+    negligible_ratio > 0 ||
+        throw(ArgumentError("negligible_ratio must be positive; got $negligible_ratio"))
     norm = voc.textconfig.normalization
     out = String[]
     resolved = ResolvedToken[]
 
     for tok in tokens
-        found = token2id(voc, tok) != 0
-        tok in out || push!(out, tok)
-        added = Pair{String,Symbol}[]
+        id = token2id(voc, tok)
+        typedn = id == 0 ? 0 : Int(getndocs(voc, id))
+        tok in out || push!(out, tok)        # never dropped: this only ever adds
 
-        if !(found && policy === :strict)
-            f = _fold(tok; lc=!norm.lc, diac=!norm.del_diac)
-            for cand in _derivable_forms(f)
-                (cand in out || token2id(voc, cand) == 0) && continue
-                push!(out, cand); push!(added, cand => :derived)
-            end
-            if variants !== nothing
-                forms = get(variants, f, nothing)
-                if forms !== nothing
-                    for t in forms
-                        (t in out || token2id(voc, t) == 0) && continue
-                        push!(out, t); push!(added, t => :variant)
-                    end
-                end
-            end
+        cands = _candidate_group(voc, tok, variants, norm)
+        if isempty(cands)
+            push!(resolved, ResolvedToken(tok, typedn, false, Pair{String,Symbol}[],
+                                          id == 0 ? "" : tok))
+            continue
         end
 
-        push!(resolved, ResolvedToken(tok, found, added))
+        # the dominant spelling and the floor every other one has to clear
+        dominant, best = (id == 0 ? "" : tok), typedn
+        for (c, _, n) in cands
+            n > best && ((dominant, best) = (c, n))
+        end
+        floor = best / negligible_ratio
+        rare = id != 0 && typedn < floor
+
+        if policy === :strict && id != 0 && !rare
+            push!(resolved, ResolvedToken(tok, typedn, false, Pair{String,Symbol}[], tok))
+            continue
+        end
+
+        added = Pair{String,Symbol}[]
+        for (c, why, n) in cands
+            n >= floor || continue
+            c in out || push!(out, c)
+            push!(added, c => why)
+        end
+        push!(resolved, ResolvedToken(tok, typedn, rare, added, dominant))
     end
 
     QueryResolution(out, resolved)
+end
+
+"""
+    _candidate_group(voc, tok, variants, norm) -> Vector{Tuple{String,Symbol,Int}}
+
+The vocabulary spellings `tok` could be searched as besides itself, each with the reason it was
+reached and its document count. Computed spellings come first, then stored ones, so the order a
+caller sees follows how much had to be assumed.
+"""
+function _candidate_group(voc::Vocabulary, tok, variants, norm)
+    cands = Tuple{String,Symbol,Int}[]
+    f = _fold(tok; lc=!norm.lc, diac=!norm.del_diac)
+
+    function offer(cand, why)
+        cand == tok && return
+        i = token2id(voc, cand)
+        i == 0 && return
+        any(c -> c[1] == cand, cands) && return
+        push!(cands, (String(cand), why, Int(getndocs(voc, i))))
+    end
+
+    for cand in _derivable_forms(f)
+        offer(cand, :derived)
+    end
+    if variants !== nothing
+        forms = get(variants, f, nothing)
+        forms === nothing || for t in forms
+            offer(t, :variant)
+        end
+    end
+    cands
 end

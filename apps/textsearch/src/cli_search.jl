@@ -37,6 +37,12 @@ function parse_search_args(args::Vector{String})
         "--no-query_expansion"
             help = "do not expand the query with the profile's query_expansion network"
             action = :store_true
+        "--variants-policy"
+            help = "how the profile's orthographic variants resolve a query token: " *
+                   "strict (bridge only when the typed token is not in the vocabulary, so a " *
+                   "carefully typed query is left alone) | aggressive (always bridge, the only " *
+                   "way to reach an accented alternative of a token that itself exists)"
+            default = "strict"
         "--query_expansion-k"
             help = "use at most this many query_expansion per query token (0 = all the profile stored)"
             arg_type = Int
@@ -74,15 +80,30 @@ step only a query gets: query expansion.
 Each query_expansion is itself tokenized through `tc`, which is what lets it meet document tokens
 on the same footing: a query_expansion stored in an inflected form arrives lemmatized, and one that
 is a stopword drops out. `report` carries the intermediate sets for the stderr summary,
-which is the point of this being a probe command: it shows which artifact contributed what.
+which is the point of this being a probe command: it shows which artifact contributed what --
+including `resolution`, which says per typed token whether it was found and what was bridged for
+it, since a search that silently substitutes what was asked for should be able to say so.
 """
-function _query_tokens(p, query::AbstractString, tc, usequeryexpansion::Bool, synk::Int)
+function _query_tokens(p, query::AbstractString, tc, usequeryexpansion::Bool, synk::Int;
+                       variantpolicy::Symbol=:strict)
     raw = collect(tokenize(tc, query))
-    base = Set{String}(raw)
 
+    # Orthographic bridging first: it turns what the person typed into spellings the corpus
+    # actually contains, and everything downstream should work on those. Under `:strict` a token
+    # that is in the vocabulary and not negligible beside its variants is left alone, so this is
+    # inert for a well-typed query.
+    res = p.applied.variants ?
+        resolve_query_tokens(p.model.voc, raw, p.variants; policy=variantpolicy) :
+        resolve_query_tokens(p.model.voc, raw, nothing; policy=variantpolicy)
+    base = Set{String}(res.tokens)
+    bridged = setdiff(base, Set(raw))
+
+    # Expansion runs on one spelling per typed token -- the commonest of its bridged group --
+    # rather than on every token searched. See `expansion_sources`: expanding the whole bridged
+    # set mixes senses, because a bridge deliberately reaches spellings the corpus barely holds.
     expanded = Set{String}()
     if usequeryexpansion
-        for tok in raw
+        for tok in expansion_sources(res)
             neighbors = get(p.query_expansion, tok, nothing)
             neighbors === nothing && continue
             for (i, syn) in enumerate(neighbors)
@@ -95,7 +116,7 @@ function _query_tokens(p, query::AbstractString, tc, usequeryexpansion::Bool, sy
         setdiff!(expanded, base)
     end
 
-    union(base, expanded), (; raw, base, expanded)
+    union(base, expanded), (; raw, base, expanded, bridged, resolution=res)
 end
 
 """
@@ -156,19 +177,28 @@ function cmd_search(args::Vector{String})
     tc = gettextconfig(p)
     lemmas_on = p.applied.lemmas
 
-    qtokens, rep = _query_tokens(p, o["query"], tc, !o["no-query_expansion"], o["query_expansion-k"])
+    policy = Symbol(o["variants-policy"])
+    policy in (:strict, :aggressive) ||
+        error("unknown --variants-policy: $(o["variants-policy"]); supported: strict, aggressive")
+    qtokens, rep = _query_tokens(p, o["query"], tc, !o["no-query_expansion"], o["query_expansion-k"];
+                                 variantpolicy=policy)
     isempty(qtokens) && error("the query has no tokens under this profile's TextConfig " *
                               "(every term may have been a stopword); nothing could match")
 
     # what the pipeline actually did with the query -- on stderr, so stdout stays pure JSONL
     basestr = join(sort(collect(rep.base)), " ")
     expstr = join(sort(collect(rep.expanded)), " ")
-    println(stderr, "query: $(length(rep.raw)) gettoken(s) -> $basestr")
+    println(stderr, "query: $(length(rep.raw)) token(s) -> $basestr")
+    # Bridging is spelling correction, so say what was actually searched rather than doing it
+    # silently -- and distinguish a correction (the typed form was not there) from an enrichment.
+    for line in explain(rep.resolution)
+        println(stderr, "  ~ $line")
+    end
     isempty(rep.expanded) ||
         println(stderr, "  + $(length(rep.expanded)) query_expansion(s) -> $expstr")
     # report what the profile actually carries, not what was requested: --no-lemmas on a
     # profile that never applied them changes nothing, and a probe command should say so
-    println(stderr, "  matching with threshold=$(o["threshold"]) over $(length(qtokens)) gettoken(s), " *
+    println(stderr, "  matching with threshold=$(o["threshold"]) over $(length(qtokens)) token(s), " *
                     "lemmas=$(lemmas_on ? "on" : "off") " *
                     "(profile carries $(length(base.lemmas)), " *
                     "$(base.applied.lemmas ? "applied" : "not applied")), " *
