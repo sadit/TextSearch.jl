@@ -314,8 +314,20 @@ if has_step prepare; then
     if [[ "$SPLIT_PARAGRAPHS" == "true" ]]; then
       extra+=(--split-paragraphs --title-column title --min-tokens "$MIN_TOKENS")
     fi
-    ts_julia "$CP_ROOT/lib/parquet_to_jsonl.jl" "$JSONL" "${shards[@]}" \
-      --text-column text --min-chars "$MIN_CHARS" --keep-columns id,title,url "${extra[@]}"
+    # Written under a temporary name and renamed only on success, because the reuse check above
+    # can only see that a file is non-empty -- not that its conversion ever finished. An
+    # interrupted conversion under the final name is the worst possible artifact: `fit` runs on
+    # it without complaint and every statistic it derives is of a truncated corpus. Observed:
+    # a pt conversion stopped after 2,851,359 of ~10.2M paragraphs was picked straight up by the
+    # next run. A partial file is left behind as $JSONL.partial for inspection and overwritten by
+    # the next attempt.
+    partial="$JSONL.partial"
+    rm -f "$partial"
+    ts_julia "$CP_ROOT/lib/parquet_to_jsonl.jl" "$partial" "${shards[@]}" \
+      --text-column text --min-chars "$MIN_CHARS" --keep-columns id,title,url "${extra[@]}" \
+      || die "conversion failed; partial output left at $partial"
+    mv -f "$partial" "$JSONL"
+    log "converted -> $JSONL ($(du -h "$JSONL" | cut -f1), $(wc -l < "$JSONL") records)"
   fi
 fi
 
