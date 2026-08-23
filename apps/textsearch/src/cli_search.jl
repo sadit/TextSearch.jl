@@ -80,7 +80,7 @@ function _resolve_profile_path(spec::AbstractString)
 end
 
 """
-    _query_tokens(p, query, tc, policy::QueryPolicy) -> (Set{String}, report)
+    _query_tokens(p, query, tc, policy::QueryPolicy, variants) -> (Set{String}, report)
 
 Builds the query's token set by running it through the same `tc` a document goes through --
 so normalization, stopwords and lemmas all apply identically to both sides -- plus the two steps
@@ -94,15 +94,14 @@ including `resolution`, which says per typed token what was searched for it and 
 spelling itself survived, since a search that corrects what was asked for has to be able to say so
 and to offer the literal query back.
 """
-function _query_tokens(p, query::AbstractString, tc, policy::QueryPolicy)
+function _query_tokens(p, query::AbstractString, tc, policy::QueryPolicy, variants)
     raw = collect(tokenize(tc, query))
 
     # Correction first: it turns what the person typed into spellings the corpus actually
     # contains, and everything downstream works on those. Under `:auto` a token that is in the
     # vocabulary and not negligible beside its variants is left alone, so this is inert for a
     # well-typed query.
-    res = resolve_query_tokens(p.model.voc, raw,
-                               p.applied.variants ? p.variants : nothing, policy)
+    res = resolve_query_tokens(p.model.voc, raw, variants, policy)
     base = Set{String}(res.tokens)
     bridged = setdiff(base, Set(raw))
 
@@ -194,7 +193,12 @@ function cmd_search(args::Vector{String})
     policy = QueryPolicy(; correction, expansion=!o["no-query_expansion"],
                            expansion_k=o["query_expansion-k"],
                            negligible_ratio=o["correction-ratio"])
-    qtokens, rep = _query_tokens(p, o["query"], tc, policy)
+    # Derived here rather than read from the profile: the map is a pure function of the
+    # vocabulary, so storing it would be a second copy of something already in the file -- and a
+    # stale one, since a merge cannot union per-part maps correctly. 0.24s over the 479,245-token
+    # Portuguese Wikipedia vocabulary, once per invocation.
+    variants = policy.correction === :off ? nothing : derive_variants(p.model.voc)
+    qtokens, rep = _query_tokens(p, o["query"], tc, policy, variants)
     isempty(qtokens) && error("the query has no tokens under this profile's TextConfig " *
                               "(every term may have been a stopword); nothing could match")
 

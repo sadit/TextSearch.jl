@@ -144,7 +144,7 @@ end
 
 Serializes a [`TextProfile`](@ref) into `dir` (created if missing) as a small directory of
 plain, human-readable JSON files: one per "large" piece -- `vocabulary.json`, `weights.json`,
-and `stopwords.json`/`lemmas.json`/`query_expansion.json`/`query_expansion_distances.json`/`variants.json` for whichever
+and `stopwords.json`/`lemmas.json`/`query_expansion.json`/`query_expansion_distances.json` for whichever
 artifacts are non-empty -- tied together by a `manifest.json` holding everything else.
 
 The manifest keeps policy and artifacts apart, which is the point of the layout:
@@ -214,11 +214,6 @@ function save_profile(dir::AbstractString, p::TextProfile)
             end
         end
         artifacts["query_expansion"] = entry
-    end
-
-    if !isempty(p.variants)
-        _write_json(joinpath(dir, "variants.json"), p.variants)
-        artifacts["variants"] = Dict("file" => "variants.json", "applied" => p.applied.variants)
     end
 
     _write_json(joinpath(dir, _PROFILE_MANIFEST_NAME), Dict(
@@ -315,18 +310,12 @@ function load_profile(path::AbstractString)
         Dict{String,Vector{String}}(), nothing, false
     end
 
-    variants, var_applied = if haskey(art, :variants)
-        e = art[:variants]
-        d = read_file(String(e[:file]))
-        Dict{String,Vector{String}}(String(k) => String[String(x) for x in v]
-                                    for (k, v) in pairs(d)), Bool(e[:applied])
-    else
-        Dict{String,Vector{String}}(), false
-    end
-
-    TextProfile(model, stopwords, lemmas, query_expansion, syndists, variants,
+    # A `variants` entry written by an earlier build is ignored rather than rejected: the map is
+    # derived from the vocabulary now (see `derive_variants`), so a stored one is dead weight, not
+    # a conflict, and profiles fitted before the change stay loadable.
+    TextProfile(model, stopwords, lemmas, query_expansion, syndists,
                 AppliedArtifacts(stopwords=sw_applied, lemmas=lem_applied,
-                                 query_expansion=syn_applied, variants=var_applied),
+                                 query_expansion=syn_applied),
                 _decode_lineage(manifest[:lineage]))
 end
 

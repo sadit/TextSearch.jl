@@ -35,7 +35,7 @@ to compute whether the corpus writes `práctico` or `practicó`, and both are re
 _derivable_forms(folded::AbstractString) = (folded, uppercasefirst(folded), uppercase(folded))
 
 """
-    derive_variants(voc::Vocabulary; min_ndocs=20, maxforms=8) -> Dict{String,Vector{String}}
+    derive_variants(voc::Vocabulary; min_ndocs=1, maxforms=8) -> Dict{String,Vector{String}}
 
 Builds the query-side variant map for `voc`: for a folded spelling, the vocabulary tokens it
 should reach that **cannot be computed from it**.
@@ -54,21 +54,39 @@ of the time and at rank 1 in 6.3%. Where it does appear, the pair are function w
 is merely sentence-initial; where it does not, the two forms have genuinely different senses and
 the network is right to keep them apart.
 
-# What it leaves out, and why the map is small
+# This is computed, never stored
 
-**Derivable capitalization**, per [`_derivable_forms`](@ref): `madrid -> Madrid` is not stored
-because it is computed at query time. Two thirds of the pairs are of that shape.
+A profile does not carry a variant map: it is a pure function of the vocabulary the profile
+already holds, so storing one is a second copy of the same information -- and a copy that goes
+wrong, because per-part maps cannot be combined into the map the combined vocabulary yields.
+Measured on 9 parts of Portuguese Wikipedia, unioning them gave 21,646 keys against the 30,968
+the merged vocabulary itself produces: a strict subset missing 30%, `tropecar -> tropeçar` among
+them at 132 documents corpus-wide and about 15 per part, under any per-part floor. Deriving from
+the merged counters instead costs 0.24s over 479,245 tokens.
 
-**Anything below `min_ndocs`.** A token appearing in a handful of documents is not a plausible
-query target, so bridging to it buys nothing and the entries are pure size. Measured, the two
-together take the map from 62,825 keys to 8,153 -- 87% smaller -- and the part that survives is
-precisely the non-derivable part: the derivable fraction falls from 67% of pairs at a floor of 5
-documents to 53% at 100, because rare tokens are disproportionately proper nouns whose only
-variation is a capital, while frequent ones carry real accent alternatives.
+# What it leaves out
+
+**Derivable capitalization**, per [`_derivable_forms`](@ref): `madrid -> Madrid` is not included
+because it is computed at query time from the folded form. Two thirds of the pairs are of that
+shape, and the fraction falls with frequency -- 67% of pairs at 5 documents against 53% at 100 --
+because rare tokens are disproportionately proper nouns whose only variation is a capital, while
+frequent ones carry real accent alternatives.
+
+**Anything below `min_ndocs`**, which defaults to no filtering at all. The floor was worth having
+while the map was an artifact on disk; now that it is transient, its only remaining job is cost,
+and there is little to buy: on the 479,245-token Portuguese vocabulary a floor of 1 gives 61,925
+keys in 0.62s and 10.3 MB against 30,968 in 0.27s and 4.1 MB at a floor of 20. The 62k map has
+twice the coverage of exactly the long tail a person is most likely to mistype and least likely to
+find otherwise. Note also that a vocabulary pruned at fit time already imposes its own floor:
+these profiles use `min_ndocs=5` there, so 1, 2 and 5 here produce identical maps.
+
+Query-time quality is not this function's job either. A bridged spelling is admitted only if it is
+not negligible beside the commonest spelling of its group -- see `negligible_ratio` in
+[`QueryPolicy`](@ref) -- which is a relative test and a better one than any absolute count.
 
 Values are ordered by document frequency, most frequent first, and capped at `maxforms`.
 """
-function derive_variants(voc::Vocabulary; min_ndocs::Integer=20, maxforms::Integer=8)
+function derive_variants(voc::Vocabulary; min_ndocs::Integer=1, maxforms::Integer=8)
     norm = voc.textconfig.normalization
     # only folds the profile did not already apply can produce anything
     (norm.lc && norm.del_diac) && return Dict{String,Vector{String}}()

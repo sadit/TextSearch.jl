@@ -34,10 +34,6 @@ mark_token_type = true
 [vocabulary]
 min_ndocs = %MIN_NDOCS%
 
-[variants]
-enabled = true
-min_ndocs = %VAR_MIN_NDOCS%
-
 [stopwords]
 enabled = %STOPWORDS%
 doc_freq_threshold = 0.5
@@ -67,14 +63,13 @@ function write_jsonl_corpus(path, docs)
 end
 
 function write_fit_config(path; corpus, outdir, batch_size=0, stopwords=false, min_ndocs=1,
-                          resume=false, lemma_apply=true, lc=true, del_diac=true,
-                          var_min_ndocs=1)
+                          resume=false, lemma_apply=true, lc=true, del_diac=true)
     cfg = replace(FIT_CONFIG,
         "%CORPUS%" => corpus, "%OUTDIR%" => outdir,
         "%BATCH_SIZE%" => string(batch_size), "%STOPWORDS%" => string(stopwords),
         "%MIN_NDOCS%" => string(min_ndocs), "%RESUME%" => string(resume),
         "%LEMMA_APPLY%" => string(lemma_apply), "%LC%" => string(lc),
-        "%DEL_DIAC%" => string(del_diac), "%VAR_MIN_NDOCS%" => string(var_min_ndocs))
+        "%DEL_DIAC%" => string(del_diac))
     write(path, cfg)
     path
 end
@@ -297,7 +292,8 @@ end
                                            corpus=accented, outdir, lc=false, del_diac=false)
                 TextSearchApp.cmd_fit(["--config", cfgpath])
                 zp = joinpath(outdir, "corpus-0001.zip")
-                @test !isempty(TextSearch.load_profile(zp).variants)
+                # nothing stored: the map is derived from the vocabulary the profile carries
+                @test !isempty(derive_variants(TextSearch.load_profile(zp).model.voc; min_ndocs=1))
 
                 function texts(args...)
                     out = capture_stdout() do

@@ -166,6 +166,28 @@ using Test, TextSearch, SimilaritySearch
         @test gettextconfig(merged).pipeline.lemmas !== nothing
     end
 
+    @testset "the merge does not carry variants: they come from the merged vocabulary" begin
+        # Unioning the inputs' maps looked right and was measurably wrong. Each is built with a
+        # per-part document floor, so a union misses every spelling that never cleared the floor
+        # in any single part while clearing it corpus-wide. Measured on 9 parts of Portuguese
+        # Wikipedia the union gave 21,646 keys against the 30,968 the merged vocabulary yields --
+        # a strict subset missing 30%, `tropecar -> tropeçar` among them at 132 documents
+        # corpus-wide, about 15 per part. This is that arithmetic in miniature: `León` is in one
+        # document of each input and two of the merge, so a floor of 2 is cleared only after
+        # merging.
+        unfolded = TextConfig(normalization=NormalizationConfig(lc=false, del_diac=false,
+                                                                del_punc=true),
+                              tokenization=TokenizationConfig(nlist=[1]))
+        a = roundtrip(["León es una ciudad", "otra cosa cualquiera"]; textconfig=unfolded)
+        b = roundtrip(["León y Castilla", "mas cosas distintas"]; textconfig=unfolded)
+        merged = merge_profiles([a, b])
+
+        @test !hasproperty(merged, :variants)
+        @test isempty(derive_variants(a.model.voc; min_ndocs=2))    # one document alone
+        @test isempty(derive_variants(b.model.voc; min_ndocs=2))
+        @test derive_variants(merged.model.voc; min_ndocs=2) == Dict("leon" => ["León"])
+    end
+
     @testset "a disagreeing lemma map votes rather than erroring" begin
         applied_lem = AppliedArtifacts(lemmas=true)
         a = roundtrip(docs; lemmas=Dict("roja" => "casa"), applied=applied_lem)

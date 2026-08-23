@@ -116,32 +116,35 @@ using Test, TextSearch, SimilaritySearch
     end
 end
 
-@testset "variants are carried but never enter the tokenization config" begin
-    # They are query-side and need the vocabulary to decide anything (see `resolve_query_tokens`),
-    # so unlike lemmas and stopwords they are not a pipeline stage: one config serves fitting,
-    # indexing and searching, and a consumer using the vocabulary's own config cannot apply them
-    # by accident.
-    docs = ["la casa roja", "la casa verde", "una pera"]
-    voc = Vocabulary(TextConfig(tokenization=TokenizationConfig(nlist=[1])), docs; verbose=false)
+@testset "variants are not an artifact: derived from the vocabulary, never stored" begin
+    # A variant map is a pure function of the vocabulary, so a profile carrying one would be a
+    # second copy of what is already in the file -- and the merge proved the copy can be wrong,
+    # since per-part maps cannot be unioned into what the merged counters yield. It is also
+    # query-side and needs the vocabulary to decide anything (see `resolve_query_tokens`), so
+    # unlike lemmas and stopwords it is not a pipeline stage either: one config serves fitting,
+    # indexing and searching, and no consumer can apply it by accident.
+    docs = ["León es una ciudad", "el león rugió", "León y Castilla", "un león viejo"]
+    cfg = TextConfig(normalization=NormalizationConfig(lc=false, del_diac=false, del_punc=true),
+                     tokenization=TokenizationConfig(nlist=[1]))
+    voc = Vocabulary(cfg, docs; verbose=false)
     model = VectorModel(IdfWeighting(), TfWeighting(), voc)
-    variants = Dict("leon" => ["león", "León"])
+    p = TextProfile(model; stopwords=Set(["es"]), applied=AppliedArtifacts(stopwords=true))
 
-    p = TextProfile(model; stopwords=Set(["la"]), variants,
-                    applied=AppliedArtifacts(stopwords=true, variants=true))
-    @test p.variants == variants
-    @test p.applied.variants
+    @test !hasproperty(p, :variants)
+    @test !hasproperty(p.applied, :variants)
     @test gettextconfig(p) === p.model.voc.textconfig
-    @test gettextconfig(p).pipeline.stopwords == Set(["la"])
     @test collect(tokenize(gettextconfig(p), "leon")) == ["leon"]   # no fan-out anywhere
 
-    @test !with_applied(p; variants=false).applied.variants
-    @test with_applied(p; variants=false).variants == variants      # still carried
+    # what a consumer does instead, from the vocabulary the profile already carries
+    v = derive_variants(p.model.voc; min_ndocs=1)
+    @test Set(v["leon"]) == Set(["león", "León"])
 
     dir = tempname()
     try
         save_profile(dir, p)
+        @test !isfile(joinpath(dir, "variants.json"))
         r = load_profile(dir)
-        @test r.variants == variants && r.applied.variants
+        @test derive_variants(r.model.voc; min_ndocs=1) == v   # same vocabulary, same map
     finally
         rm(dir; recursive=true, force=true)
     end

@@ -102,11 +102,6 @@ ts_render_fit_config() {
   # time. Defaults to true here so drivers that never thought about it keep their old behaviour;
   # the wikipedia driver sets it to false.
   local lc="${TS_LC:-true}"
-  # Query-side orthographic variants, derived from the final vocabulary. With lc and del_diac both
-  # on there is nothing left to fold and the map comes out empty at no cost, so this needs no
-  # switch of its own. The floor is an absolute document count: a spelling nobody would type is
-  # pure size in the artifact.
-  local var_min_ndocs="${TS_VARIANTS_MIN_NDOCS:-20}"
 
   mkdir -p "$(dirname "$out")"
   cat > "$out" << EOF
@@ -145,11 +140,6 @@ min_ndocs = $min_ndocs
 [stopwords]
 enabled = $sw_enabled
 doc_freq_threshold = $sw_thresh
-
-[variants]
-enabled = true
-min_ndocs = $var_min_ndocs
-maxforms = 8
 
 [encoder]
 kind = "lsi"

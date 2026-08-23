@@ -357,7 +357,6 @@ if has_step fit; then
   TS_LEMMA_ALG="$LEMMA_ALG" TS_LEMMA_SEL="$LEMMA_SEL" TS_LANGUAGE="$LANG_CODE" \
   TS_HEAD_DF="${TS_HEAD_DF:-0.0}" \
   TS_DEL_DIAC="$DEL_DIAC" TS_DEL_PUNC="$DEL_PUNC" TS_LC="$LC" \
-  TS_VARIANTS_MIN_NDOCS="${TS_VARIANTS_MIN_NDOCS:-20}" \
     ts_render_fit_config "$FIT_CFG"
   ts_fit "$FIT_CFG"
   log "profiles in $OUT_DIR:"
