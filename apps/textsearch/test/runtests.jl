@@ -89,6 +89,31 @@ function capture_stdout(f)
     end
 end
 
+"""
+The `major.minor` this app's README says its commands and outputs were produced against, and the
+library version it must match. The README's examples are shell invocations, so no test can
+execute them the way `test/testreadme.jl` executes the library README's Julia blocks -- but the
+marker can at least be kept honest, and an unchecked marker drifts exactly the way the examples
+under it did.
+"""
+function readme_declared_version()
+    txt = read(joinpath(@__DIR__, "..", "README.md"), String)
+    m = match(r"Documented for \*\*TextSearch v(\d+\.\d+)\*\*", txt)
+    m === nothing && error("apps/textsearch/README.md has no 'Documented for **TextSearch vX.Y**' marker")
+    m[1]
+end
+
+function library_version()
+    txt = read(joinpath(@__DIR__, "..", "..", "..", "Project.toml"), String)
+    m = match(r"^version\s*=\s*\"(\d+)\.(\d+)"m, txt)
+    m === nothing && error("could not read the package version from Project.toml")
+    "$(m[1]).$(m[2])"
+end
+
+@testset "the app README declares the version it documents" begin
+    @test readme_declared_version() == library_version()
+end
+
 @testset "textsearch CLI" begin
     mktempdir() do dir
         withenv("TEXTSEARCH_HOME" => joinpath(dir, "home")) do

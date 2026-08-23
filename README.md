@@ -11,7 +11,7 @@
 - **Flexible Preprocessing & Tokenization (`TextConfig`)**:
   - Fine-grained character normalization: lowercase conversion, diacritic stripping, punctuation handling, emoji grouping/detection, and regex-based entity replacement (users, URLs, numbers).
   - Word $n$-gram tokenization (`nlist`), paragraph/sentence splitters (`tokenize_paragraphs`, `tokenize_sentences`), and custom token generators (`AbstractTokenGenerator`).
-  - Extensible token transformations (`AbstractTokenTransformation`): stopword filtering (`IgnoreStopwords`), lemma normalization (`LemmaTransformation`), and chained pipelines (`ChainTransformation`). The package has **no dependencies beyond its own** -- no weak deps, no conditional code.
+  - A fixed per-token pipeline (`TokenPipeline`): a lemma map applied first, then a stopword set -- plain data in one order, since the two stages do not commute and the wrong order silently readmits stopwords. New *kinds of token* extend `TokenizationConfig.generators` instead. The package has **no dependencies beyond its own** -- no weak deps, no conditional code.
 - **Vocabulary & Bag-of-Words (`Vocabulary`, `BOW`)**:
   - Fast token $\leftrightarrow$ ID mappings, document frequency tracking, and vocabulary pruning/filtering.
   - Efficient multithreaded corpus processing via `SimilaritySearch.@BATCHES`.
@@ -25,6 +25,9 @@
   - Query expansion networks built by (optionally approximate) all-pairs kNN over token embeddings, storing the neighbour ranking and its distances separately.
   - Lemma maps derived by grouping inflections morphologically and splitting them semantically.
   - Query-time expansion (`expand_query!`) for both sparse-vector and BM25 queries -- applied to queries only, never to documents.
+- **Query Correction (`derive_variants`, `resolve_query_tokens`, `QueryPolicy`)**:
+  - Orthographic bridging so a profile can keep case and diacritics without becoming unsearchable: a query typed `leon` or `musica` reaches `León` and `música`. Derived from the vocabulary rather than stored, since it is a pure function of it.
+  - Reportable and answerable literally: `explain` says what was searched and why, and `QueryPolicy(correction=:off)` gives back the query exactly as typed -- the "search instead for ..." escape a search that corrects by default owes the person who typed it.
 - **Portable Profiles (`TextProfile`, `save_profile`, `load_profile`, `zip_profile`, `merge_profiles`, `refit_profile`)**:
   - A `TextProfile` bundles vocabulary, weights, query_expansion, lemmas and stopwords as plain, inspectable JSON -- no code is ever deserialized. Each artifact is stored once, with a marker saying whether the profile *applies* it, and the `TextConfig` it tokenizes with is derived from those -- so what a profile applies is always what it carries.
   - Whether a profile is a bootstrap model or one tuned to a dataset is read off its recorded lineage (`isbase`/`istuned`), not declared.
@@ -39,7 +42,7 @@
 ```
 Raw text / Corpus
   → TextConfig (normalization: diacritics, lowercase, urls, emojis / tokenization: n-grams
-                / transformation: stopwords, lemmas -- derived from a profile)
+                / pipeline: lemmas then stopwords -- derived from a profile)
   → normalize_text (character-level normalization)
   → tokenize (produces a TokenizedText or list of token strings)
   → Vocabulary (token ⇄ id table, corpus statistics, filtering)
@@ -191,6 +194,73 @@ println("lineage:  ", lineage_summary(tuned))
 Do not judge artifact quality from a six-document corpus: LSI needs real co-occurrence
 statistics before its neighbours mean anything. The mechanics are the point here.
 
+### 4. Correcting and Expanding a Query
+
+A search makes two guesses about what someone meant: that a spelling they typed is the one the
+corpus uses, and that the words they typed are the only ones worth matching. Both are guesses, so
+both are answerable literally -- a [`QueryPolicy`](@ref) travels with the query and says which to
+make.
+
+```julia
+# TextSearch v1.1
+using TextSearch, SimilaritySearch
+
+# Keeping case and diacritics lets the corpus distinguish senses that folding destroys, at the
+# cost that a query typed without them matches nothing. Correction bridges that -- at query
+# time only, since applying it to documents would blur the very distinctions it exists to reach.
+corpus = [
+    "la música clásica del siglo XIX",
+    "un festival de música popular",
+    "la música es un arte",
+    "el sol brilla en el cielo",
+    "el sol de la mañana",
+    "una nota musical: sol mayor",
+    "El Sol es una estrella",
+    "musica italiana del renacimiento",     # the unaccented spelling, in one document
+]
+
+config = TextConfig(normalization=NormalizationConfig(lc=false, del_diac=false, del_punc=true),
+                    tokenization=TokenizationConfig(nlist=[1]))
+voc = Vocabulary(config, corpus)
+
+# The map is DERIVED from the vocabulary rather than stored: it holds only the spellings that
+# cannot be computed from a folded form, so `madrid -> Madrid` is absent while accents are not.
+variants = derive_variants(voc)
+println("bridged:   ", sort(collect(variants)))   # sorted: Dict order is not guaranteed
+
+# `:auto` corrects only where the evidence says the typed spelling is wrong -- here `musica`
+# is in one document against `música`'s three -- and where it corrects, it replaces.
+r = resolve_query_tokens(voc, ["musica"], variants, QueryPolicy(negligible_ratio=2))
+println("corrected: ", r.tokens)
+println("           ", only(explain(r)))
+
+# A well-typed token is left exactly as typed, even though `Sol` exists beside `sol`
+println("untouched: ", resolve_query_tokens(voc, ["sol"], variants).tokens)
+
+# ...and `:off` answers the literal query: the "search instead for ..." escape a consumer
+# that corrects by default owes the person who typed it
+println("literal:   ", resolve_query_tokens(voc, ["musica"], variants,
+                                            QueryPolicy(correction=:off)).tokens)
+```
+
+Output:
+
+```
+bridged:   ["clasica" => ["clásica"], "manana" => ["mañana"], "musica" => ["música"]]
+corrected: ["música"]
+           musica is in 1 document against música's 3, so it reads as a misspelling; searched as música (variant) instead
+untouched: ["sol"]
+literal:   ["musica"]
+```
+
+Correction is orthographic and exact: it reaches other spellings of the same word (case and
+diacritics), every one of them a real vocabulary token. Expansion is semantic and approximate: it
+reaches *different* words, from the profile's `query_expansion` network. They compose in one
+direction -- correction runs first, and expansion draws from the commonest spelling of what it
+produced, which is what keeps a bridge to a rare spelling from dragging that spelling's unreliable
+neighbours into the query.
+
+
 The [`textsearch` CLI app](apps/textsearch) drives this end to end -- fitting profiles over
 large corpora in batches, merging them, refitting one against a dataset sample, and probing
 the result -- without writing Julia.
@@ -291,9 +361,28 @@ what it saves, because there is only one copy.
   the sample when the two corpora's documents are nothing alike.
 - **`extend_lemmas_morphological`**: recovers lemma families for tokens a base profile never
   saw, from surface similarity alone -- no embedding is fit.
-- **`LemmaTransformation`**: lemma normalization in the pipeline, so it applies to documents
-  and queries alike and the idf counts an inflection family together. Chained *before*
-  `IgnoreStopwords`; the reverse order silently reintroduces stopwords.
+- **`TokenPipeline`**: replaces the `AbstractTokenTransformation` hierarchy with a struct of two
+  data fields, a lemma map and a stopword set, applied in that fixed order. Lemmas apply to
+  documents and queries alike, so the idf counts an inflection family together; the order is
+  load-bearing, since filtering first lets `"las"` past a set holding `"la"` and only then
+  rewrites it. Measured on 120,000 paragraphs, the concrete field types also made applying
+  lemmas free: 14.65s -> 10.44s, against 10.28s for the filter alone.
+- **Query correction** (`derive_variants`, `resolve_query_tokens`, `QueryPolicy`, `explain`):
+  orthographic bridging so a profile can keep case and diacritics without becoming
+  unsearchable. Preserving them separates senses that folding destroys -- on Spanish Wikipedia
+  `granada` unfolded reaches the heraldic charge as well as the city, likewise `cuba` the
+  barrel and `leon` the animal -- at the cost that a query typed `leon` matches nothing. The
+  map holds only the spellings that cannot be *computed* from a folded form, so `madrid ->
+  Madrid` is generated at query time and only accent restoration is derived, and it is derived
+  from the vocabulary rather than stored, being a pure function of it.
+
+  `QueryPolicy` decides what to do with it. `:auto` corrects only where the evidence says the
+  typed spelling is wrong -- absent, or negligible beside a commoner spelling of the same word
+  -- and where it corrects it *replaces*; `:off` answers the query exactly as typed, which is
+  the "search instead for ..." escape a search that corrects by default owes the person who
+  typed it; `:always` bridges without evidence. `explain` renders what happened as a
+  comparison, since an absolute count is not a reason: *"musica is in 1020 documents against
+  música's 199211, so it reads as a misspelling"*.
 - The tokenizer's borrowed-buffer API (`tokenizerbuffer`, `borrowtokenizedtext`,
   `TokenizerBuffer`) is exported.
 

@@ -5,6 +5,12 @@ A command-line application for fitting, searching, and managing
 weights, query_expansion networks, clustering-derived lemmas, and stopword candidates for a text
 corpus, packaged as a single `.zip` you can install, share, and query.
 
+<!-- The version this document's commands and outputs were produced against. Checked by
+     apps/textsearch/test/runtests.jl against TextSearch's Project.toml, because a marker
+     nobody verifies drifts exactly the way the examples themselves did. -->
+Documented for **TextSearch v1.1**. Every command in the Tutorial was run to write it and the
+output shown is real.
+
 - **[Install](#install)**
 - **[Manual](#manual)** -- one section per subcommand, with every option
 - **[Tutorial](#tutorial)** -- a worked example from a raw corpus to a search hit
@@ -110,9 +116,11 @@ Notes:
   query_expansion, and lemmas, computed only from that batch's documents -- nothing is shared or
   averaged across batches. Combining several profiles back into one is `merge`'s job (see
   below); `fit` never does that itself.
-- **Where lemmas are applied.** With `lemmas.apply = true` (the default) the lemma map is
-  baked into the profile's `TextConfig` as a `LemmaTransformation`, chained *before*
-  `IgnoreStopwords`. A lemma is a normalization, so it belongs on both sides: once it is in
+- **Where lemmas are applied.** With `lemmas.apply = true` (the default) the lemma map goes
+  into the profile's `TextConfig` as the `TokenPipeline`'s lemma stage, which runs *before* the
+  stopword stage -- the order is not cosmetic: with the filter first, `"las"` is not in a set
+  containing `"la"`, survives it, and is only then rewritten, so the stopword enters the
+  vocabulary through the back door. A lemma is a normalization, so it belongs on both sides: once it is in
   the `TextConfig`, `vectorize`/`bagofwords`/the inverted files/`search` all apply it to
   documents and queries alike, and the idf counts a whole inflection family together instead
   of splitting it across its forms. This needs a *third* tokenization pass, because the map
@@ -169,19 +177,25 @@ through the same `TextConfig`, so one stored in an inflected form arrives lemmat
 meets document tokens on the same footing.
 
 **The query is answered as most probably meant, and always answerable literally.** A profile
-that keeps case and diacritics (`lc=false`) holds `música` but also `musica`, the second in
-nine paragraphs of Italian text -- so `--correction` (default `auto`) corrects a typed spelling
-where the evidence says it is wrong: absent from the vocabulary, or far rarer than another
-spelling of the same word. Where it corrects it **replaces**, and says so on stderr along with
-the way back:
+that keeps case and diacritics (`lc=false`) holds `música` but also `musica` -- the second in a
+thousand paragraphs of Spanish Wikipedia against the first's two hundred thousand, which is what
+a misspelling looks like. So `--correction` (default `auto`) corrects a typed spelling where the
+evidence says it is wrong: absent from the vocabulary, or far rarer than another spelling of the
+same word. Where it corrects it **replaces**, and says so on stderr along with the way back:
 
 ```
-$ textsearch search es-wiki "musica de leon" --collection paragraphs.jsonl -t 2
+$ textsearch search es "musica de leon" --collection paragraphs.jsonl -t 2
 query: 2 token(s) -> Leon León Léon Música león música
-  ~ musica appears in only 9 documents, searched as música (variant), Música (variant) instead
+  ~ musica is in 1020 documents against música's 199211, so it reads as a misspelling; searched as música (variant), Música (variant) instead
   ~ leon not found, searched as Leon (derived), León (variant), león (variant), Léon (variant) instead
   ~ to search as typed instead: --correction off
+  + 16 query_expansion(s) -> Bierzo Castilla Cuartetos Dúos Garrafe Lechazo Leonés Quintetos Sextetos Villaquilambre bands folclórica formados leonesa leonés techno
 ```
+
+That last line is the other half working: the expansion is drawn from `música` and `León`, the
+commonest spellings of what correction produced, so the query reaches the León province (`Bierzo`,
+`Lechazo`, `Villaquilambre`) and music (`Cuartetos`, `folclórica`, `techno`) rather than the
+neighbours of a thousand-paragraph misspelling.
 
 `--correction off` is that literal answer, `--correction always` bridges every token whether or
 not anything suggests it is wrong (the only way to reach an accented alternative of a spelling
@@ -394,7 +408,8 @@ the convenience form. `fold_lemmas` and `blend_vocabularies` are the pieces unde
 
 A complete walkthrough, from a raw corpus to a search hit, using a tiny 7-document
 Spanish corpus about a garden. Every command below is copy-pasteable and was actually run
-to write this section -- the output shown is real, not illustrative.
+to write this section -- the output shown is real, not illustrative. It targets the version
+named at the top of this file.
 
 ### 1. Write a corpus
 
@@ -464,12 +479,13 @@ textsearch fit --config fit.toml
 ```
 
 ```
-saved profile 1/1 (7 docs, vocsize=26) -> ./profiles/jardin-0001.zip
+  detected 2 stopwords; later parts reuse them
+saved profile 1 (7 docs, vocsize=26) -> ./profiles/jardin-0001.zip
 ```
 
 One batch was enough for 7 documents, so exactly one profile came out. `doc_freq_threshold
-= 0.5` flagged "la" (in nearly every document) and "verde" (in 4/7) as stopword
-candidates -- confirmed below.
+= 0.5` flagged "la" (in nearly every document) and "verde" (in 4/7) as stopwords --
+confirmed below.
 
 ### 3. Install it under a nickname
 
@@ -494,30 +510,37 @@ jardin
 textsearch info jardin
 ```
 ```
-nickname:  jardin
+profile:   jardin
 path:      ~/.textsearch/profiles/jardin.zip
 trainsize: 7
 vocsize:   26
-numtokens: 38
-avgdoclen: 5.428571428571429
-query_expansion:  26 tokens
-lemmas:    20 remapped tokens
-stopword_candidates: 2 tokens
-encoder:   lsi (scaling=none, source_path=, outdim=8)
+numtokens: 39
+avgdoclen: 5.571428571428571
+kind:      base
+lineage:   fit(doc_freq_threshold=0.5, encoder=lsi, outdim=8, scaling=none, source_path=, trainsize=7)
+stopwords: 2 (applied)
+lemmas:    0 (carried, not applied) remapped tokens
+query_expansion:  26 (carried, not applied) tokens, with 26 distance lists
+variants:  none derivable (the profile folds what a query would fold)
 
 TextConfig:
   ...
-  transformation: IgnoreStopwords(Set(["verde", "la"]))
+  pipeline: TokenPipeline(lemmas=nothing, stopwords=2 tokens)
+  language: unknown
   ...
 ```
 
-`stopwords.enabled = true` did exactly what it says: "la" and "verde" were detected as
-candidates *and* wired into the profile's `IgnoreStopwords` transformation before the
-vocabulary was built, so neither ever entered vectorization or LSI. The high `lemmas`
-count (20 of 26 tokens remapped) is the small-corpus caveat from the Manual above in
-action -- with only 7 short documents, LSI doesn't have enough signal to separate
-meaningful token clusters, so clustering merges much more aggressively than it would on a
-real corpus. The mechanics are correctly demonstrated either way.
+`stopwords.enabled = true` did exactly what it says: "la" and "verde" were detected *and*
+wired into the profile's pipeline before the vocabulary was built, so neither ever entered
+vectorization or LSI -- and `(applied)` is how the profile records that, as opposed to
+merely carrying the set.
+
+Two lines are worth reading as answers rather than statistics. `variants: none derivable`
+because this config folds case and diacritics, so there is nothing for a query to be
+bridged back to: correction has no work to do on a profile fitted this way. And `lemmas: 0`
+because 7 documents give LSI nothing to separate meaningful token clusters with -- the
+small-corpus caveat from the Manual above. On a real corpus that number is in the tens of
+thousands. The mechanics are correctly demonstrated either way.
 
 ### 5. Search it
 
@@ -530,11 +553,24 @@ textsearch search jardin "manzana pera" --collection corpus.jsonl --format jsonl
 {"text":"la manzana verde esta rica tambien"}
 ```
 
-Default `-t 1`: any document containing "manzana" *or* "pera" matches. Raise the
-threshold to require both:
+and on stderr, what the pipeline actually did with the query:
+
+```
+query: 2 token(s) -> manzana pera
+  + 5 query_expansion(s) -> hoy muy rica tambien y
+  matching with threshold=1 over 7 token(s), lemmas=off (profile carries 0, not applied), threads=64
+3 match(es)
+```
+
+Default `-t 1`: any shared token matches. Note the threshold counts **the expanded set**,
+not the words you typed -- `over 7 token(s)`, not 2 -- so raising it does not mean "require
+both words" while expansion is on. This corpus is far too small for its expansion network to
+mean anything (`hoy muy rica tambien y` for "manzana pera"), which makes the point visible:
+turn expansion off and the threshold is about your own words again.
 
 ```sh
-textsearch search jardin "manzana pera" --collection corpus.jsonl --format jsonl -t 2
+textsearch search jardin "manzana pera" --collection corpus.jsonl --format jsonl -t 2 \
+    --no-query_expansion
 ```
 ```
 {"text":"una manzana roja y una pera verde"}
@@ -542,16 +578,16 @@ textsearch search jardin "manzana pera" --collection corpus.jsonl --format jsonl
 
 Only the one document containing *both* words survives.
 
-### 6. Uninstall (i.e., find out where it lives)
+### 6. Uninstall (which does not delete unless you ask)
 
 ```sh
 textsearch uninstall jardin
 ```
 ```
 'jardin' is installed at:
-~/.textsearch/profiles/jardin.zip
-textsearch does not delete profile files automatically -- remove it yourself if you're sure, e.g.:
-  rm '~/.textsearch/profiles/jardin.zip'
+  ~/.textsearch/profiles/jardin.zip  (30.479 KiB)
+nothing was deleted -- pass --force to remove the file:
+  textsearch uninstall jardin --force
 ```
 
 The file is still there -- `uninstall` only prints the path unless `--force` is given, per the
