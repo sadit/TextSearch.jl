@@ -68,10 +68,9 @@ UInt32[0x00000001, 0x00000002]
 ```
 """
 function SimilaritySearch.search(idx::BM25InvertedFile, ctx::InvertedFileContext, qtext::T, res::AbstractKnnQueue; t::Int=1) where {T<:Union{AbstractString,TokenizedText}}
-    q = bagofwords(idx.voc, qtext)
-    if idx.query_expansion !== nothing
-        expand_query!(q, idx.voc, idx.query_expansion)
-    end
+    # one query pipeline, in the library: correction then expansion, then the presence-only bag
+    # BM25 wants (see `querybow` -- bm25score never reads the query side's frequencies)
+    q = querybow(idx.voc, query_tokens(idx.voc, qtext, idx.query))
     search(idx, ctx, q, res; t)
 end
 

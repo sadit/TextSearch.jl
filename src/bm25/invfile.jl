@@ -67,14 +67,14 @@ julia> collect(IdView(res))
 UInt32[0x00000001, 0x00000002]
 ```
 """
-struct BM25InvertedFile{AdjType<:AbstractAdjList,DbType<:AbstractDatabase,SynType} <: AbstractInvertedFile
+struct BM25InvertedFile{AdjType<:AbstractAdjList,DbType<:AbstractDatabase} <: AbstractInvertedFile
     voc::Vocabulary
     bm25::BM25Scorer
     adj::AdjType
     doclens::Vector{Int32}  ## number of tokens per document
     db::DbType              ## per-document term-frequency vectors
     len::Ref{Int64}         ## number of documents already indexed (postings built)
-    query_expansion::SynType       ## nothing, or a query-time query_expansion network (see expand_query!)
+    query::QueryPipeline           ## how a query is answered: correction and expansion, see query_tokens
 end
 
 function Base.show(io::IO, invfile::BM25InvertedFile; prefix="", indent="  ")
@@ -112,12 +112,16 @@ function select_posting_lists(idx::BM25InvertedFile, ctx::InvertedFileContext, q
 end
 
 """
-    BM25InvertedFile(voc::Vocabulary; k1=1.2f0, b=0.75f0, δ=1f0, query_expansion=nothing)
+    BM25InvertedFile(voc::Vocabulary; k1=1.2f0, b=0.75f0, δ=1f0, query_expansion=nothing, distances=nothing, query=nothing)
 
 Creates an empty [`BM25InvertedFile`](@ref), fitting its [`BM25Scorer`](@ref) from `voc`
 (see [`BM25Scorer(voc)`](@ref BM25Scorer) for `k1`/`b`/`δ`). Populate it with
-[`append_items!`](@ref)/[`push_item!`](@ref). Pass `query_expansion` (e.g. as produced by
-`LSI.query_expansion`) to enrich queries at search time; see [`expand_query!`](@ref).
+[`append_items!`](@ref)/[`push_item!`](@ref).
+
+How queries are answered is a [`QueryPipeline`](@ref), stored on the index. `query_expansion`
+(e.g. as produced by `LSI.query_expansion`) is the short way to say "expand with this network";
+pass `query` instead to also correct spellings, which needs a variant map -- and note that
+deriving one per query would be far too slow, which is why it lives on the index.
 
 # Example
 
@@ -130,7 +134,11 @@ julia> length(invfile)
 0
 ```
 """
-function BM25InvertedFile(voc::Vocabulary;  k1=1.2f0, b=0.75f0, δ=1f0, query_expansion=nothing)
+function BM25InvertedFile(voc::Vocabulary; k1=1.2f0, b=0.75f0, δ=1f0,
+                          query_expansion=nothing, distances=nothing, query=nothing)
+    query === nothing || query_expansion === nothing ||
+        throw(ArgumentError("pass either `query` (a QueryPipeline) or `query_expansion`, not both"))
+    qp = query === nothing ? QueryPipeline(; expansion=query_expansion, distances) : query
     bm25 = BM25Scorer(voc; k1, b, δ)
 
     BM25InvertedFile(
@@ -140,7 +148,7 @@ function BM25InvertedFile(voc::Vocabulary;  k1=1.2f0, b=0.75f0, δ=1f0, query_ex
         Vector{Int32}(undef, 0),
         VectorDatabase(SparseVecView{Vector{Int32},Vector{UInt32}}[]),
         Ref(Int64(0)),
-        query_expansion,
+        qp,
     )
 end
 

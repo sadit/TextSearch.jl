@@ -3,7 +3,7 @@
 export TextInvertedFile
 
 """
-    TextInvertedFile{ModelType<:VectorModel, InvFileType<:InvertedFile, SynType} <: AbstractInvertedFile
+    TextInvertedFile{ModelType<:VectorModel, InvFileType<:InvertedFile} <: AbstractInvertedFile
 
 An inverted-file index (built on top of `SimilaritySearch.InvertedFiles`) that pairs a text weighting model
 ([`VectorModel`](@ref)) with an inverted index for fast kNN / radius search under vector distances
@@ -42,10 +42,10 @@ julia> collect(IdView(res))
 UInt32[0x00000001, 0x00000002]
 ```
 """
-struct TextInvertedFile{ModelType<:VectorModel, InvFileType<:InvertedFile, SynType} <: AbstractInvertedFile
+struct TextInvertedFile{ModelType<:VectorModel, InvFileType<:InvertedFile} <: AbstractInvertedFile
     model::ModelType
     invfile::InvFileType
-    query_expansion::SynType
+    query::QueryPipeline
 end
 
 is_set_distance(dist) = parentmodule(typeof(dist)) === SimilaritySearch.Dist.Sets
@@ -54,11 +54,13 @@ is_set_distance(dist) = parentmodule(typeof(dist)) === SimilaritySearch.Dist.Set
 function Base.getproperty(idx::TextInvertedFile, s::Symbol)
     s === :model && return getfield(idx, :model)
     s === :invfile && return getfield(idx, :invfile)
-    s === :query_expansion && return getfield(idx, :query_expansion)
+    s === :query && return getfield(idx, :query)
+    # kept because it is what a caller who handed over a network asks for afterwards
+    s === :query_expansion && return getfield(idx, :query).expansion
     getproperty(getfield(idx, :invfile), s)
 end
 
-Base.propertynames(idx::TextInvertedFile) = (:model, :invfile, :query_expansion, propertynames(getfield(idx, :invfile))...)
+Base.propertynames(idx::TextInvertedFile) = (:model, :invfile, :query, :query_expansion, propertynames(getfield(idx, :invfile))...)
 
 Base.length(idx::TextInvertedFile) = length(idx.invfile)
 SimilaritySearch.database(idx::TextInvertedFile) = database(idx.invfile)
@@ -73,29 +75,33 @@ produced by `LSI.query_expansion`) to enable query-time expansion (also requires
 see [`expand_query!`](@ref)). Handing a network over IS the request to expand with it;
 whether a profile wants that is recorded as its `applied.query_expansion`.
 """
-function TextInvertedFile(model::VectorModel; dist=Dist.NormCosine(), query_expansion=nothing, kwargs...)
+function TextInvertedFile(model::VectorModel; dist=Dist.NormCosine(), query_expansion=nothing,
+                          distances=nothing, query=nothing, kwargs...)
+    query === nothing || query_expansion === nothing ||
+        throw(ArgumentError("pass either `query` (a QueryPipeline) or `query_expansion`, not both"))
+    qp = query === nothing ? QueryPipeline(; expansion=query_expansion, distances) : query
     invfile = InvertedFile(vocsize(model.voc), dist; kwargs...)
-    TextInvertedFile(model, invfile, query_expansion)
+    TextInvertedFile(model, invfile, qp)
 end
 
 """
-    TextInvertedFile(voc::Vocabulary, local_weighting=TfWeighting(), global_weighting=IdfWeighting(); dist=Dist.NormCosine(), query_expansion=nothing, kwargs...)
+    TextInvertedFile(voc::Vocabulary, local_weighting=TfWeighting(), global_weighting=IdfWeighting(); dist=Dist.NormCosine(), query_expansion=nothing, distances=nothing, query=nothing, kwargs...)
 
 Creates a [`TextInvertedFile`](@ref) from a [`Vocabulary`](@ref) and specified local/global weighting schemes.
 """
-function TextInvertedFile(voc::Vocabulary, local_weighting=TfWeighting(), global_weighting=IdfWeighting(); dist=Dist.NormCosine(), query_expansion=nothing, kwargs...)
+function TextInvertedFile(voc::Vocabulary, local_weighting=TfWeighting(), global_weighting=IdfWeighting(); dist=Dist.NormCosine(), query_expansion=nothing, distances=nothing, query=nothing, kwargs...)
     model = VectorModel(global_weighting, local_weighting, voc)
-    TextInvertedFile(model; dist, query_expansion, kwargs...)
+    TextInvertedFile(model; dist, query_expansion, distances, query, kwargs...)
 end
 
 """
-    TextInvertedFile(textconfig::TextConfig, corpus; local_weighting=TfWeighting(), global_weighting=IdfWeighting(), dist=Dist.NormCosine(), query_expansion=nothing, kwargs...)
+    TextInvertedFile(textconfig::TextConfig, corpus; local_weighting=TfWeighting(), global_weighting=IdfWeighting(), dist=Dist.NormCosine(), query_expansion=nothing, distances=nothing, query=nothing, kwargs...)
 
 Convenience constructor that builds a [`Vocabulary`](@ref) from `corpus` under `textconfig`, creates a [`VectorModel`](@ref), and returns a [`TextInvertedFile`](@ref).
 """
-function TextInvertedFile(textconfig::TextConfig, corpus; local_weighting=TfWeighting(), global_weighting=IdfWeighting(), dist=Dist.NormCosine(), query_expansion=nothing, kwargs...)
+function TextInvertedFile(textconfig::TextConfig, corpus; local_weighting=TfWeighting(), global_weighting=IdfWeighting(), dist=Dist.NormCosine(), query_expansion=nothing, distances=nothing, query=nothing, kwargs...)
     voc = Vocabulary(textconfig, corpus)
-    TextInvertedFile(voc, local_weighting, global_weighting; dist, query_expansion, kwargs...)
+    TextInvertedFile(voc, local_weighting, global_weighting; dist, query_expansion, distances, query, kwargs...)
 end
 
 # InvertedFile insertion & appending methods
@@ -131,16 +137,11 @@ end
 
 # Search methods
 function SimilaritySearch.search(idx::TextInvertedFile, ctx::InvertedFileContext, qtext::T, res::AbstractKnnQueue; t::Int=1) where {T<:Union{AbstractString,TokenizedText}}
-    if is_set_distance(distance(idx))
-        q = bagofwords(idx.model.voc, qtext)
-    else
-        q = vectorize(idx.model, qtext; normalize=false)
-        if idx.query_expansion !== nothing
-            expand_query!(q, idx.model.voc, idx.query_expansion)
-        else
-            normalize!(q)
-        end
-    end
+    # one query pipeline, in the library: it corrects and expands on strings, and the
+    # representation decides what to do with the weights it produces -- a set distance ignores
+    # them (presence only), a vector distance applies them and normalizes.
+    rq = query_tokens(idx.model.voc, qtext, idx.query)
+    q = is_set_distance(distance(idx)) ? querybow(idx.model.voc, rq) : queryvector(idx.model, rq)
     search(idx.invfile, ctx, q, res; t)
 end
 
