@@ -93,83 +93,7 @@ function _fit_textconfig(cfg)
     )
 end
 
-"""
-    _build_vocabulary(tc, docs, min_ndocs; label="") -> Vocabulary
 
-Tokenizes `docs` under `tc` into a `Vocabulary`, then drops tokens appearing in
-fewer than `min_ndocs` documents.
-
-Pruning happens before anything expensive touches the vocabulary: the query_expansion network is an
-all-pairs search over it, so this is a quadratic saving, and a token seen in one or two
-documents has no usable embedding to begin with. `label` distinguishes the passes in the
-progress output.
-"""
-function _build_vocabulary(tc, docs::Vector{String}, min_ndocs::Int; label::AbstractString="")
-    voc = Vocabulary(tc, docs; verbose=false)
-    min_ndocs > 1 || return voc
-
-    before = vocsize(voc)
-    voc = filter_tokens(t -> t.ndocs >= min_ndocs, voc)
-    println("  $(label)vocabulary pruned by min_ndocs=$min_ndocs: $before -> $(vocsize(voc)) tokens")
-    flush(stdout)   # long runs are usually watched through a redirected log
-    vocsize(voc) > 0 ||
-        error("min_ndocs=$min_ndocs pruned the entire vocabulary ($before tokens, none in >= $min_ndocs documents); lower it")
-    voc
-end
-
-"""
-    _remap_query_expansion_to_lemmas(synmap, syndists, lemmas) -> (; query_expansion, distances)
-
-Rewrites a query_expansion network's keys and values through `lemmas`, for use when the lemma map
-is baked into the profile's `TextConfig` and the vocabulary is therefore lemmatized.
-
-Without this the network would silently stop working: its entries name unlemmatized forms,
-which are no longer tokens of the vocabulary, and `expand_query!` drops an out-of-
-vocabulary query_expansion without complaint (`token2id` returning `0`) -- a quiet loss of every
-expansion whose surface form happened to be inflected.
-
-Two source tokens can share a lemma, so entries are merged rather than overwritten. What
-"best" means depends on what the network carries: with `syndists`, the smallest distance
-wins; without it, the smallest *rank* does -- the rank-based analogue, and the reason the
-network stays usable when distances were never stored. A query_expansion that lemmatizes onto its
-own key is dropped, since a token is not its own query_expansion.
-
-Each list comes back in rank order (nearest first), matching how `TextSearch.query_expansion`
-produces them. `distances` is `nothing` when the input had none.
-"""
-function _remap_query_expansion_to_lemmas(synmap, syndists, lemmas)
-    lem(t) = get(lemmas, t, t)
-    hasdist = syndists !== nothing
-    # per lemma key: candidate => (ordering key, distance-or-nothing)
-    acc = Dict{String,Dict{String,Tuple{Float64,Union{Nothing,Float32}}}}()
-
-    for (tok, syns) in synmap
-        k = lem(tok)
-        d = get!(() -> Dict{String,Tuple{Float64,Union{Nothing,Float32}}}(), acc, k)
-        dl = hasdist ? get(syndists, tok, nothing) : nothing
-        for (rank, syn) in enumerate(syns)
-            s = lem(syn)
-            s == k && continue
-            dist = (dl !== nothing && rank <= length(dl)) ? Float32(dl[rank]) : nothing
-            key = dist === nothing ? Float64(rank) : Float64(dist)
-            prev = get(d, s, nothing)
-            (prev === nothing || key < prev[1]) && (d[s] = (key, dist))
-        end
-    end
-
-    out = Dict{String,Vector{String}}()
-    outd = Dict{String,Vector{Float32}}()
-    for (k, d) in acc
-        isempty(d) && continue
-        cands = sort!(collect(keys(d)); by=c -> (d[c][1], c))
-        out[k] = cands
-        ds = [d[c][2] for c in cands]
-        # all or nothing per token, so the two lists can never fall out of alignment
-        any(isnothing, ds) || (outd[k] = Float32[Float32(x) for x in ds])
-    end
-
-    (; query_expansion=out, distances=(isempty(outd) ? nothing : outd))
-end
 
 """
     _fit_one_batch(docs::Vector{String}, cfg, batch_dir::AbstractString; reuse=nothing)
@@ -185,109 +109,49 @@ function _fit_one_batch(docs::Vector{String}, cfg, batch_dir::AbstractString; re
     syn = cfg["query_expansion"]
     lem = cfg["lemmas"]
 
-    base_textconfig = _fit_textconfig(cfg)
-
-    if sw["enabled"]
-        # `reuse` is the stopword set a previous part already detected, or `nothing` to detect
-        # here. Detection needs a full tokenization pass whose only product is the list of tokens
-        # above the threshold, and it is the largest single stage of a fit -- measured on 10,000
-        # Spanish articles, 35.6s of 90.9s (39%), and on their 272,466 paragraphs 36.5s of 123.2s.
-        # See `cmd_fit` for why reusing one part's set across the rest is sound.
-        candidates = reuse === nothing ?
-            stopword_candidates(Vocabulary(base_textconfig, docs; verbose=false),
-                                Float64(sw["doc_freq_threshold"])) :
-            collect(reuse)
-        fit_tc = TextConfig(base_textconfig; pipeline=TokenPipeline(stopwords=Set(candidates)))
-    else
-        fit_tc = base_textconfig
-        candidates = String[]
-    end
-
-    min_ndocs = Int(get(get(cfg, "vocabulary", Dict()), "min_ndocs", 1))
-    voc = _build_vocabulary(fit_tc, docs, min_ndocs)
-    model = VectorModel(IdfWeighting(), TfWeighting(), voc)
-
     kind = Symbol(enc["kind"])
-    outdim = Int(enc["outdim"])
-    scaling = Symbol(enc["scaling"])
-    external_path = get(enc, "external_path", "")
-
-    synopts = (
-        approx = _query_expansion_approx(get(syn, "approx", "auto")),
-        construction_recall = Float64(get(syn, "construction_recall", 0.97)),
-        search_recall = Float64(get(syn, "search_recall", 0.9)),
-        head_df = Float64(get(syn, "head_df", 0.0)),
-        max_target_ratio = Float64(get(syn, "max_target_ratio", 50.0)),
-    )
-
-    lsiopts = (factorization = Symbol(get(enc, "factorization", "auto")),)
-
-    wordvecs, net = if kind === :lsi
-        lsi = LatentSemanticIndexing(model, docs; maxoutdim=outdim, scaling, verbose=false, lsiopts...)
-        wordvectors(lsi), query_expansion(lsi, Int(syn["k"]); verbose=false, synopts...)
-    elseif kind === :external
-        wv, oov = _load_external_embeddings(external_path, voc)
-        oov > 0 && @warn "textsearch fit: $oov / $(vocsize(voc)) vocabulary tokens missing from external embeddings; using zero vectors for them"
-        wv, query_expansion(voc, wv, Int(syn["k"]); verbose=false, synopts...)
-    else
+    kind in (:lsi, :external) ||
         error("unknown encoder kind: $(enc["kind"]); supported: lsi, external")
-    end
-    synmap, syndists = net.query_expansion, net.distances
 
-    lemmas = lemma_clusters(voc, wordvecs;
-        algorithm=Symbol(lem["algorithm"]), num_clusters=Int(lem["num_clusters"]),
-        selector=Symbol(lem["selector"]),
-        morphology=Symbol(get(lem, "morphology", "jaccard")),
-        morphology_threshold=Float64(get(lem, "morphology_threshold", 0.3)),
-        qgram=Int(get(lem, "qgram", 2)),
-        min_common_prefix=Int(get(lem, "min_common_prefix", 3)),
-        order=Symbol(get(lem, "order", "morphology_first")),
-        semantic_threshold=Float64(get(lem, "semantic_threshold", 1.0)))
-
-    # Third pass: bake the lemma map into the TextConfig and rebuild vocabulary/weights
-    # under it. A lemma is a normalization, so this is where it belongs -- once it is in the
-    # TextConfig, every consumer (vectorize, bagofwords, the inverted files, search) applies
-    # it to documents and queries alike, and the idf counts a whole inflection family
-    # together instead of splitting it across its forms.
-    #
-    # The lemma map cannot be known before this point: it is derived from embeddings over
-    # the vocabulary it now rewrites, so this pass cannot be folded into an earlier one. LSI
-    # is deliberately NOT redone on the lemmatized vocabulary -- the embeddings' job was to
-    # discover the families, and they have; re-deriving them would only shift query_expansion
-    # neighbours slightly for the cost of a full factorization.
-    apply_lemmas = Bool(get(lem, "apply", false)) && !isempty(lemmas)
-    stopwords = Set(candidates)
-    applied = AppliedArtifacts(stopwords=sw["enabled"], lemmas=apply_lemmas)
-
-    if apply_lemmas
-        # Rebuild the vocabulary under the lemma map. The chain order (lemmas before the
-        # stopword filter) is not decided here: a TextProfile materializes its own config, so
-        # this asks a profile for the config rather than assembling one.
-        probe = TextProfile(model; stopwords, lemmas, applied)
-        voc = _build_vocabulary(gettextconfig(probe), docs, min_ndocs; label="lemmatized ")
-        model = VectorModel(IdfWeighting(), TfWeighting(), voc)
-        # the network's entries name unlemmatized forms, which are no longer vocabulary
-        # tokens; left alone, every inflected entry would be silently dropped at query time
-        remapped = _remap_query_expansion_to_lemmas(synmap, syndists, lemmas)
-        synmap, syndists = remapped.query_expansion, remapped.distances
-        println("  lemmas applied: $(length(lemmas)) remapped tokens -> vocsize=$(vocsize(voc)), query_expansion=$(length(synmap))")
-        flush(stdout)
+    # The app's job is to turn a config file into arguments; the pipeline itself is
+    # `fit_profile`, in the library, so anyone using TextSearch gets the same three passes in
+    # the same order without reading this file.
+    external_path = get(enc, "external_path", "")
+    wordvecs = nothing
+    if kind === :external
+        voc = Vocabulary(_fit_textconfig(cfg), docs; verbose=false)
+        wordvecs, oov = _load_external_embeddings(external_path, voc)
+        oov > 0 && @warn "textsearch fit: $oov / $(vocsize(voc)) vocabulary tokens missing from external embeddings; using zero vectors for them"
     end
 
-    profile = TextProfile(model; stopwords, lemmas,
-                          query_expansion=synmap, query_expansion_distances=syndists, applied,
-                          lineage=[LineageStep(:fit; encoder=String(kind), outdim, scaling=String(scaling),
-                                                     source_path=external_path,
-                                                     trainsize=gettrainsize(model.voc),
-                                                     # `merge` needs this: a batch that removed
-                                                     # a stopword recorded no count for it, and
-                                                     # threshold*trainsize is the bound that
-                                                     # lets the merge impute one
-                                                     doc_freq_threshold=(sw["enabled"] ?
-                                                        Float64(sw["doc_freq_threshold"]) : 0.0))])
+    profile = fit_profile(_fit_textconfig(cfg), docs;
+        min_ndocs = Int(get(get(cfg, "vocabulary", Dict()), "min_ndocs", 1)),
+        stopwords = (doc_freq_threshold = sw["enabled"] ? Float64(sw["doc_freq_threshold"]) : 0.0,
+                     reuse = sw["enabled"] ? reuse : nothing),
+        encoder   = (outdim = Int(enc["outdim"]),
+                     scaling = Symbol(enc["scaling"]),
+                     factorization = Symbol(get(enc, "factorization", "auto")),
+                     wordvectors = wordvecs,
+                     source_path = external_path),
+        expansion = (k = Int(syn["k"]),
+                     approx = _query_expansion_approx(get(syn, "approx", "auto")),
+                     construction_recall = Float64(get(syn, "construction_recall", 0.97)),
+                     search_recall = Float64(get(syn, "search_recall", 0.9)),
+                     head_df = Float64(get(syn, "head_df", 0.0)),
+                     max_target_ratio = Float64(get(syn, "max_target_ratio", 50.0))),
+        lemmas    = (apply = Bool(get(lem, "apply", false)),
+                     algorithm = Symbol(lem["algorithm"]),
+                     num_clusters = Int(lem["num_clusters"]),
+                     selector = Symbol(lem["selector"]),
+                     morphology = Symbol(get(lem, "morphology", "jaccard")),
+                     morphology_threshold = Float64(get(lem, "morphology_threshold", 0.3)),
+                     qgram = Int(get(lem, "qgram", 2)),
+                     min_common_prefix = Int(get(lem, "min_common_prefix", 3)),
+                     order = Symbol(get(lem, "order", "morphology_first")),
+                     semantic_threshold = Float64(get(lem, "semantic_threshold", 1.0))))
+
     save_profile(batch_dir, profile)
-
-    vocsize(voc), model, candidates
+    vocsize(profile.model.voc), profile.model, sort!(collect(profile.stopwords))
 end
 
 function cmd_fit(args::Vector{String})

@@ -56,6 +56,17 @@ Base.@kwdef struct TextConfig
     language::Symbol = :unknown
 end
 
+# Julia's default `==` for these is field-wise `===`, and several fields are heap objects --
+# `nlist`, `emojis`, the compiled regexes -- so two configs built from the same settings compared
+# as unequal. `merge_profiles` needed a real comparison and wrote its own, privately; anyone else
+# asking `a == b` got a wrong answer quietly. These are it, once.
+Base.:(==)(a::NormalizationConfig, b::NormalizationConfig) =
+    all(getfield(a, f) == getfield(b, f) for f in fieldnames(NormalizationConfig))
+Base.:(==)(a::TokenizationConfig, b::TokenizationConfig) =
+    all(getfield(a, f) == getfield(b, f) for f in fieldnames(TokenizationConfig))
+Base.:(==)(a::TextConfig, b::TextConfig) =
+    all(getfield(a, f) == getfield(b, f) for f in fieldnames(TextConfig))
+
 function TextConfig(c::TextConfig;
         normalization::NormalizationConfig=c.normalization,
         tokenization::TokenizationConfig=c.tokenization,

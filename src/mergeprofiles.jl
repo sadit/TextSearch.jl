@@ -17,23 +17,12 @@ export merge_profiles
 # transformation. The union now happens below with the other artifact rules, where combining
 # is the whole point.
 
-function _same_normalization(a::NormalizationConfig, b::NormalizationConfig)
-    for f in (:del_diac, :del_dup, :del_punc, :group_num, :group_url, :group_usr, :group_emo, :lc)
-        getfield(a, f) === getfield(b, f) || return false
-    end
-    for f in (:re_user, :re_url, :re_num)
-        getfield(a, f).pattern == getfield(b, f).pattern || return false
-    end
-    a.emojis == b.emojis
-end
-
-function _same_tokenization(a::TokenizationConfig, b::TokenizationConfig)
-    a.nlist == b.nlist || return false
-    a.mark_token_type === b.mark_token_type || return false
-    # `save_profile` refuses to serialize custom generators, so any *loaded* profile has
-    # none; a non-empty list here means someone built the config in-process.
-    isempty(a.generators) && isempty(b.generators)
-end
+# Value equality now lives on the config types themselves. What stays here is the one thing a
+# merge is stricter about: `save_profile` refuses to serialize custom generators, so any *loaded*
+# profile has none, and a non-empty list means someone built the config in-process -- two such
+# configs cannot be shown equivalent, so a merge declines rather than assuming.
+_same_tokenization(a::TokenizationConfig, b::TokenizationConfig) =
+    a == b && isempty(a.generators) && isempty(b.generators)
 
 # ── query_expansion fusion ───────────────────────────────────────────────────────────
 
@@ -350,7 +339,7 @@ function merge_profiles(profiles; doc_freq_threshold::Real=0.5, query_expansion_
 
     for (i, p) in enumerate(profiles)
         q = getpolicy(p)
-        _same_normalization(pol.normalization, q.normalization) ||
+        pol.normalization == q.normalization ||
             error("profile $i has different normalization settings; profiles must share a policy to be merged")
         _same_tokenization(pol.tokenization, q.tokenization) ||
             error("profile $i has different tokenization settings; profiles must share a policy to be merged")

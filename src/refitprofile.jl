@@ -444,7 +444,7 @@ not correspond to the base's, and the blend would then quietly interpolate unrel
 counters instead of failing.
 """
 function _check_refit_textconfig(expected::TextConfig, got::TextConfig)
-    _same_normalization(expected.normalization, got.normalization) ||
+    expected.normalization == got.normalization ||
         error("the sample vocabulary was built with different normalization settings than " *
               "the refit requires; build it with refit_textconfig(base; apply_lemmas)")
     _same_tokenization(expected.tokenization, got.tokenization) ||

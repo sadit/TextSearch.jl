@@ -703,6 +703,17 @@ function query_expansion(voc::Vocabulary, wordvecs::AbstractDatabase, k::Integer
             push!(wdists, d)
             length(words) >= k && break
         end
+        # Ties get a deterministic order, so the same corpus fits to the same artifact twice.
+        # `allknn` returns neighbours by increasing distance but says nothing about the order
+        # among equals, and it does vary: measured on an 8-document corpus, `esta` came out as
+        # ["rica", "manzana", "pera"] one run and ["rica", "pera", "manzana"] the next, with
+        # identical distances. A profile is meant to be published and verified, so two fits of
+        # one corpus should not differ at all -- and a diff of two profiles should show real
+        # changes rather than reshuffled ties.
+        if length(words) > 1
+            perm = sortperm(1:length(words); by = i -> (wdists[i], words[i]))
+            words, wdists = words[perm], wdists[perm]
+        end
         tok = gettoken(voc, t)
         net[tok] = words
         netdist[tok] = wdists

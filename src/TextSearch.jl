@@ -104,6 +104,7 @@ using .LSI: LatentSemanticIndexing, LSIModel, indim, outdim, wordvectors, query_
 export LSI, LatentSemanticIndexing, LSIModel, indim, outdim, wordvectors, query_expansion
 
 include("lemmas.jl")
+include("fitprofile.jl")
 
 include("randomindexing.jl")
 using .RI: RandomIndexing, RIModel, BitSketch, bitsketch, bitsketch_corpus

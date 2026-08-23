@@ -245,10 +245,14 @@ using Test, TextSearch, SimilaritySearch
     end
 
     @testset "structurally identical configs built separately are accepted" begin
-        # regression guard: `==` on TokenizationConfig is false for equal-but-distinct
-        # configs (its nlist is a fresh Vector), so merge must compare fields by meaning
+        # This used to document a trap: `==` on TokenizationConfig was false for
+        # equal-but-distinct configs, because Julia's default compares fields with `===` and
+        # `nlist` is a fresh Vector each time. The merge worked anyway only because it carried
+        # its own field-by-field comparison. The config types now define `==` by value, so the
+        # obvious question gets the right answer and the merge just asks it.
         tc2 = TextConfig(tokenization=TokenizationConfig(nlist=[1]))
-        @test tc.tokenization != tc2.tokenization          # documents the trap
+        @test tc.tokenization == tc2.tokenization
+        @test tc == tc2
         merged = merge_profiles([roundtrip(docs[1:3]), roundtrip(docs[4:6]; textconfig=tc2)])
         @test gettrainsize(merged.model.voc) == 6
     end
