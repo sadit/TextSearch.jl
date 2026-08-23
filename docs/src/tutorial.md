@@ -589,6 +589,18 @@ profile = TextProfile(model;
  expansion=length(profile.query_expansion), base=isbase(profile))
 ```
 
+Everything above in one call, which is how it is normally done -- `fit_profile` runs the three
+passes in the order they have to happen in, and the pieces stay public for when you want to place
+them yourself:
+
+```@example gutenberg
+oneshot = fit_profile(TextConfig(), CASK_OF_AMONTILLADO;
+                      stopwords=(; doc_freq_threshold=0.5),
+                      encoder=(; outdim=16), expansion=(; k=5), verbose=false)
+(vocsize=vocsize(oneshot.model.voc), stopwords=length(oneshot.stopwords),
+ expansion=length(oneshot.query_expansion), base=isbase(oneshot))
+```
+
 ### What lands on disk
 
 [`save_profile`](@ref) writes a directory of plain JSON, and [`zip_profile`](@ref) packs it into

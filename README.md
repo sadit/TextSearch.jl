@@ -24,11 +24,14 @@
   - Latent semantic indexing with an exact truncated SVD, dense or ARPACK-based, chosen by corpus size.
   - Query expansion networks built by (optionally approximate) all-pairs kNN over token embeddings, storing the neighbour ranking and its distances separately.
   - Lemma maps derived by grouping inflections morphologically and splitting them semantically.
-  - Query-time expansion (`expand_query!`) for both sparse-vector and BM25 queries -- applied to queries only, never to documents.
+- **One Query Pipeline (`query_tokens`, `QueryPipeline`, `queryvector`/`querybow`/`querytokenset`)**:
+  - Correction then expansion, on strings, once -- both inverted files and the CLI go through it, so a query cannot mean one thing to an index and another to a search command. The representation decides what to do with the weights it produces: weighted and normalized for a cosine index, presence-only for BM25 (whose scoring never reads the query side's frequencies), a plain set for token matching.
 - **Query Correction (`derive_variants`, `resolve_query_tokens`, `QueryPolicy`)**:
   - Orthographic bridging so a profile can keep case and diacritics without becoming unsearchable: a query typed `leon` or `musica` reaches `León` and `música`. Derived from the vocabulary rather than stored, since it is a pure function of it.
   - Reportable and answerable literally: `explain` says what was searched and why, and `QueryPolicy(correction=:off)` gives back the query exactly as typed -- the "search instead for ..." escape a search that corrects by default owes the person who typed it.
-- **Portable Profiles (`TextProfile`, `save_profile`, `load_profile`, `zip_profile`, `merge_profiles`, `refit_profile`)**:
+- **Portable Profiles (`fit_profile`, `TextProfile`, `save_profile`, `load_profile`, `zip_profile`, `merge_profiles`, `refit_profile`)**:
+  - `fit_profile(textconfig, corpus)` distills a corpus in one call, in the order the three passes have to happen in: stopwords are detected and removed *before* the vocabulary the encoder trains on, lemma families are found from the embeddings that need to exist first, and applying them rebuilds the vocabulary once more.
+  - `BM25InvertedFile(profile)` / `TextInvertedFile(profile)` index with it: the idf, `avgdoclen` and tokenization are the **corpus's**, the document lengths are the **index's**.
   - A `TextProfile` bundles vocabulary, weights, query_expansion, lemmas and stopwords as plain, inspectable JSON -- no code is ever deserialized. Each artifact is stored once, with a marker saying whether the profile *applies* it, and the `TextConfig` it tokenizes with is derived from those -- so what a profile applies is always what it carries.
   - Whether a profile is a bootstrap model or one tuned to a dataset is read off its recorded lineage (`isbase`/`istuned`), not declared.
   - `merge_profiles` folds batched profiles of one corpus into an exact corpus-wide model; `refit_profile` adapts a generic profile to a specific dataset from a sample, adjusting statistics rather than replacing them.
@@ -166,9 +169,13 @@ net = query_expansion(lsi, 2; verbose=false)
 # A lemma map: inflections are grouped by surface similarity, then split by meaning
 lemmas = lemma_clusters(voc, wordvecs)
 
-# Package everything as a portable profile. `applied` says which artifacts are in the
-# pipeline as opposed to merely carried -- a base model computes the lemma map but leaves
-# applying it to whoever tunes from it.
+# All of the above in one call, in the order the passes have to happen in:
+oneshot = fit_profile(config, corpus; encoder=(; outdim=4), expansion=(; k=2), verbose=false)
+println("one call: vocsize=$(vocsize(oneshot.model.voc)) base=$(isbase(oneshot))")
+
+# ...or assembled by hand, which is the same thing spelled out. `applied` says which
+# artifacts are in the pipeline as opposed to merely carried -- a base model computes the
+# lemma map but leaves applying it to whoever tunes from it.
 profile = TextProfile(model;
                       stopwords=Set(stopword_candidates(voc, 0.9)),
                       lemmas,
@@ -383,8 +390,39 @@ what it saves, because there is only one copy.
   typed it; `:always` bridges without evidence. `explain` renders what happened as a
   comparison, since an absolute count is not a reason: *"musica is in 1020 documents against
   música's 199211, so it reads as a misspelling"*.
+- **`fit_profile`**: a corpus becomes a [`TextProfile`](#) in one call, with the three passes in
+  the order they have to be in -- stopwords detected and removed *before* the vocabulary the
+  encoder trains on, lemma families found from embeddings that must exist first, and a rebuild
+  under the lemma map when it is applied. This used to live only in the CLI, 110 lines of it, so
+  every other caller reinvented the order; the README and the tutorial had each reinvented it
+  differently. Keywords are grouped as the concerns they belong to (`stopwords`, `encoder`,
+  `expansion`, `lemmas`) and map 1:1 onto the app's config file.
+- **One query pipeline** (`query_tokens`, `QueryPipeline`, `queryvector`/`querybow`/
+  `querytokenset`). There were two and neither could do what the other did: the vector-level path
+  weighted what it added but iterated token *ids*, so a misspelling absent from the vocabulary
+  could never be corrected; the CLI's path corrected but added terms unweighted. The unified one
+  runs on strings and emits weights, and both inverted files go through it -- so a query cannot
+  mean one thing to an index and another to `textsearch search`. `expand_query!` is no longer
+  called anywhere inside the package.
+- **`BM25InvertedFile(profile)` / `TextInvertedFile(profile)`**: index with a fitted profile,
+  which is what having profiles is for. The idf, `avgdoclen` and tokenization are the corpus's,
+  the document lengths are the index's. Expansion follows the profile's `applied` marker
+  (`expansion=true` overrides, which is what a base profile needs); correction follows the
+  `QueryPolicy`, since it depends on nothing but the vocabulary.
+- **Shorter ways to say the usual thing**, with the long ones intact: `TextConfig(lc=false)`
+  forwards flat keywords to the sub-configs (`nlist=[1]` was written in fifty places while
+  already being the default), and `VectorModel(voc)` is TF-IDF. The config types also define
+  `==` by value, which they did not -- Julia compared their fields with `===` and several are
+  heap objects, so two configs built from the same settings came out unequal.
 - The tokenizer's borrowed-buffer API (`tokenizerbuffer`, `borrowtokenizedtext`,
   `TokenizerBuffer`) is exported.
+
+**Worth knowing:** a fit is *not* bit-reproducible. Neighbour ties are now ordered
+deterministically, but the factorization under the embeddings runs threaded, so its reductions sum
+in a nondeterministic order and values differ around the seventh significant digit -- enough to
+flip a near-tie across the top-k boundary. Two fits of one corpus are equivalent, not equal, so a
+published profile has to be verified structurally (counters, stopwords, vocabulary, network keys,
+distances to a tolerance) rather than by checksum.
 
 **Migrating a query_expansion-network reader:**
 
