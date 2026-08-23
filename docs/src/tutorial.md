@@ -199,10 +199,10 @@ see closer, more meaningful matches.
 ### Vector arithmetic: dot products, centroids, and normalization
 
 Since paragraph and query vectors are `SparseVector`s (from `SparseArrays.jl`), ordinary
-`LinearAlgebra`/`SparseArrays` operations work on them directly — `+`, `-`, [`dot`](@ref),
-`norm`, [`normalize!`](@ref), and scalar `*`/`/` all work out of the box, with no extra
+`LinearAlgebra`/`SparseArrays` operations work on them directly — `+`, `-`, `dot`,
+`norm`, `normalize!`, and scalar `*`/`/` all work out of the box, with no extra
 glue code from TextSearch. Two things make this useful: comparing documents/queries
-directly via [`dot`](@ref), and building a query that represents *more than one* idea at
+directly via `dot`, and building a query that represents *more than one* idea at
 once.
 
 ```@example gutenberg
@@ -277,7 +277,7 @@ vector TextSearch itself produces already lies on the unit sphere, so summing an
 number of them and normalizing the result gives a genuinely even blend, as in
 `q_both` above. The failure mode above only bites when vectors come from somewhere
 `vectorize` didn't touch — built with `normalize=false`, assembled by hand, or imported
-from a different pipeline entirely. The fix is always the same: call [`normalize!`](@ref)
+from a different pipeline entirely. The fix is always the same: call `normalize!`
 on each vector individually before combining them, so every input to a centroid is on
 equal footing before it's summed.
 
@@ -474,8 +474,13 @@ into a `token => [(neighbor, distance), ...]` network in one call:
 
 ```@example gutenberg
 net = query_expansion(lsi, 5; verbose=false)
-net["wine"]
+net.query_expansion["wine"]
 ```
+
+The call returns the network and its distances as separate fields -- `net.query_expansion` maps
+a token to its neighbours in rank order, `net.distances` keeps the distances alongside -- because
+only the ranking takes part in query expansion, while the distances are what you look at to judge
+whether a list is worth trusting.
 
 For a small demo corpus like this one, don't expect polished query_expansion pairs -- a handful of short
 paragraphs isn't enough text for the co-occurrence statistics LSI relies on to fully separate
@@ -550,6 +555,163 @@ bit_index = ExhaustiveSearch(Dist.Bits.Hamming(), bits_db)
 res_bits = knnqueue(KnnSorted, 2)
 search(bit_index, GenericContext(), q_bits, res_bits)
 [(id, first(CASK_OF_AMONTILLADO[id], 60) * "...") for id in collect(IdView(res_bits))]
+```
+
+## Portable profiles
+
+Everything built so far — the vocabulary and its counters, the weighting scheme, the stopword
+set, the lemma map, the query-expansion network — is *derived from this corpus*, and it took a
+full pass plus an SVD to get. A [`TextProfile`](@ref) is that work packaged so it can be shipped,
+inspected, and adapted, rather than recomputed by whoever needs it next.
+
+The design has one line running through it: **policy** versus **artifacts**. A
+[`TextConfig`](@ref) is policy — normalization and tokenization, hand-writable, corpus
+independent. A profile holds the artifacts, each estimated from data, and *derives* the config it
+tokenizes with from its own policy plus the artifacts it applies. So what a profile applies is
+always what it carries; the two cannot drift apart.
+
+### Packaging the artifacts
+
+```@example gutenberg
+stop = Set(stopword_candidates(voc, 0.5))
+lemmas = lemma_clusters(voc, W)
+
+profile = TextProfile(model;
+                      stopwords=stop, lemmas,
+                      query_expansion=net.query_expansion,
+                      query_expansion_distances=net.distances,
+                      # only stopwords are APPLIED: the lemma map and the network travel with
+                      # the profile for a consumer to decide about
+                      applied=AppliedArtifacts(stopwords=true),
+                      lineage=[LineageStep(:fit; trainsize=length(CASK_OF_AMONTILLADO), outdim=16)])
+
+(stopwords=length(profile.stopwords), lemmas=length(profile.lemmas),
+ expansion=length(profile.query_expansion), base=isbase(profile))
+```
+
+### What lands on disk
+
+[`save_profile`](@ref) writes a directory of plain JSON, and [`zip_profile`](@ref) packs it into
+one file. There is no serialized Julia object anywhere in it: a profile can be read, diffed and
+patched with ordinary tools, and loading one never evaluates code that came with it.
+
+```@example gutenberg
+dir = mktempdir()
+save_profile(dir, profile)
+sort(readdir(dir))
+```
+
+`manifest.json` names the policy, which artifacts are present, whether each is applied, and the
+lineage. Everything else is one file per artifact.
+
+### Applied versus carried
+
+The distinction is what makes a profile usable as a *base* model. A generic profile computes the
+lemma map but leaves applying it to whoever tunes from it, because lemmatization changes what a
+token is and therefore what the idf counts:
+
+```@example gutenberg
+p = load_profile(dir)
+gettextconfig(p).pipeline, p.applied
+```
+
+Turning it on is a change to the marker, not surgery on a pipeline — [`with_applied`](@ref)
+re-derives the config from the artifacts the profile already has:
+
+```@example gutenberg
+q = with_applied(p; lemmas=true)
+gettextconfig(q).pipeline.lemmas !== nothing, q.applied
+```
+
+### Merging batched profiles
+
+A corpus too large for one pass is fitted in batches, each batch producing an independent
+profile. [`merge_profiles`](@ref) folds them back into one, and the vocabulary half of that is
+*exact*: counts over disjoint batches are additive, so the merged idf is the true corpus-wide
+idf, not an average of averages.
+
+```@example gutenberg
+half = length(CASK_OF_AMONTILLADO) ÷ 2
+onebatch(docs) = TextProfile(VectorModel(IdfWeighting(), TfWeighting(),
+                                         Vocabulary(TextConfig(), docs; verbose=false)))
+a = onebatch(CASK_OF_AMONTILLADO[1:half])
+b = onebatch(CASK_OF_AMONTILLADO[half+1:end])
+merged = merge_profiles([a, b])
+
+(a=gettrainsize(a.model.voc), b=gettrainsize(b.model.voc),
+ merged=gettrainsize(merged.model.voc), lineage=lineage_summary(merged))
+```
+
+The artifacts cannot be added the same way, since each batch estimated its own in its own
+embedding space, so they are *combined* by rule: stopword sets are re-judged on the merged
+counters, lemma maps vote, and expansion networks are fused by rank consensus.
+
+### Adapting a profile to a dataset
+
+[`refit_profile`](@ref) takes a general profile and a sample of a specific dataset, and treats
+the profile as a **prior** worth `kappa` documents against the sample's evidence — adjusting
+statistics rather than replacing them. A word the base considered important but the sample never
+shows survives with reduced weight; one that mattered in neither is dropped.
+
+```@example gutenberg
+tuned = refit_profile(p, CASK_OF_AMONTILLADO[1:6]; verbose=false)
+(tuned=istuned(tuned), vocsize=vocsize(tuned.model.voc), lineage=lineage_summary(tuned))
+```
+
+Note that nothing declares a profile "base" or "tuned": [`isbase`](@ref) and [`istuned`](@ref)
+read it off the recorded lineage, so the label cannot disagree with the history.
+
+### Correcting a query
+
+A profile that keeps case and diacritics lets the corpus distinguish senses that folding
+destroys — but then a query typed without them matches nothing. In this corpus the wine is
+always written `Amontillado`:
+
+```@example gutenberg
+cased = TextConfig(normalization=NormalizationConfig(lc=false))
+cvoc = Vocabulary(cased, CASK_OF_AMONTILLADO; verbose=false)
+token2id(cvoc, "amontillado"), token2id(cvoc, "Amontillado")     # 0 means "not in the vocabulary"
+```
+
+[`derive_variants`](@ref) builds the bridge, and it is deliberately small: it stores only the
+spellings that cannot be **computed** from a folded form. `amontillado -> Amontillado` is
+computed at query time, so it is not stored; accent restoration has to be, since from `practico`
+there is no telling whether the corpus writes `práctico` or `practicó`. This corpus has no
+accents, so what survives is a curiosity worth understanding:
+
+```@example gutenberg
+variants = derive_variants(cvoc)
+```
+
+`_At` and `_In` are Gutenberg's underscore emphasis markers, and they are stored because
+`uppercasefirst("_at")` returns `"_at"` unchanged — the first character is not a letter, so that
+capitalization is not computable after all.
+
+[`resolve_query_tokens`](@ref) then answers the query as most probably meant, and
+[`explain`](@ref) says what it did:
+
+```@example gutenberg
+r = resolve_query_tokens(cvoc, ["amontillado", "wine"], variants)
+r.tokens, explain(r)
+```
+
+`wine` was in the vocabulary as typed and was left alone; `amontillado` was not, so it was
+corrected — and where correction fires it **replaces**, which is why the typed form is gone from
+`r.tokens`. That is only defensible because the literal query is always still available, the way
+a search engine offers "search instead for …":
+
+```@example gutenberg
+resolve_query_tokens(cvoc, ["amontillado"], variants, QueryPolicy(correction=:off)).tokens
+```
+
+[`QueryPolicy`](@ref) carries both guesses a search makes about intent — whether to correct a
+spelling and whether to expand with the network — because both are guesses, and both should be
+answerable literally. Expansion, when it runs, draws from
+[`expansion_sources`](@ref): one spelling per typed token, the commonest of its group, so a
+bridge to a rare spelling does not drag that spelling's unreliable neighbours into the query.
+
+```@example gutenberg
+expansion_sources(r)
 ```
 
 ## A small tweet-like corpus

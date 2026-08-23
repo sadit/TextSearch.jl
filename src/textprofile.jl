@@ -208,6 +208,10 @@ an already-tuned profile stays tuned without a rule for it.
 isbase(p::TextProfile) = !istuned(p)
 istuned(p::TextProfile) = any(s -> s.stage === :refit, p.lineage)
 
+# The pair is documented once, above, but a docstring attached to only one of two names makes
+# `[`istuned`](@ref)` unresolvable in the manual -- so both names carry it.
+@doc (@doc isbase) istuned
+
 """
     lineage_summary(p::TextProfile) -> String
 

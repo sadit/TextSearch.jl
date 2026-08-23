@@ -9,8 +9,15 @@ CurrentModule = TextSearch
 
 For generic text analysis you should use other packages like [TextAnalysis.jl](https://github.com/johnmyleswhite/TextAnalysis.jl).
 
-It supports a number of simple text preprocessing functions, and three different kinds of tokenizers, i.e., word n-grams, character q-grams, and skip-grams. It supports creating multisets of tokens, commonly named bag of words (BOW).
+It supports a number of simple text preprocessing functions and word $n$-gram tokenization, with
+custom token generators (`AbstractTokenGenerator`) as the extension point for other kinds of token.
+It supports creating multisets of tokens, commonly named bag of words (BOW).
 `TextSearch.jl` can produce sparse vector representations based on term-weighting schemes like TF, IDF, and TFIDF. It also supports term-weighting schemes designed to cope text classification tasks, mostly based on distributional representations.
+
+Beyond representation, a corpus can be distilled into a **profile**: the vocabulary and its
+counters, a weighting scheme, a stopword set, a lemma map and a query-expansion network, packaged
+as plain JSON that can be shipped, inspected, merged and adapted. Profiles are also what let a
+query be corrected and expanded at search time.
 
 # Installing 
 
@@ -27,6 +34,8 @@ also, you can run the set of tests as follows
 
 See the [Tutorial](@ref) for a hands-on walkthrough: building vocabularies and vector
 models over a real text corpus, indexing with both raw (vector-space) and BM25 inverted
-files, saving/loading indexes with JLD2, and composing or replacing the tokenizer with
+files, dense representations via LSI and Random Indexing, packaging the result as a portable
+profile and merging, refitting and querying one, saving/loading indexes with JLD2, and composing
+or replacing the tokenizer with
 [WordTokenizers.jl](https://github.com/JuliaText/WordTokenizers.jl). The
 [TextSearch API](@ref) page has the full reference.

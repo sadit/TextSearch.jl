@@ -30,9 +30,10 @@ normalization, tokenization, stopword set and lemma step. Tokenizing a sample un
 else silently compares tokens that do not correspond, and the resulting numbers mean nothing.
 
 Everything is inherited from `base` unchanged, with one deliberate exception: when
-`apply_lemmas` is set and `base` carries a lemma map it did not itself apply, a
-the lemma stage runs *first* (see
-[`with_lemma_transformation`](@ref)). That is the point of a base profile keeping its lemmas
+`apply_lemmas` is set and `base` carries a lemma map it did not itself apply, that map enters
+the config's [`TokenPipeline`](@ref), whose lemma stage runs *before* its stopword stage --
+the reverse order silently readmits stopwords, since `"las"` is not in a set holding `"la"`
+until after it is rewritten. That is the point of a base profile keeping its lemmas
 unapplied -- whether to lemmatize belongs to the refit, and a tuned model that declines it
 simply does not carry the map. When lemmas are added here, [`refit_profile`](@ref) folds the
 base's own counts through the same map so both sides stay comparable.
