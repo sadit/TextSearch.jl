@@ -464,7 +464,7 @@ function vectorize_corpus(model::VectorModel, corpus; normalize=true, minweight=
     n = length(corpus)
     V = Vector{SparseVector{Float32,Int32}}(undef, n)
     minbatch = getminbatch(n)
-    prog = Progress(n; dt=1, enabled=verbose, desc="vectorizing corpus")
+    prog = Progress(n; dt=4, enabled=verbose, desc="vectorizing corpus")
 
     @BATCHES minbatch for i in 1:n
         V[i] = vectorize(model, corpus[i]; normalize, minweight, isnormalized)

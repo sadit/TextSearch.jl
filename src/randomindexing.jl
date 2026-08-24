@@ -252,7 +252,7 @@ function vectorize_corpus(ri::RandomIndexing, corpus; normalize::Bool=true, minw
     k = outdim(ri)
     O = Matrix{Float32}(undef, k, n)
     minbatch = getminbatch(n)
-    prog = Progress(n; dt=1, enabled=verbose, desc="vectorizing corpus with Random Indexing")
+    prog = Progress(n; dt=4, enabled=verbose, desc="vectorizing corpus with Random Indexing")
 
     @BATCHES minbatch for i in 1:n
         vectorize!(view(O, :, i), ri, corpus[i]; normalize, minweight, isnormalized)

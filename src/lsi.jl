@@ -361,7 +361,7 @@ function vectorize_corpus(lsi::LatentSemanticIndexing, corpus; normalize::Bool=t
     k = outdim(lsi)
     O = Matrix{Float32}(undef, k, n)
     minbatch = getminbatch(n)
-    prog = Progress(n; dt=1, enabled=verbose, desc="vectorizing corpus with LSI")
+    prog = Progress(n; dt=4, enabled=verbose, desc="vectorizing corpus with LSI")
 
     @BATCHES minbatch for i in 1:n
         vectorize!(view(O, :, i), lsi, corpus[i]; normalize, minweight, isnormalized)
@@ -659,7 +659,7 @@ function query_expansion(voc::Vocabulary, wordvecs::AbstractDatabase, k::Integer
     end
 
     ids, dists = allknn(idx, ictx, kk;
-                        progress=Progress(m; dt=1, enabled=verbose,
+                        progress=Progress(m; dt=4, enabled=verbose,
                                           desc="query_expansion allknn ($(useapprox ? "approx" : "exact"))"))
 
     net = Dict{String,Vector{String}}()

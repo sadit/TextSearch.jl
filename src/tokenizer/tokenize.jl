@@ -187,7 +187,7 @@ function tokenize_corpus(copy_::Function, textconfig::TextConfig, arr; isnormali
     n = length(arr)
     L = Vector{TokenizedText}(undef, n)
     minbatch = getminbatch(n)
-    prog = Progress(n; dt=1, enabled=verbose, desc="tokenizing")
+    prog = Progress(n; dt=4, enabled=verbose, desc="tokenizing")
 
     @BATCHES minbatch for i in 1:n
         L[i] = tokenize(copy_, textconfig, arr[i]; isnormalized)

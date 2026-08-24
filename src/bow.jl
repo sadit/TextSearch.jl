@@ -126,7 +126,7 @@ function bagofwords_corpus(voc::Vocabulary, corpus::AbstractVector; isnormalized
     bowsize = _bow_sizehint(voc)
     X = Vector{BOW}(undef, n)
     minbatch = getminbatch(n)
-    prog = Progress(n; dt=1, enabled=verbose, desc="Bag of words")
+    prog = Progress(n; dt=4, enabled=verbose, desc="Bag of words")
 
     @BATCHES minbatch for i in 1:n
         doc = corpus[i]
