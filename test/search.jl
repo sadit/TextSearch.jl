@@ -78,12 +78,12 @@ end
     @test collect(IdView(res_flag_only)) == ids_plain
 end
 
-struct RecorderLog <: AbstractLog
+struct RecorderLog <: SimilaritySearch.AbstractObserver
     events::Vector{Tuple{Symbol,Int,Int}}
 end
 RecorderLog() = RecorderLog(Tuple{Symbol,Int,Int}[])
 
-function SimilaritySearch.LOG(log::RecorderLog, event::Symbol, index::AbstractSearchIndex, ctx::AbstractContext, sp::Integer, ep::Integer)
+function SimilaritySearch.OBSERVE(log::RecorderLog, event::Symbol, index::AbstractSearchIndex, ctx::AbstractContext, sp::Integer, ep::Integer)
     push!(log.events, (event, Int(sp), Int(ep)))
 end
 
@@ -97,7 +97,7 @@ end
     # fused append_items! (raw text): exactly one :add! covering the whole freshly-built index
     rec = RecorderLog()
     invfile = BM25InvertedFile(voc)
-    ctx = InvertedFileContext(logger=rec)
+    ctx = InvertedFileContext(reporters=[], observers=rec)
     append_items!(invfile, ctx, _corpus)
     @test rec.events == [(:add!, 1, n)]
 
@@ -109,7 +109,7 @@ end
     # decoupled path (db grown directly, then index!): exactly one :add! for the new block
     empty!(rec.events)
     invfile2 = BM25InvertedFile(voc)
-    ctx2 = InvertedFileContext(logger=rec)
+    ctx2 = InvertedFileContext(reporters=[], observers=rec)
     append_items!(database(invfile2), database(invfile))
     index!(invfile2, ctx2)
     @test rec.events == [(:add!, 1, n + 1)]

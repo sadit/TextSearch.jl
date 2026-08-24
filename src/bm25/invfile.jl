@@ -275,7 +275,8 @@ function SimilaritySearch.push_item!(idx::BM25InvertedFile, ctx::InvertedFileCon
     push!(idx.doclens, len)
     push_item!(idx.db, docvec)
     idx.len[] += 1
-    LOG(ctx.logger, :add!, idx, ctx, docID, docID)
+    OBSERVE(ctx, :add!, idx, docID, docID)
+    @inform ctx "add! sp=$docID ep=$docID" index=idx
     idx
 end
 
@@ -348,7 +349,10 @@ function append_items!(idx::BM25InvertedFile, ctx::InvertedFileContext, items::A
     startID = length(idx)
     _bm25_fused_index_and_grow!(idx, ctx, items, startID, n, tol)
     idx.len[] = startID + n
-    n > 0 && LOG(ctx.logger, :add!, idx, ctx, startID + 1, length(idx))
+    if n > 0
+        OBSERVE(ctx, :add!, idx, startID + 1, length(idx))
+        @inform ctx "add! sp=$(startID + 1) ep=$(length(idx))" index=idx
+    end
     idx
 end
 

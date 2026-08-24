@@ -7,7 +7,7 @@ using Test, TextSearch, SimilaritySearch
 # a query without correcting it, so `regiao` (33 documents, a misspelling) returned the neighbours
 # of that misspelling instead of anything about regions.
 @testset "a pre-trained profile drives an index" begin
-    quietctx() = InvertedFileContext(logger=SimilaritySearch.LogList(SimilaritySearch.AbstractLog[]))
+    quietctx() = InvertedFileContext(reporters=[])
 
     # A corpus that keeps case and diacritics, with one rare misspelling of a common word --
     # the shape that matters, since `min_ndocs` leaves such spellings in the vocabulary.
