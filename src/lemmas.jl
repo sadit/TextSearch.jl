@@ -338,11 +338,14 @@ function lemma_clusters(voc::Vocabulary, wordvecs::AbstractDatabase;
 
     if order === :semantic_first
         R = _semantic_clustering(algorithm, dist, wordvecs, num_clusters, m)
-        groups = Dict{UInt32,Vector{UInt32}}()
+        # `R.assign[tid]` is already the position of the token's cluster center, so the groups
+        # are a plain vector indexed by it -- and iterating that vector visits the clusters in
+        # a fixed order, where iterating a Dict visited them in hash order
+        groups = [UInt32[] for _ in eachindex(R.centers)]
         for tid in 1:m
-            push!(get!(() -> UInt32[], groups, R.nn[tid]), UInt32(tid))
+            push!(groups[R.assign[tid]], UInt32(tid))
         end
-        for group in values(groups)
+        for group in groups
             length(group) <= 1 && continue
             if morphdist === nothing
                 push!(finalgroups, group)
