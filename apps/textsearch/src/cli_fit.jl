@@ -207,7 +207,14 @@ function cmd_fit(args::Vector{String})
                 shared_stopwords = sw
                 isempty(sw) || println("  detected $(length(sw)) stopwords; later parts reuse them")
             end
-            zip_profile(batch_dir, zippath)
+            # Zipped under a temporary name and renamed only on success. `resume` above decides
+            # by existence, and existence cannot tell finished from interrupted: a run killed
+            # while writing the zip would leave a truncated part that the next run skips and the
+            # merge then reads. Same reason `prepare` renames its JSONL into place.
+            partial = zippath * ".partial"
+            rm(partial; force=true)
+            zip_profile(batch_dir, partial)
+            mv(partial, zippath; force=true)
             println("saved profile $i ($(length(docs)) docs, vocsize=$m) -> $zippath")
             flush(stdout)
         finally

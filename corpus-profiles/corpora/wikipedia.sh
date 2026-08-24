@@ -250,6 +250,10 @@ CONFIG_DIR="${SNAPSHOT}.${LANG_CODE}"
 # document count, different avgdoclen, different stopwords. They get different names.
 PROFILE_NAME="wiki${SNAPSHOT}-${LANG_CODE}"
 [[ "$SPLIT_PARAGRAPHS" == "true" ]] && PROFILE_NAME="${PROFILE_NAME}-paragraphs"
+# A --limit run is a probe over a prefix of the corpus, not the corpus, and it has to say so in
+# its name for the same reason a paragraph run does: `prepare` reuses an existing JSONL by
+# existence, so a later full run would silently fit on the probe's truncated conversion.
+[[ "$LIMIT" != "0" ]] && PROFILE_NAME="${PROFILE_NAME}-first${LIMIT}"
 SHARD_DIR="$RAW_DIR/wikipedia/$CONFIG_DIR"
 JSONL="$WORK_DIR/wikipedia/${PROFILE_NAME}.jsonl"
 OUT_DIR="$PROFILES_DIR/$PROFILE_NAME"
