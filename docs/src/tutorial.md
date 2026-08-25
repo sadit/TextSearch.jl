@@ -7,42 +7,32 @@ end
 
 # Tutorial
 
-This tutorial walks through building, querying, persisting, and customizing text search
-indexes with `TextSearch.jl` and [`SimilaritySearch.jl`](https://github.com/sadit/SimilaritySearch.jl).
-Every code block on this page is a real, executed Julia session (not hand-typed
-transcripts), so the output you see is always in sync with the current code.
+This tutorial provides a comprehensive guide to text preprocessing, vector representation, inverted indexing, semantic dimensionality reduction, and profile management in `TextSearch.jl`, in integration with [`SimilaritySearch.jl`](https://github.com/sadit/SimilaritySearch.jl).
 
-A few sections use packages beyond `TextSearch`/`SimilaritySearch`:
+All code blocks in this tutorial are executed during documentation generation to guarantee consistency between explanations and output.
+
+The following optional packages are used in specific sections:
 
 ```julia
 ] add JLD2 WordTokenizers
 ```
 
-- [`JLD2.jl`](https://github.com/JuliaIO/JLD2.jl) — saving/loading indexes to disk.
-- [`WordTokenizers.jl`](https://github.com/JuliaText/WordTokenizers.jl) — an
-  alternative, general-purpose English tokenizer, used both to *feed* TextSearch's
-  own pipeline (sentence splitting) and to *replace* it entirely.
+- [`JLD2.jl`](https://github.com/JuliaIO/JLD2.jl): For serializing and deserializing indexes and models to disk.
+- [`WordTokenizers.jl`](https://github.com/JuliaText/WordTokenizers.jl): An external NLP tokenization library used to demonstrate pipeline extensibility.
 
-!!! note "A naming collision to know about"
-    Both `TextSearch` and `WordTokenizers` export a function named `tokenize`. If you
-    `using` both, calling `tokenize` unqualified is ambiguous — Julia will tell you so.
-    Qualify it (`TextSearch.tokenize(...)` / `WordTokenizers.tokenize(...)`) whenever
-    both packages are loaded together, as in the examples below.
+!!! note "Namespace Resolution for `tokenize`"
+    Both `TextSearch` and `WordTokenizers` export a function named `tokenize`. When both packages are imported into the same session, qualify calls explicitly (`TextSearch.tokenize(...)` or `WordTokenizers.tokenize(...)`) to prevent method ambiguity.
 
-## A small corpus from Project Gutenberg
+---
 
-As a running example we use Edgar Allan Poe's short story *The Cask of Amontillado*
-(1846), split into its 54 paragraphs — public domain, small enough to read in one
-sitting, and long enough to make search results meaningful. The text comes from
-[Project Gutenberg](https://www.gutenberg.org/ebooks/1063); each paragraph below is one
-"document".
+## The Reference Corpus: *The Cask of Amontillado*
+
+To illustrate text retrieval workflows on real text, we use Edgar Allan Poe's short story *The Cask of Amontillado* (1846) from [Project Gutenberg](https://www.gutenberg.org/ebooks/1063), partitioned into its 54 constituent paragraphs. Each paragraph represents an individual document.
 
 ```@setup gutenberg
 using TextSearch, SimilaritySearch
 
-# a quiet InvertedFileContext: SimilaritySearch's default logger prints a
-# timestamped progress line to stderr on every `append_items!`, which is noisy
-# in a tutorial; LogList([]) with no sub-loggers silences it.
+# Configure a quiet InvertedFileContext by suppressing informational progress lines during batch operations
 quietctx() = InvertedFileContext(logger=SimilaritySearch.LogList(SimilaritySearch.AbstractLog[]))
 
 CASK_OF_AMONTILLADO = [
@@ -107,18 +97,28 @@ CASK_OF_AMONTILLADO = [
 length(CASK_OF_AMONTILLADO), CASK_OF_AMONTILLADO[1]
 ```
 
-### Building a vocabulary and a vector model
+---
 
-[`Vocabulary`](@ref) parses the corpus once and accumulates per-token statistics
-([`TextConfig`](@ref)`()` defaults to word unigrams). A [`VectorModel`](@ref) then turns
-that vocabulary into a weighting scheme — here, classic TF-IDF — and
-[`vectorize_corpus`](@ref) applies it to every paragraph, producing one sparse
-`SparseVector` per document.
+## Vocabulary Building and Vector Models
+
+### 1. Vocabulary Extraction
+
+A [`Vocabulary`](@ref) processes a text corpus according to a [`TextConfig`](@ref) specification (which defaults to character normalization and word unigram extraction) and accumulates global token statistics:
+- `t.occs`: Total frequency of occurrences across the entire corpus.
+- `t.ndocs`: Number of distinct documents containing the token (document frequency).
 
 ```@example gutenberg
 voc = Vocabulary(TextConfig(), CASK_OF_AMONTILLADO; verbose=false)
 vocsize(voc), gettrainsize(voc)
 ```
+
+### 2. Term Weighting and Vector Models
+
+A [`VectorModel`](@ref) maps bag-of-words token counts into numeric weight vectors using term weighting schemes. Here, we instantiate standard Term Frequency - Inverse Document Frequency (TF-IDF) weighting using `TfWeighting()` and `IdfWeighting()`:
+
+$$\text{TF-IDF}(t, d) = \text{TF}(t, d) \times \log\left( 1 + \frac{|D|}{\text{DF}(t)} \right)$$
+
+Using [`vectorize_corpus`](@ref), the entire corpus is transformed into a collection of sparse vectors (`SparseVector{Float32, Int32}`):
 
 ```@example gutenberg
 model = VectorModel(IdfWeighting(), TfWeighting(), voc)
@@ -126,13 +126,13 @@ vecs = vectorize_corpus(model, CASK_OF_AMONTILLADO)
 vecs[1]
 ```
 
-### Pruning the vocabulary by minimum frequency
+---
 
-`798` tokens out of a ~4000-word story is a lot — most of them are one-off words
-([hapax legomena](https://en.wikipedia.org/wiki/Hapax_legomenon)) that add noise more
-than signal. Each entry of a [`Vocabulary`](@ref) carries its own `occs` (total
-occurrence count across the corpus) and `ndocs` (number of documents it appears in), so
-[`filter_tokens`](@ref) can prune by either:
+## Vocabulary Pruning
+
+In natural language corpora, a significant fraction of terms appear only once ([hapax legomena](https://en.wikipedia.org/wiki/Hapax_legomenon)). These low-frequency terms increase vocabulary dimensionality without contributing generalizable discriminative information.
+
+The [`filter_tokens`](@ref) function produces a pruned [`Vocabulary`](@ref) using predicate functions evaluated on token occurrences:
 
 ```@example gutenberg
 hapax_count = count(t -> t.occs == 1, voc[i] for i in eachindex(voc))
@@ -140,32 +140,24 @@ vocsize(voc), hapax_count
 ```
 
 ```@example gutenberg
+# Prune terms with fewer than 3 total occurrences across the corpus
 pruned_voc = filter_tokens(t -> t.occs >= 3, voc)
 vocsize(pruned_voc)
 ```
 
-`filter_tokens` returns a brand new [`Vocabulary`](@ref) — `voc` itself is untouched, so
-the rest of this tutorial keeps using the original, unpruned vocabulary. To actually
-build a model on the pruned vocabulary instead, just use `pruned_voc` in place of `voc`
-from here on (e.g. `VectorModel(IdfWeighting(), TfWeighting(), pruned_voc)`); words
-below the frequency cutoff are treated as out-of-vocabulary from then on, the same as
-any other unseen word.
-
-Filtering by document frequency (`t.ndocs`) instead of raw occurrence count is often a
-better cutoff for longer/multi-document corpora — it discards words that are common
-within a single document but never recur elsewhere, which raw frequency alone wouldn't
-catch:
+`filter_tokens` returns a new `Vocabulary` without modifying the original instance. In multi-document collections, filtering by document frequency (`t.ndocs`) is often preferable to discard words that are frequent within a single document but absent elsewhere:
 
 ```@example gutenberg
+# Prune terms appearing in fewer than 3 distinct documents
 pruned_by_docfreq = filter_tokens(t -> t.ndocs >= 3, voc)
 vocsize(pruned_by_docfreq)
 ```
 
-### Searching with a raw inverted file (vector-space ranking)
+---
 
-[`WeightedInvertedFile`](@ref) indexes the weight vectors directly and ranks by a
-distance over them — cosine here, via `NormCosine` (SimilaritySearch's cosine distance, re-exported by TextSearch). This is the same kind of
-index you'd use for any sparse vector search, not just text.
+## Vector-Space Information Retrieval: `WeightedInvertedFile`
+
+[`WeightedInvertedFile`](@ref) indexes sparse weight vectors and evaluates similarity under a specified distance metric, defaulting to cosine distance via `Dist.NormCosine` from `SimilaritySearch.jl`:
 
 ```@example gutenberg
 wif = WeightedInvertedFile(vocsize(voc))
@@ -177,10 +169,11 @@ search(wif, wctx, vecs[1], res)
 collect(IdView(res))
 ```
 
-The first hit is paragraph 1 itself (distance 0 — a document is always its own nearest
-neighbor); the rest are the paragraphs whose TF-IDF vectors are closest to it. Querying
-with free text instead of an existing document's vector works the same way, through
-[`vectorize`](@ref):
+In the output, the first match is Document 1 at distance `0.0` (self-match), followed by the documents whose TF-IDF profiles are closest in the cosine space.
+
+### Free-Text Querying
+
+To query the index with arbitrary unstructured text, transform the string into a sparse vector using [`vectorize`](@ref):
 
 ```@example gutenberg
 qvec = vectorize(model, "vector search library")
@@ -189,21 +182,13 @@ search(wif, wctx, qvec, res)
 [(id, first(CASK_OF_AMONTILLADO[id], 60)) for id in collect(IdView(res))]
 ```
 
-Only one hit came back even though we asked for 5 — an inverted file can only rank
-documents that share at least one token with the query, and here just one paragraph
-happens to contain "search". Unsurprisingly, a 19th-century short story has nothing to
-do with vector search libraries anyway; every score here is essentially noise. Try a
-query drawn from the story itself, like `"amontillado nitre"` or `"trowel wall"`, to
-see closer, more meaningful matches.
+An inverted index generates candidate documents sharing at least one token with the query vector. If a query shares minimal vocabulary with the indexed corpus, the candidate set is appropriately restricted.
 
-### Vector arithmetic: dot products, centroids, and normalization
+---
 
-Since paragraph and query vectors are `SparseVector`s (from `SparseArrays.jl`), ordinary
-`LinearAlgebra`/`SparseArrays` operations work on them directly — `+`, `-`, `dot`,
-`norm`, `normalize!`, and scalar `*`/`/` all work out of the box, with no extra
-glue code from TextSearch. Two things make this useful: comparing documents/queries
-directly via `dot`, and building a query that represents *more than one* idea at
-once.
+## Vector Algebra: Dot Products, Centroids, and Normalization
+
+Because document vectors are represented as `SparseVector` instances from `SparseArrays.jl`, standard linear algebra operations (`+`, `-`, `dot`, `norm`, `normalize!`) apply directly.
 
 ```@example gutenberg
 using LinearAlgebra, SparseArrays
@@ -213,28 +198,21 @@ q_damp = vectorize(model, "nitre damp catacombs")
 norm(q_wine), norm(q_damp)
 ```
 
-`vectorize` normalizes its output to unit length by default (`normalize=true`) — this is
-what makes `dot` directly meaningful as a similarity score: for unit ("spherical")
-vectors, the dot product *is* the cosine similarity, bounded the same way cosine
-similarity is. It also matches what [`WeightedInvertedFile`](@ref) itself assumes —
-its distance is a cheap running dot-product sum (see `Dist.NormCosine`'s docstring),
-valid only when the vectors being compared are already unit length.
+By default, `vectorize` scales vectors to unit Euclidean length ($\|v\|_2 = 1$). For unit-normalized vectors, the inner product equals the cosine similarity:
+
+$$\langle u, v \rangle = \cos(\theta) = 1 - d_{\text{Cosine}}(u, v)$$
 
 ```@example gutenberg
-dot(q_wine, q_damp)
+dot(q_wine, q_damp)  # Evaluates to 0.0 because the two queries have disjoint term supports
 ```
-
-Zero — these two queries share no vocabulary at all, so as far as the dot product is
-concerned they're unrelated (not literally "opposite", just orthogonal). Compare that to
-two paragraphs that are actually about the same scene:
 
 ```@example gutenberg
-dot(vecs[51], vecs[52])  # two consecutive paragraphs of Fortunato's manic "ha! ha!" laughter
+dot(vecs[51], vecs[52])  # Non-zero similarity between consecutive related paragraphs
 ```
 
-To search for *both* ideas at once — say, a query that's part "the wine", part "the
-damp vaults" — combine the two query vectors into their [`centroid`](@ref) and search
-with that, instead of running two separate queries and merging results by hand:
+### Composite Query Formulation via Centroids
+
+To construct a composite query representing multiple thematic aspects simultaneously, compute their spherical [`centroid`](@ref):
 
 ```@example gutenberg
 q_both = centroid([q_wine, q_damp])
@@ -247,47 +225,36 @@ search(wif, wctx, q_both, res)
 [(id, first(CASK_OF_AMONTILLADO[id], 60)) for id in collect(IdView(res))]
 ```
 
-The results blend both themes, rather than only ever matching one or the other.
+### Mathematical Requirement for Input Normalization
 
-#### Why `normalize!` matters here
+The [`centroid`](@ref) function computes the sum of input vectors and normalizes the resultant vector to unit length:
 
-[`centroid`](@ref) normalizes its *output*, but that alone doesn't make a fair blend —
-it fixes the final vector's length, not the direction that a plain sum already baked
-in. If the inputs going in aren't themselves unit vectors, whichever one happens to have
-the larger magnitude dominates the sum, and the final `normalize!` just rescales that
-already-skewed direction to length 1. A minimal example makes this concrete:
+$$c = \frac{\sum_{i=1}^m v_i}{\left\| \sum_{i=1}^m v_i \right\|_2}$$
+
+If input vectors do not possess identical $L_2$ norms, the resultant direction is biased toward the vector with larger magnitude:
 
 ```@example gutenberg
-a = sparsevec([1], [1.0f0], 2)  # a unit vector, pointing along "axis 1"
-b = sparsevec([2], [1.0f0], 2)  # a unit vector, pointing along "axis 2"
-centroid([a, b])                # evenly split between both directions, as expected
+a = sparsevec([1], [1.0f0], 2)  # Unit vector along coordinate 1
+b = sparsevec([2], [1.0f0], 2)  # Unit vector along coordinate 2
+centroid([a, b])                # Balanced combination with equal weights
 ```
 
 ```@example gutenberg
-b_scaled = b * 5.0f0   # same direction as `b`, but 5x the magnitude
-norm(b_scaled)
+b_scaled = b * 5.0f0            # Vector along coordinate 2 with 5x magnitude
+centroid([a, b_scaled])         # Direction is skewed predominantly toward coordinate 2
 ```
 
-```@example gutenberg
-centroid([a, b_scaled])  # direction is pulled almost entirely toward b, not an even blend
-```
+Because `vectorize` produces unit-normalized vectors by default, queries combined via `centroid` maintain equal weighting. When combining vectors generated externally, ensure `normalize!(v)` is called prior to centroid computation.
 
-`vectorize`'s default `normalize=true` is precisely what saves you from this: every
-vector TextSearch itself produces already lies on the unit sphere, so summing any
-number of them and normalizing the result gives a genuinely even blend, as in
-`q_both` above. The failure mode above only bites when vectors come from somewhere
-`vectorize` didn't touch — built with `normalize=false`, assembled by hand, or imported
-from a different pipeline entirely. The fix is always the same: call `normalize!`
-on each vector individually before combining them, so every input to a centroid is on
-equal footing before it's summed.
+---
 
-### Searching with BM25 (probabilistic ranking)
+## Probabilistic Information Retrieval: `BM25InvertedFile`
 
-[`BM25InvertedFile`](@ref) is a different index entirely: instead of building explicit
-weight vectors, it indexes the corpus's bags of words and a [`BM25Scorer`](@ref)
-directly, ranking by the Okapi BM25 formula. There's no separate `VectorModel`/
-`vectorize_corpus` step — `append_items!` takes raw text (or [`TokenizedText`](@ref),
-or a pre-computed [`BOW`](@ref)) and computes everything it needs from `voc`.
+[`BM25InvertedFile`](@ref) implements the Okapi BM25 ranking function. Unlike vector space models that evaluate geometric cosine distance over pre-computed sparse vectors, BM25 models term saturation and document length normalization directly:
+
+$$\text{Score}(D, Q) = \sum_{q \in Q} \text{IDF}(q) \cdot \frac{f(q, D) \cdot (k_1 + 1)}{f(q, D) + k_1 \cdot \left(1 - b + b \cdot \frac{|D|}{\text{avgdl}}\right)}$$
+
+`BM25InvertedFile` ingests raw strings, pre-tokenized structures, or bag-of-words representations directly without requiring an intermediate `VectorModel`:
 
 ```@example gutenberg
 bm25idx = BM25InvertedFile(voc)
@@ -299,18 +266,16 @@ search(bm25idx, bctx, "amontillado nitre", res)
 [(id, first(CASK_OF_AMONTILLADO[id], 60)) for id in collect(IdView(res))]
 ```
 
-Both index types answer top-k queries the same way (`append_items!`/`push_item!` to
-build, `search` to query), so switching between them is mostly a matter of which one
-matches your ranking needs: `WeightedInvertedFile` for vector-space similarity over any
-weighting scheme you've built, `BM25InvertedFile` when you want BM25's document-length
-normalization and term-saturation behavior without hand-building vectors first.
+### Selection Summary: Vector Space vs. BM25
 
-## Saving and loading indexes with JLD2
+- **[`WeightedInvertedFile`](@ref)**: Use when ranking under customized term weighting schemes (TF, IDF, TF-IDF) or when operating on general sparse feature vectors.
+- **[`BM25InvertedFile`](@ref)**: Use for standard full-text document retrieval tasks benefiting from non-linear term saturation ($k_1$) and document-length penalization ($b$).
 
-Every type used above — [`Vocabulary`](@ref), [`VectorModel`](@ref),
-[`BM25InvertedFile`](@ref), [`WeightedInvertedFile`](@ref) — is a plain Julia struct, so
-[`JLD2.jl`](https://github.com/JuliaIO/JLD2.jl) can save and load them directly with no
-special glue code.
+---
+
+## Index Persistence with JLD2
+
+All primary structures ([`Vocabulary`](@ref), [`VectorModel`](@ref), [`BM25InvertedFile`](@ref), [`WeightedInvertedFile`](@ref)) are concrete Julia types compatible with [`JLD2.jl`](https://github.com/JuliaIO/JLD2.jl) serialization:
 
 ```@example gutenberg
 using JLD2
@@ -331,19 +296,17 @@ search(bm25idx2, quietctx(), "amontillado nitre", res)
 collect(IdView(res))
 ```
 
-The reloaded `BM25InvertedFile` answers the same query with the same ranking as the
-original — nothing needs to be rebuilt or refit.
+Deserializing an index restores its posting lists and scoring parameters, enabling immediate query execution without retraining.
 
-## Working with Paragraphs, Sentences, and External Tokenizers
+---
 
-`TextSearch`'s own tokenizer ([`TextConfig`](@ref)/[`tokenize`](@ref)) is fast, thread-safe, and tuned for domain-agnostic and informal text. For long documents or specialised NLP tasks, you may want to segment text into paragraphs or sentences, skip redundant text normalization, or replace TextSearch's tokenizer entirely with an **external tokenizer**.
+## Granular Segmentation and External Tokenizers
 
-### Paragraph and Sentence Tokenization
+### 1. Paragraph and Sentence Segmentation
 
-TextSearch provides built-in helper functions [`tokenize_paragraphs`](@ref) and [`tokenize_sentences`](@ref) to split long documents or text corpora into finer-grained chunks prior to vocabulary building or indexing:
+`TextSearch.jl` includes utility functions [`tokenize_paragraphs`](@ref) and [`tokenize_sentences`](@ref) to segment long documents into fine-grained passages before index creation:
 
 ```@example gutenberg
-# Splitting long text into sentences using TextSearch's built-in sentence tokenizer:
 all_sentences = tokenize_sentences(CASK_OF_AMONTILLADO)
 length(all_sentences), all_sentences[1]
 ```
@@ -353,7 +316,7 @@ sentence_voc = Vocabulary(TextConfig(), all_sentences; verbose=false)
 vocsize(sentence_voc), gettrainsize(sentence_voc)
 ```
 
-You can also use external sentence segmenters like `WordTokenizers.split_sentences` as a preprocessing step:
+External sentence splitters (such as `WordTokenizers.split_sentences`) can also be integrated into preprocessing pipelines:
 
 ```@example gutenberg
 using WordTokenizers
@@ -368,83 +331,81 @@ end
 length(sentences), sentences[1]
 ```
 
-### Avoiding Redundant Normalization with `isnormalized`
+### 2. Bypassing Redundant Normalization with `isnormalized`
 
-When text has already been normalized (for example, during paragraph or sentence extraction), you can pass `isnormalized=true` to [`tokenize`](@ref), [`Vocabulary`](@ref), [`bagofwords`](@ref), or [`vectorize`](@ref) to skip character-level case-folding, diacritics removal, and regex preprocessing:
+When text has already undergone character normalization (e.g., lowercasing, punctuation stripping), passing `isnormalized=true` skips redundant transformation passes during vocabulary building and vectorization:
 
 ```@example gutenberg
 cfg = TextConfig(normalization=NormalizationConfig(lc=true, del_punc=true))
 norm_sentences = tokenize_sentences(cfg, CASK_OF_AMONTILLADO)
 
-# Pass isnormalized=true to skip repeating the normalization step:
 norm_voc = Vocabulary(cfg, norm_sentences; isnormalized=true, verbose=false)
 vocsize(norm_voc)
 ```
 
-### Integrating External Tokenizers with `TokenizedText`
+### 3. Integrating External Tokenizers with `TokenizedText`
 
-If you want to use an **external tokenizer** (such as `WordTokenizers.jl`, HuggingFace / BPE / WordPiece subword tokenizers, spaCy, or custom regex tokenizers), wrap your token list in a [`TokenizedText`](@ref).
+To integrate external subword tokenizers (such as BPE, WordPiece, SentencePiece, or `WordTokenizers.jl`), wrap pre-tokenized string arrays in a [`TokenizedText`](@ref) container.
 
-`TokenizedText` is TextSearch's universal contract for pre-tokenized documents:
-[`Vocabulary`](@ref), [`bagofwords`](@ref), [`vectorize`](@ref), and [`append_items!`](@ref) all recognize `TokenizedText` and skip TextSearch's internal normalization and tokenization steps entirely, consuming your external tokens as-is.
+When functions such as [`Vocabulary`](@ref), [`bagofwords`](@ref), [`vectorize`](@ref), and [`append_items!`](@ref) receive a `TokenizedText`, they consume the supplied tokens directly and bypass internal tokenization:
 
 ```@example gutenberg
-# Tokenize using WordTokenizers.jl (or any external tokenizer):
+# Tokenize documents using an external tokenizer
 wt_docs = [TokenizedText(String.(WordTokenizers.tokenize(lowercase(p)))) for p in CASK_OF_AMONTILLADO]
 collect(wt_docs[1])[1:8]
 ```
 
 ```@example gutenberg
-# Build Vocabulary directly from external TokenizedText documents:
+# Construct Vocabulary directly from pre-tokenized documents
 wt_voc = Vocabulary(TextConfig(), wt_docs; verbose=false)
 vocsize(wt_voc)
 ```
 
-`TextConfig()` is still passed when constructing `Vocabulary` — TextSearch retains it for later query processing — but because every document arrives as a `TokenizedText`, none of `TextConfig`'s tokenization rules alter how your documents were split; the tokenization was performed entirely by your external tokenizer.
+---
 
-## Dense Semantic Representations & Dimensionality Reduction
+## Dense Semantic Representations and Dimensionality Reduction
 
-While inverted files (like `InvertedFile` and `BM25InvertedFile`) excel at sparse keyword-based retrieval, many natural language processing workflows benefit from **dense semantic embeddings** or **compact binary sketches**.
+While inverted files provide exact retrieval for sparse representations, dense vector embeddings map semantically related terms and documents to continuous vector spaces.
 
-`TextSearch.jl` provides two complementary techniques for dimensionality reduction and dense indexing:
-1. **Latent Semantic Indexing (LSI)**: Low-rank matrix factorization via truncated SVD.
-2. **Random Indexing (RI)**: Fast projection via random matrices, with direct pipelines for 8-bit scalar quantization (`SQu8`, `SQgu8`) and binary bit sketches (`BitSketch`).
+`TextSearch.jl` implements two dimensionality reduction paradigms:
+1. **Latent Semantic Indexing (LSI)**: Low-rank matrix approximation via truncated Singular Value Decomposition (SVD).
+2. **Random Indexing (RI)**: Randomized projections governed by the Johnson-Lindenstrauss lemma, supporting scalar quantization and binary bit sketches.
 
 ---
 
 ### Latent Semantic Indexing (LSI)
 
-#### Where is LSI useful?
-- **Query expansion and polysemy resolution**: By projecting the term-document matrix onto its principal singular vectors, LSI groups words that frequently co-occur into shared latent semantic dimensions. Documents using different words for the same concept (e.g., *"wine"* and *"amontillado"*) are mapped close together in the dense space.
-- **Noise reduction and compact representations**: Reduces large vocabularies (e.g., tens of thousands of terms) into a dense, low-dimensional space (typically 64 to 300 dimensions, default `maxoutdim=128`).
-- **Dense index compatibility**: Creates dense `MatrixDatabase{Matrix{Float32}}` collections that can be indexed with approximate nearest-neighbor graph structures like [`SearchGraph`](https://github.com/sadit/SimilaritySearch.jl).
+#### Theoretical Formulation
 
-#### Building and Querying an LSI Model
+Let $X \in \mathbb{R}^{v \times n}$ denote the term-document matrix. Truncated SVD computes the rank-$k$ approximation:
 
-You can construct a [`LatentSemanticIndexing`](@ref) model directly from a [`VectorModel`](@ref) and a training corpus, or via convenience constructors:
+$$X \approx U_k \Sigma_k V_k^T$$
+
+The projection matrix $P = \Sigma_k^{-1} U_k^T$ maps sparse document vectors $d \in \mathbb{R}^v$ into dense semantic coordinates $z = P d \in \mathbb{R}^k$.
+
+#### Training and Indexing with LSI
 
 ```@example gutenberg
-# Train an LSI model with 16 latent dimensions on our Gutenberg corpus
+# Fit an LSI model with k = 16 latent dimensions
 lsi = LatentSemanticIndexing(CASK_OF_AMONTILLADO; maxoutdim=16, verbose=false)
 lsi
 ```
 
 ```@example gutenberg
-# Project a single query document into a dense Float32 vector:
+# Project query string into a dense 16-dimensional vector
 q_vec = vectorize(lsi, "wine vaults and connoisseur")
 (length(q_vec), typeof(q_vec))
 ```
 
 ```@example gutenberg
-# Vectorize the entire corpus into a dense MatrixDatabase in parallel:
+# Vectorize entire corpus into a dense MatrixDatabase
 lsi_db = vectorize_corpus(lsi, CASK_OF_AMONTILLADO; verbose=false)
 size(lsi_db.matrix)
 ```
 
-Now we can build a graph index (`SearchGraph`) or exact search (`ExhaustiveSearch`) from `SimilaritySearch.jl` using cosine distance:
+Dense LSI databases can be indexed using graph-based approximate indexes such as [`SearchGraph`](https://github.com/sadit/SimilaritySearch.jl):
 
 ```@example gutenberg
-# Index and search the dense LSI space:
 sctx = SearchGraphContext()
 lsi_index = SearchGraph(Dist.NormCosine(), lsi_db)
 index!(lsi_index, sctx)
@@ -454,123 +415,97 @@ search(lsi_index, sctx, q_vec, res)
 [(id, first(CASK_OF_AMONTILLADO[id], 60) * "...") for id in collect(IdView(res))]
 ```
 
-#### Word Embeddings and a Query expansion Network
+#### Word Embeddings and Query Expansion Networks
 
-`lsi.P` is a `(outdim(lsi), vocsize(lsi))` projection matrix -- column `t` is already the LSI
-embedding of vocabulary token `t` (a document's vector is just a weighted sum of its tokens'
-columns), so the same trained model doubles as a source of **word embeddings**, with no extra
-training needed. [`wordvectors`](@ref) returns them as a `MatrixDatabase`, ready for the same
-kind of nearest-neighbor search used above for documents:
+The column vectors of the projection matrix correspond to dense word embeddings. The function [`wordvectors`](@ref) extracts these embeddings into a `MatrixDatabase`:
 
 ```@example gutenberg
 W = wordvectors(lsi)
 size(W.matrix)
 ```
 
-Running [`allknn`](https://sadit.github.io/SimilaritySearch.jl/dev/) over that word-embedding
-space is exactly how the "query expansion resolution" mentioned earlier becomes concrete: words that
-tend to co-occur in similar contexts end up with nearby embeddings. [`query_expansion`](@ref) wraps this
-into a `token => [(neighbor, distance), ...]` network in one call:
+The function [`query_expansion`](@ref) computes an all-pairs nearest-neighbor graph over the vocabulary embeddings to produce a semantic term-expansion network:
 
 ```@example gutenberg
 net = query_expansion(lsi, 5; verbose=false)
 net.query_expansion["wine"]
 ```
 
-The call returns the network and its distances as separate fields -- `net.query_expansion` maps
-a token to its neighbours in rank order, `net.distances` keeps the distances alongside -- because
-only the ranking takes part in query expansion, while the distances are what you look at to judge
-whether a list is worth trusting.
-
-For a small demo corpus like this one, don't expect polished query_expansion pairs -- a handful of short
-paragraphs isn't enough text for the co-occurrence statistics LSI relies on to fully separate
-content words from frequent function words. On a real corpus (thousands of documents, a pruned
-vocabulary), the same call is a quick way to get a first query_expansion/related-terms network without
-training a dedicated word-embedding model.
-
 ---
 
-### Random Indexing (RI) & Quantization Pipelines
+### Random Indexing and Quantization Pipelines
 
-#### Where is Random Indexing useful?
-- **Streaming / incremental scenarios without global matrix factorization**: Unlike LSI (which computes SVD across an entire static corpus), Random Indexing assigns fixed, pseudo-orthogonal random projection vectors to each vocabulary term. New documents can be projected immediately on the fly without re-training or re-factoring any matrix.
-- **Fast computation with Johnson-Lindenstrauss guarantees**: Preserves pairwise cosine distances with high probability while being computationally lightweight (`:gaussian`, `:qr`, or sparse ternary `:sparse_random`).
-- **Extreme memory compression and hardware acceleration**:
-  - **`SQu8` / `SQgu8` Scalar Quantization**: Compresses embeddings from 32-bit `Float32` down to 8-bit `UInt8` (a 4× memory reduction) while retaining search accuracy.
-  - **`BitSketch` (SimHash)**: Compresses projections into 64-bit packed bit words (`UInt64`), turning similarity search into lightning-fast **Hamming distance** evaluations using CPU `POPCNT` and `XOR` instructions (`Dist.Bits.Hamming()`).
+#### Properties of Random Indexing
+
+Random Indexing assigns a fixed, pseudo-orthogonal random vector $r_t \in \mathbb{R}^k$ ($k \ll v$) to each vocabulary token $t$. A document vector is constructed incrementally as the linear combination of its constituent token vectors:
+
+$$z = \sum_{t \in D} w(t, D) r_t$$
+
+Advantages include:
+- **Streaming Computation**: Incremental projection of new documents without requiring full-matrix SVD refactoring.
+- **Distance Preservation**: Bounds metric distortion in accordance with the Johnson-Lindenstrauss lemma.
+- **Compression Compatibility**: Direct integration with 8-bit scalar quantization and binary bit sketches.
 
 #### 1. Dense Random Indexing (`Float32`)
 
 ```@example gutenberg
-# Build a Random Indexing model from the corpus (default maxoutdim=1024; using 64 here for illustration)
 ri = RandomIndexing(CASK_OF_AMONTILLADO; maxoutdim=64, method=:gaussian, verbose=false)
-ri
-```
-
-```@example gutenberg
-# Vectorize corpus into dense Float32 MatrixDatabase
 ri_db = vectorize_corpus(ri, CASK_OF_AMONTILLADO; verbose=false)
 size(ri_db.matrix)
 ```
 
-#### 2. 8-Bit Scalar Quantization (`SQu8` & `SQgu8`)
+#### 2. 8-Bit Scalar Quantization (`SQu8` / `SQgu8`)
 
-For memory-constrained environments, `vectorize_corpus` can directly produce quantized databases:
+Scalar quantization compresses 32-bit floating point dimensions into 8-bit unsigned integers (`UInt8`), reducing memory requirements by 4$\times$:
 
 ```@example gutenberg
 using SimilaritySearch.ScalarQuant: SQu8, SQgu8
 
-# Per-column 8-bit quantization (SQu8):
+# Quantize entire corpus representation
 squ8_db = vectorize_corpus(SQu8, ri, CASK_OF_AMONTILLADO; verbose=false)
 
-# Single query quantized to SQu8:
+# Quantize single query vector
 q_squ8 = vectorize(SQu8, ri, "damp vaults and catacombs")
 
-# Search using SQu8.NormCosine():
+# Search over quantized representations using SQu8.NormCosine()
 squ8_index = ExhaustiveSearch(SQu8.NormCosine(), squ8_db)
 res_squ8 = knnqueue(KnnSorted, 2)
 search(squ8_index, GenericContext(), q_squ8, res_squ8)
 [(id, first(CASK_OF_AMONTILLADO[id], 60) * "...") for id in collect(IdView(res_squ8))]
 ```
 
-#### 3. Binary BitSketches & Hamming Search (`BitSketch`)
+#### 3. Binary Bit Sketches and Hamming Search (`BitSketch`)
 
-`BitSketch` uses SimHash-style sign-packing to generate compact binary fingerprints:
+`BitSketch` applies random hyperplane projections, packing projection signs into 64-bit unsigned integers (`UInt64`). Distance evaluation is computed via hardware-accelerated bitwise Hamming distance:
 
 ```@example gutenberg
-# Create a 512-dimension RI model (packed into 8 UInt64 words (512 bits) per document)
+# Project corpus into 512-bit binary signatures (8 × UInt64 words per document)
 ri_bits = RandomIndexing(CASK_OF_AMONTILLADO; maxoutdim=512, verbose=false)
-
-# Vectorize entire corpus into packed bit words (MatrixDatabase{Matrix{UInt64}}):
 bits_db = bitsketch(ri_bits, CASK_OF_AMONTILLADO; verbose=false)
 (typeof(bits_db), size(bits_db.matrix))
 ```
 
 ```@example gutenberg
-# Query bit sketch:
+# Query bit sketch generation
 q_bits = bitsketch(ri_bits, "damp vaults and catacombs")
 
-# Ultra-fast Hamming distance search:
+# Exact Hamming distance search
 bit_index = ExhaustiveSearch(Dist.Bits.Hamming(), bits_db)
 res_bits = knnqueue(KnnSorted, 2)
 search(bit_index, GenericContext(), q_bits, res_bits)
 [(id, first(CASK_OF_AMONTILLADO[id], 60) * "...") for id in collect(IdView(res_bits))]
 ```
 
-## Portable profiles
+---
 
-Everything built so far — the vocabulary and its counters, the weighting scheme, the stopword
-set, the lemma map, the query-expansion network — is *derived from this corpus*, and it took a
-full pass plus an SVD to get. A [`TextProfile`](@ref) is that work packaged so it can be shipped,
-inspected, and adapted, rather than recomputed by whoever needs it next.
+## Portable Text Profiles (`TextProfile`)
 
-The design has one line running through it: **policy** versus **artifacts**. A
-[`TextConfig`](@ref) is policy — normalization and tokenization, hand-writable, corpus
-independent. A profile holds the artifacts, each estimated from data, and *derives* the config it
-tokenizes with from its own policy plus the artifacts it applies. So what a profile applies is
-always what it carries; the two cannot drift apart.
+A [`TextProfile`](@ref) encapsulates the statistical and linguistic artifacts estimated from a corpus (vocabulary frequencies, term weightings, stopword sets, lemma mappings, and expansion networks) into a portable, inspectable specification.
 
-### Packaging the artifacts
+### Architecture: Policy vs. Artifacts
+
+- **Policy ([`TextConfig`](@ref))**: Declarative rules governing text normalization and token extraction (independent of corpus statistics).
+- **Artifacts ([`TextProfile`](@ref))**: Empirical models estimated from data. The profile derives its active tokenizer configuration directly from its declared policy and active artifacts.
 
 ```@example gutenberg
 stop = Set(stopword_candidates(voc, 0.5))
@@ -580,8 +515,6 @@ profile = TextProfile(model;
                       stopwords=stop, lemmas,
                       query_expansion=net.query_expansion,
                       query_expansion_distances=net.distances,
-                      # only stopwords are APPLIED: the lemma map and the network travel with
-                      # the profile for a consumer to decide about
                       applied=AppliedArtifacts(stopwords=true),
                       lineage=[LineageStep(:fit; trainsize=length(CASK_OF_AMONTILLADO), outdim=16)])
 
@@ -589,9 +522,7 @@ profile = TextProfile(model;
  expansion=length(profile.query_expansion), base=isbase(profile))
 ```
 
-Everything above in one call, which is how it is normally done -- `fit_profile` runs the three
-passes in the order they have to happen in, and the pieces stay public for when you want to place
-them yourself:
+The function [`fit_profile`](@ref) provides a single-call pipeline to estimate all profile components:
 
 ```@example gutenberg
 oneshot = fit_profile(TextConfig(), CASK_OF_AMONTILLADO;
@@ -601,11 +532,9 @@ oneshot = fit_profile(TextConfig(), CASK_OF_AMONTILLADO;
  expansion=length(oneshot.query_expansion), base=isbase(oneshot))
 ```
 
-### What lands on disk
+### JSON Serialization and Inspection
 
-[`save_profile`](@ref) writes a directory of plain JSON, and [`zip_profile`](@ref) packs it into
-one file. There is no serialized Julia object anywhere in it: a profile can be read, diffed and
-patched with ordinary tools, and loading one never evaluates code that came with it.
+Profiles serialize to standard JSON files via [`save_profile`](@ref) and [`zip_profile`](@ref), enabling cross-platform inspection and version control without executing arbitrary serialized code:
 
 ```@example gutenberg
 dir = mktempdir()
@@ -613,34 +542,24 @@ save_profile(dir, profile)
 sort(readdir(dir))
 ```
 
-`manifest.json` names the policy, which artifacts are present, whether each is applied, and the
-lineage. Everything else is one file per artifact.
+### Applied vs. Carried Artifacts
 
-### Applied versus carried
-
-The distinction is what makes a profile usable as a *base* model. A generic profile computes the
-lemma map but leaves applying it to whoever tunes from it, because lemmatization changes what a
-token is and therefore what the idf counts:
+Artifacts can be stored in a profile as reference data without being activated in the tokenization pipeline. The function [`with_applied`](@ref) dynamically activates or deactivates artifacts:
 
 ```@example gutenberg
 p = load_profile(dir)
 gettextconfig(p).pipeline, p.applied
 ```
 
-Turning it on is a change to the marker, not surgery on a pipeline — [`with_applied`](@ref)
-re-derives the config from the artifacts the profile already has:
-
 ```@example gutenberg
+# Activate lemmatization in the profile's tokenization pipeline
 q = with_applied(p; lemmas=true)
 gettextconfig(q).pipeline.lemmas !== nothing, q.applied
 ```
 
-### Merging batched profiles
+### Merging Partitioned Profiles: `merge_profiles`
 
-A corpus too large for one pass is fitted in batches, each batch producing an independent
-profile. [`merge_profiles`](@ref) folds them back into one, and the vocabulary half of that is
-*exact*: counts over disjoint batches are additive, so the merged idf is the true corpus-wide
-idf, not an average of averages.
+When processing large-scale corpora in distributed partitions, [`merge_profiles`](@ref) combines independent batch profiles into a single unified profile. Vocabulary counts across disjoint subsets are additive, guaranteeing mathematically exact inverse document frequencies:
 
 ```@example gutenberg
 half = length(CASK_OF_AMONTILLADO) ÷ 2
@@ -654,85 +573,61 @@ merged = merge_profiles([a, b])
  merged=gettrainsize(merged.model.voc), lineage=lineage_summary(merged))
 ```
 
-The artifacts cannot be added the same way, since each batch estimated its own in its own
-embedding space, so they are *combined* by rule: stopword sets are re-judged on the merged
-counters, lemma maps vote, and expansion networks are fused by rank consensus.
+### Profile Adaptation: `refit_profile`
 
-### Adapting a profile to a dataset
-
-[`refit_profile`](@ref) takes a general profile and a sample of a specific dataset, and treats
-the profile as a **prior** worth `kappa` documents against the sample's evidence — adjusting
-statistics rather than replacing them. A word the base considered important but the sample never
-shows survives with reduced weight; one that mattered in neither is dropped.
+[`refit_profile`](@ref) adapts an existing base profile to a specialized target domain using Bayesian-style updating. The base profile serves as a prior weighted by parameter `kappa` relative to empirical observations in the adaptation sample:
 
 ```@example gutenberg
 tuned = refit_profile(p, CASK_OF_AMONTILLADO[1:6]; verbose=false)
 (tuned=istuned(tuned), vocsize=vocsize(tuned.model.voc), lineage=lineage_summary(tuned))
 ```
 
-Note that nothing declares a profile "base" or "tuned": [`isbase`](@ref) and [`istuned`](@ref)
-read it off the recorded lineage, so the label cannot disagree with the history.
+The predicates [`isbase`](@ref) and [`istuned`](@ref) verify model provenance directly from recorded lineage history.
 
-### Correcting a query
+---
 
-A profile that keeps case and diacritics lets the corpus distinguish senses that folding
-destroys — but then a query typed without them matches nothing. In this corpus the wine is
-always written `Amontillado`:
+## Query Token Resolution and Spelling Normalization
+
+When a corpus preserves case and diacritics, queries entered in un-normalized form may fail to match exact vocabulary entries:
 
 ```@example gutenberg
 cased = TextConfig(normalization=NormalizationConfig(lc=false))
 cvoc = Vocabulary(cased, CASK_OF_AMONTILLADO; verbose=false)
-token2id(cvoc, "amontillado"), token2id(cvoc, "Amontillado")     # 0 means "not in the vocabulary"
+token2id(cvoc, "amontillado"), token2id(cvoc, "Amontillado")  # ID 0 indicates out-of-vocabulary
 ```
 
-[`derive_variants`](@ref) builds the bridge, and it is deliberately small: it stores only the
-spellings that cannot be **computed** from a folded form. `amontillado -> Amontillado` is
-computed at query time, so it is not stored; accent restoration has to be, since from `practico`
-there is no telling whether the corpus writes `práctico` or `practicó`. This corpus has no
-accents, so what survives is a curiosity worth understanding:
+The function [`derive_variants`](@ref) computes an auxiliary dictionary of non-derivable surface variants:
 
 ```@example gutenberg
 variants = derive_variants(cvoc)
 ```
 
-`_At` and `_In` are Gutenberg's underscore emphasis markers, and they are stored because
-`uppercasefirst("_at")` returns `"_at"` unchanged — the first character is not a letter, so that
-capitalization is not computable after all.
-
-[`resolve_query_tokens`](@ref) then answers the query as most probably meant, and
-[`explain`](@ref) says what it did:
+The function [`resolve_query_tokens`](@ref) maps query tokens to their most probable vocabulary forms:
 
 ```@example gutenberg
 r = resolve_query_tokens(cvoc, ["amontillado", "wine"], variants)
 r.tokens, explain(r)
 ```
 
-`wine` was in the vocabulary as typed and was left alone; `amontillado` was not, so it was
-corrected — and where correction fires it **replaces**, which is why the typed form is gone from
-`r.tokens`. That is only defensible because the literal query is always still available, the way
-a search engine offers "search instead for …":
+The [`QueryPolicy`](@ref) structure controls query resolution behavior, permitting manual disabling of spelling substitution or query expansion:
 
 ```@example gutenberg
 resolve_query_tokens(cvoc, ["amontillado"], variants, QueryPolicy(correction=:off)).tokens
 ```
 
-[`QueryPolicy`](@ref) carries both guesses a search makes about intent — whether to correct a
-spelling and whether to expand with the network — because both are guesses, and both should be
-answerable literally. Expansion, when it runs, draws from
-[`expansion_sources`](@ref): one spelling per typed token, the commonest of its group, so a
-bridge to a rare spelling does not drag that spelling's unreliable neighbours into the query.
-
 ```@example gutenberg
 expansion_sources(r)
 ```
 
-## A small tweet-like corpus
+---
 
-`TextConfig` has several options aimed specifically at short, informal, social-media
-text: grouping `@mentions`, URLs, and emoji into single normalized tokens instead of
-leaving them as noisy character soup. The messages below are a small illustrative set
-written to exercise these options (not scraped from a live feed, so the example needs
-no network access and no data-license considerations).
+## Social Media and Informal Text Processing
+
+[`TextConfig`](@ref) includes dedicated normalization options for informal and social media text:
+- `group_usr`: Maps user handles (`@username`) to the canonical placeholder token `_usr`.
+- `group_url`: Maps web links (`https://...`) to `_url`.
+- `group_emo`: Maps emoji characters to a unified symbol (`👾`), preventing vocabulary fragmentation across sparse emojis.
+- Hashtags (`#topic`) are preserved as informative semantic tokens.
 
 ```@example tweets
 using TextSearch, SimilaritySearch
@@ -756,12 +651,6 @@ cfg = TextConfig(normalization=NormalizationConfig(group_usr=true, group_url=tru
 collect(TextSearch.tokenize(cfg, tweets[1]))
 ```
 
-`@VisitMexico` collapsed to `_usr`, and the 🎉 emoji collapsed to `👾` — with
-`group_emo=true`, every emoji character is replaced by this single placeholder glyph
-before tokenization, so any emoji becomes the same token instead of each distinct emoji
-being its own rare, one-off token. `#travel` stayed intact — hashtags are treated as
-regular content, not stripped, since they usually carry meaning.
-
 ```@example tweets
 voc = Vocabulary(cfg, tweets; verbose=false)
 bm25idx = BM25InvertedFile(voc)
@@ -773,12 +662,10 @@ search(bm25idx, ctx, "vector search library", res)
 [(id, tweets[id]) for id in collect(IdView(res))]
 ```
 
-The top matches are exactly the three tweets that actually mention vector search —
-BM25 ranks them by how much of the query they cover and how rare/salient those terms
-are across the small corpus.
+BM25 scores reflect query term coverage and document-level term salience across the informal collection.
 
-## Next steps
+---
 
-See the [TextSearch API](@ref) page for the full reference — every function and type used above
-(and many more, including the lower-level building blocks in `TextSearch.Intersections`
-and `TextSearch.InvertedFiles`) is documented there with its own runnable example.
+## Summary and API Reference
+
+For complete function signatures and algorithmic details, consult the [TextSearch API](@ref) reference.
