@@ -98,6 +98,74 @@ using Test, TextSearch, SimilaritySearch, SparseArrays
         @test querytokenset(query_tokens(voc, "casa", QueryPipeline())) == Set(["casa"])
     end
 
+    @testset "policy travels per call, and the maps stay where they were derived" begin
+        # The reason this keyword exists: one index has to be able to answer both the corrected
+        # reading of a query and the literal one, without a second index and without rederiving
+        # the variant map (0.24s over a large vocabulary) on every search.
+        cased = TextConfig(normalization=NormalizationConfig(lc=false, del_diac=false))
+        # 60 accented against 1 bare: `QueryPolicy`'s default negligible_ratio is 50, so a
+        # thinner margin is correctly left alone and would test nothing
+        ccorpus = vcat([" la música clásica de la ciudad $i" for i in 1:60],
+                       ["una musica rara sin acento"])
+        cvoc = Vocabulary(cased, ccorpus; verbose=false)
+        variants = derive_variants(cvoc; min_ndocs=1)
+        pipe = QueryPipeline(policy=QueryPolicy(), variants=variants,
+                             expansion=net.query_expansion)
+
+        # the pipeline's own policy corrects
+        @test "música" in querytokenset(query_tokens(cvoc, "musica", pipe))
+        # ... and the override searches what was typed, off the very same pipeline
+        literal = querytokenset(query_tokens(cvoc, "musica", pipe;
+                                             policy=QueryPolicy(correction=:off)))
+        @test literal == Set(["musica"])
+        # the pipeline is unchanged by having been overridden: it is the caller's argument that
+        # varies, not the index's state
+        @test "música" in querytokenset(query_tokens(cvoc, "musica", pipe))
+
+        # both halves of the policy respond to the override, and reusing the maps under a
+        # policy that ignores them changes nothing
+        wide = querytokenset(query_tokens(voc, "casa", pipe))
+        @test length(querytokenset(query_tokens(voc, "casa", pipe;
+                                                policy=QueryPolicy(expansion=false)))) == 1
+        @test length(querytokenset(query_tokens(voc, "casa", pipe;
+                                                policy=QueryPolicy(expansion_k=1)))) < length(wide)
+
+        # omitting it is exactly the pipeline's own policy
+        off = QueryPipeline(policy=QueryPolicy(correction=:off), variants=variants)
+        @test querytokenset(query_tokens(cvoc, "musica", off)) ==
+              querytokenset(query_tokens(cvoc, "musica", off; policy=QueryPolicy(correction=:off)))
+    end
+
+    @testset "search takes the same override, on both inverted files" begin
+        cased = TextConfig(normalization=NormalizationConfig(lc=false, del_diac=false))
+        # 60 accented against 1 bare: `QueryPolicy`'s default negligible_ratio is 50, so a
+        # thinner margin is correctly left alone and would test nothing
+        ccorpus = vcat([" la música clásica de la ciudad $i" for i in 1:60],
+                       ["una musica rara sin acento"])
+        cvoc = Vocabulary(cased, ccorpus; verbose=false)
+        cmodel = VectorModel(IdfWeighting(), TfWeighting(), cvoc)
+        qp = QueryPipeline(policy=QueryPolicy(), variants=derive_variants(cvoc; min_ndocs=1))
+        ctx = InvertedFileContext()
+
+        for idx in (BM25InvertedFile(cvoc; query=qp),
+                    TextInvertedFile(cmodel; dist=Dist.NormCosine(), query=qp))
+            append_items!(idx, ctx, ccorpus)
+            hits(policy) = begin
+                r = knnqueue(KnnSorted, 3)
+                policy === nothing ? search(idx, ctx, "musica", r) :
+                                     search(idx, ctx, "musica", r; policy)
+                Set(Int.(r.ids[r.sp:r.ep]))
+            end
+            corrected = hits(nothing)                              # the index's own policy
+            literal   = hits(QueryPolicy(correction=:off))
+            # document 61 is the only one spelling it without the accent
+            @test literal == Set([61])
+            @test !(61 in corrected)
+            # and the index is unchanged: asking again still corrects
+            @test hits(nothing) == corrected
+        end
+    end
+
     @testset "an already-tokenized query skips tokenization" begin
         @test querytokenset(query_tokens(voc, ["casa", "jardin"])) == Set(["casa", "jardin"])
         @test QueryPipeline().variants === nothing

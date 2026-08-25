@@ -93,9 +93,24 @@ Base.show(io::IO, q::ResolvedQuery) = print(io, "ResolvedQuery(", length(q.terms
                                             q.resolution, ")")
 
 """
-    query_tokens(voc::Vocabulary, query, qp::QueryPipeline=QueryPipeline()) -> ResolvedQuery
+    query_tokens(voc::Vocabulary, query, qp::QueryPipeline=QueryPipeline(); policy=qp.policy) -> ResolvedQuery
 
 The query pipeline: turns what a person typed into the terms to search for, and records why.
+
+`policy` overrides `qp.policy` for this call and nothing else. The point is that a
+[`QueryPolicy`](@ref) is a property of the *query* while the rest of a [`QueryPipeline`](@ref)
+is a property of the *corpus*: the variant map and the expansion network are derived once, cost
+real time to derive (0.24s over a half-million-token vocabulary), and belong to the index that
+holds them. The policy is four scalars. So the policy is what travels, and the maps are reused
+exactly as they are -- which is what lets one index answer both the corrected query and the
+literal one, the `"showing results for … / search instead for …"` pair [`QueryPolicy`](@ref)
+exists to make possible. Building a whole pipeline per call would rederive nothing but would
+still be a second place where the pipeline gets assembled.
+
+Reusing the maps under any policy is correct rather than merely cheap: correction never reads
+`variants` when `policy.correction === :off` (see [`resolve_query_tokens`](@ref)), and expansion
+is gated on `policy.expansion` here, so handing over a map or a network that this call has been
+told not to use changes nothing.
 
 `query` is raw text, a [`TokenizedText`](@ref), or an already-tokenized vector of strings. Text is
 tokenized under `voc`'s own `TextConfig` -- the same one the documents went through, which it must
@@ -116,10 +131,11 @@ to do with them -- [`queryvector`](@ref) adds them up, [`querybow`](@ref) and
 [`querytokenset`](@ref) collapse them. Neighbours absent from `voc` are dropped, matching what the
 vector-level path did with an id of `0`.
 """
-function query_tokens(voc::Vocabulary, query, qp::QueryPipeline=QueryPipeline())
+function query_tokens(voc::Vocabulary, query, qp::QueryPipeline=QueryPipeline();
+                      policy::QueryPolicy=qp.policy)
     tokens = query isa AbstractVector{<:AbstractString} ? query :
              collect(tokenize(voc.textconfig, query))
-    res = resolve_query_tokens(voc, tokens, qp.variants, qp.policy)
+    res = resolve_query_tokens(voc, tokens, qp.variants, policy)
 
     terms = QueryTerm[]
     seen = Set{String}()
@@ -150,13 +166,13 @@ function query_tokens(voc::Vocabulary, query, qp::QueryPipeline=QueryPipeline())
         add!(tok, tok, 1, :typed)
     end
 
-    if qp.policy.expansion && qp.expansion !== nothing
+    if policy.expansion && qp.expansion !== nothing
         for src in expansion_sources(res)
             neighbors = get(qp.expansion, src, nothing)
             neighbors === nothing && continue
             dl = qp.distances === nothing ? nothing : get(qp.distances, src, nothing)
             for (rank, syn) in enumerate(neighbors)
-                qp.policy.expansion_k > 0 && rank > qp.policy.expansion_k && break
+                policy.expansion_k > 0 && rank > policy.expansion_k && break
                 token2id(voc, syn) == 0 && continue
                 # rank weighting also covers a neighbour the distance list does not reach, so a
                 # partially-populated `distances` degrades instead of erroring

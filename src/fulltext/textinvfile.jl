@@ -165,11 +165,16 @@ function SimilaritySearch.append_items!(idx::TextInvertedFile, ctx::InvertedFile
 end
 
 # Search methods
-function SimilaritySearch.search(idx::TextInvertedFile, ctx::InvertedFileContext, qtext::T, res::AbstractKnnQueue; t::Int=1) where {T<:Union{AbstractString,TokenizedText}}
+function SimilaritySearch.search(idx::TextInvertedFile, ctx::InvertedFileContext, qtext::T, res::AbstractKnnQueue;
+                                 t::Int=1, policy::QueryPolicy=idx.query.policy) where {T<:Union{AbstractString,TokenizedText}}
     # one query pipeline, in the library: it corrects and expands on strings, and the
     # representation decides what to do with the weights it produces -- a set distance ignores
     # them (presence only), a vector distance applies them and normalizes.
-    rq = query_tokens(idx.model.voc, qtext, idx.query)
+    #
+    # `policy` is per call because it is a property of the query, not of the index: the same
+    # index has to be able to answer both the corrected reading and the literal one. The maps
+    # it needs stay in `idx.query`, where they were derived once.
+    rq = query_tokens(idx.model.voc, qtext, idx.query; policy)
     q = is_set_distance(distance(idx)) ? querybow(idx.model.voc, rq) : queryvector(idx.model, rq)
     search(idx.invfile, ctx, q, res; t)
 end
