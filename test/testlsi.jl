@@ -85,6 +85,45 @@ using Test, TextSearch, SimilaritySearch, LinearAlgebra, SparseArrays
         @test all(v_oov .== 0f0)
     end
 
+    @testset "topk restriction" begin
+        lsi = LatentSemanticIndexing(vmodel, corpus; maxoutdim=8, verbose=false)
+        q = "quick brown fox in the park"
+        v_full = vectorize(lsi, q)
+
+        # topk=nothing (default) is exactly the unrestricted projection
+        @test vectorize(lsi, q; topk=nothing) == v_full
+
+        # a topk at or above the number of weighted terms changes nothing
+        sv = vectorize(vmodel, q; normalize=false)
+        @test isapprox(vectorize(lsi, q; topk=nnz(sv)), v_full, atol=1e-5)
+        @test isapprox(vectorize(lsi, q; topk=nnz(sv) + 5), v_full, atol=1e-5)
+
+        # topk=1 reduces to exactly the heaviest term's own (unit-normalized) LSI column --
+        # normalization cancels the term's actual weight, so this is an exact identity, not
+        # an approximation of one
+        @test nnz(sv) > 1   # otherwise every check below is vacuous
+        heaviest = sv.nzind[argmax(sv.nzval)]
+        v_top1 = vectorize(lsi, q; topk=1)
+        X = wordvectors(lsi)
+        @test isapprox(v_top1, X[heaviest], atol=1e-5)
+        # ... and is therefore a real restriction, not a no-op, whenever >1 term carries weight
+        @test !isapprox(v_top1, v_full, atol=1e-3)
+
+        # vectorize! on a SparseVectorLike input accepts topk too, and agrees with the text path
+        out = zeros(Float32, outdim(lsi))
+        vectorize!(out, lsi, sv; topk=1)
+        @test isapprox(out, v_top1, atol=1e-5)
+
+        # vectorize_corpus threads topk through to every document
+        Xtopk = vectorize_corpus(lsi, corpus; topk=2, verbose=false)
+        for i in 1:length(corpus)
+            @test isapprox(Xtopk[i], vectorize(lsi, corpus[i]; topk=2), atol=1e-5)
+        end
+
+        @test_throws ArgumentError vectorize(lsi, q; topk=0)
+        @test_throws ArgumentError vectorize(lsi, q; topk=-1)
+    end
+
     @testset "vectorize_corpus and Search Integration" begin
         lsi = LatentSemanticIndexing(vmodel, corpus; maxoutdim=8, verbose=false)
         k = outdim(lsi)
