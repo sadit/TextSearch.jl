@@ -334,9 +334,6 @@ what it saves, because there is only one copy.
   ranking alone -- most of a real network's size.
 - **`expand_query!` weights by rank by default**, `1/rank` instead of `exp(-d)`; pass
   `distances` for the old behaviour.
-- **The profile format is `"2.0"` and v1.0 profiles are refused by name.** There is no
-  conversion path: carrying two layouts is what let the copies drift. Refit or refit-from-fit
-  instead.
 
 - **Field accessors are now `get<field>`**: `gettoken`, `getoccs`, `getndocs`, `gettrainsize`,
   `getnumtokens`, `getweight`, `gettextconfig`, `getpolicy`. The bare names were shadowable --
