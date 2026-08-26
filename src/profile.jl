@@ -1,6 +1,6 @@
 # This file is a part of TextSearch.jl
 
-export save_profile, load_profile, zip_profile
+export save_profile, load_profile, zip_profile, download_profile
 
 # Bumped from "1.0" with the policy/artifact split. The freeze at "1.0" was right while every
 # schema change was additive and older files still loaded; this one changes the layout and
@@ -336,4 +336,40 @@ function zip_profile(dir::AbstractString, zippath::AbstractString=dir * ".zip")
         end
     end
     zippath
+end
+
+"""
+    download_profile(nickname::AbstractString;
+                     repo::AbstractString="sadit/TextSearch.jl",
+                     tag::AbstractString="v1.1.0",
+                     dest::Union{Nothing,AbstractString}=nothing,
+                     force::Bool=false) -> String
+
+Downloads a pre-computed linguistic profile (`<nickname>.zip`) from a GitHub release of
+`repo` and saves it locally. By default, installs under `~/.textsearch/profiles/<nickname>.zip`
+(or `\$TEXTSEARCH_HOME/profiles/<nickname>.zip`), or into `dest` if explicitly specified.
+Returns the file path of the downloaded archive.
+"""
+function download_profile(nickname::AbstractString;
+                          repo::AbstractString="sadit/TextSearch.jl",
+                          tag::AbstractString="v1.1.0",
+                          dest::Union{Nothing,AbstractString}=nothing,
+                          force::Bool=false)
+    target = dest === nothing ?
+        joinpath(get(ENV, "TEXTSEARCH_HOME", joinpath(homedir(), ".textsearch")), "profiles", "$nickname.zip") :
+        String(dest)
+    if isfile(target) && !force
+        return target
+    end
+    mkpath(dirname(target))
+    url = "https://github.com/$repo/releases/download/$tag/$nickname.zip"
+    tmppath = tempname() * ".zip"
+    try
+        Downloads.download(url, tmppath)
+        mv(tmppath, target; force=true)
+    catch e
+        rm(tmppath; force=true)
+        rethrow(e)
+    end
+    target
 end

@@ -228,18 +228,22 @@ and CSV are read one line/row at a time, Parquet at row-group granularity; a pla
 array cannot stream (JSON3 needs to see the closing `]` before trusting any element) and
 is read whole -- prefer JSONL for large collections.
 
-### Profile management -- `list` / `info` / `install` / `uninstall`
+### Profile management -- `list` / `info` / `install` / `download` / `uninstall`
 
 Installed profiles live under `~/.textsearch/profiles/` (override the whole base directory
 with the `TEXTSEARCH_HOME` environment variable).
 
 ```
-textsearch install <path.zip> [nickname] [--force]   # copy a profile zip in, under a nickname
-textsearch list                                       # nicknames of everything installed
-textsearch info <nickname|path>                       # corpus stats, TextConfig, file path
-textsearch uninstall <nickname> [--force]             # print the file's path; --force deletes it
+textsearch download <nicknames...> [--force] [--tag TAG] # download and install from GitHub release
+textsearch install <path.zip> [nickname] [--force]       # copy a profile zip in, under a nickname
+textsearch list                                           # nicknames of everything installed
+textsearch info <nickname|path>                           # corpus stats, TextConfig, file path
+textsearch uninstall <nickname> [--force]                 # print the file's path; --force deletes it
 ```
 
+- `download` fetches pre-computed profiles (e.g. `en`, `es`, `eu`, `fr`, `it`, `pt`) directly
+  from published GitHub releases and installs them into `~/.textsearch/profiles/`; `--force`
+  overwrites existing profiles.
 - `install` derives the nickname from the zip's filename if you don't give one explicitly;
   `--force` overwrites an existing nickname (without it, a name collision is an error).
 - `info` prints `trainsize`/`vocsize`/`numtokens`/`avgdoclen`, how many query_expansion/lemma/

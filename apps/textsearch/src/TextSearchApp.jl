@@ -6,6 +6,7 @@ using JSON3
 using CSV
 using Parquet2
 using Tables
+using Downloads
 using TextSearch
 
 include("home.jl")
@@ -18,6 +19,7 @@ include("cli_search.jl")
 include("cli_list.jl")
 include("cli_info.jl")
 include("cli_install.jl")
+include("cli_download.jl")
 include("cli_uninstall.jl")
 
 const SUBCOMMANDS = Dict(
@@ -28,6 +30,7 @@ const SUBCOMMANDS = Dict(
     "list" => cmd_list,
     "info" => cmd_info,
     "install" => cmd_install,
+    "download" => cmd_download,
     "uninstall" => cmd_uninstall,
 )
 
@@ -48,6 +51,7 @@ function print_top_help(io::IO)
       list        list installed profile nicknames
       info        show details for an installed profile
       install     install a profile .zip under a nickname
+      download    download and install pre-computed profiles from GitHub releases
       uninstall   print an installed profile's path (does NOT delete the file)
 
     Run 'textsearch <subcommand> --help' for subcommand-specific options.

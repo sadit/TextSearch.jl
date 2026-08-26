@@ -445,6 +445,14 @@ end
                 @test isempty(TextSearchApp.list_nicknames())
                 @test_throws Exception TextSearchApp.cmd_uninstall(["mynick"])
                 TextSearchApp.cmd_install([zippath, "mynick"])   # put it back for what follows
+
+                # download command argument parsing and execution error handling
+                dargs = TextSearchApp.parse_download_args(["en", "es", "--tag", "v1.1.0", "--force"])
+                @test dargs["nicknames"] == ["en", "es"]
+                @test dargs["tag"] == "v1.1.0"
+                @test dargs["force"] == true
+                # downloading non-existent url returns non-zero error code
+                @test TextSearchApp.cmd_download(["nonexistent_prof", "--repo", "invalid/repo"]) != 0
             end
 
             @testset "merge: folds batched profiles back into one" begin
