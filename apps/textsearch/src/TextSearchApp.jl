@@ -48,10 +48,10 @@ function print_top_help(io::IO)
                   adjusting its statistics rather than replacing them
       search      grep-like search over a collection using a profile's tokenization
                   (not fast to start -- see 'textsearch search --help')
-      list        list installed profile nicknames
+      list        list installed profile nicknames, or remote release profiles with --remote
       info        show details for an installed profile
       install     install a profile .zip under a nickname
-      download    download and install pre-computed profiles from GitHub releases
+      download    download and install pre-computed profiles from GitHub releases or URLs
       uninstall   print an installed profile's path (does NOT delete the file)
 
     Run 'textsearch <subcommand> --help' for subcommand-specific options.

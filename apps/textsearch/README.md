@@ -234,16 +234,17 @@ Installed profiles live under `~/.textsearch/profiles/` (override the whole base
 with the `TEXTSEARCH_HOME` environment variable).
 
 ```
-textsearch download <nicknames...> [--force] [--tag TAG] # download and install from GitHub release
+textsearch list [--remote] [--tag TAG] [--url URL]       # list installed profiles, or remote releases
+textsearch download <targets...> [--force] [--tag TAG]   # download and install from GitHub release or URL
 textsearch install <path.zip> [nickname] [--force]       # copy a profile zip in, under a nickname
-textsearch list                                           # nicknames of everything installed
-textsearch info <nickname|path>                           # corpus stats, TextConfig, file path
-textsearch uninstall <nickname> [--force]                 # print the file's path; --force deletes it
+textsearch info <nickname|path>                          # corpus stats, TextConfig, file path
+textsearch uninstall <nickname> [--force]                # print the file's path; --force deletes it
 ```
 
-- `download` fetches pre-computed profiles (e.g. `en`, `es`, `eu`, `fr`, `it`, `pt`) directly
-  from published GitHub releases and installs them into `~/.textsearch/profiles/`; `--force`
-  overwrites existing profiles.
+- `list` lists installed nicknames. With `--remote` (or `-r`), queries available pre-computed
+  profiles directly from GitHub releases (`sadit/TextSearch.jl` by default) or from a custom `--url`.
+- `download` fetches pre-computed profiles (e.g. `en`, `es`, `eu`, `fr`, `it`, `pt` or direct HTTP/HTTPS URLs)
+  and installs them into `~/.textsearch/profiles/`; `--force` overwrites existing profiles.
 - `install` derives the nickname from the zip's filename if you don't give one explicitly;
   `--force` overwrites an existing nickname (without it, a name collision is an error).
 - `info` prints `trainsize`/`vocsize`/`numtokens`/`avgdoclen`, how many query_expansion/lemma/

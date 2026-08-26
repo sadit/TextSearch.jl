@@ -448,11 +448,23 @@ end
 
                 # download command argument parsing and execution error handling
                 dargs = TextSearchApp.parse_download_args(["en", "es", "--tag", "v1.1.0", "--force"])
-                @test dargs["nicknames"] == ["en", "es"]
+                @test dargs["targets"] == ["en", "es"]
                 @test dargs["tag"] == "v1.1.0"
                 @test dargs["force"] == true
                 # downloading non-existent url returns non-zero error code
                 @test TextSearchApp.cmd_download(["nonexistent_prof", "--repo", "invalid/repo"]) != 0
+
+                # list command: local vs remote
+                largs = TextSearchApp.parse_list_args(["--remote", "--tag", "v1.1.0"])
+                @test largs["remote"] == true
+                @test largs["tag"] == "v1.1.0"
+
+                list_remote_out = capture_stdout() do
+                    TextSearchApp.cmd_list(["--remote", "--tag", "v1.1.0"])
+                end
+                @test occursin("Remote profiles", list_remote_out)
+                @test occursin("en", list_remote_out)
+                @test occursin("es", list_remote_out)
             end
 
             @testset "merge: folds batched profiles back into one" begin

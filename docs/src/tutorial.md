@@ -584,6 +584,58 @@ tuned = refit_profile(p, CASK_OF_AMONTILLADO[1:6]; verbose=false)
 
 The predicates [`isbase`](@ref) and [`istuned`](@ref) verify model provenance directly from recorded lineage history.
 
+### Pre-trained Language Profiles and CLI Management
+
+`TextSearch.jl` distributes pre-computed linguistic profiles for major languages (e.g., English `en`, Spanish `es`, Basque `eu`, French `fr`, Italian `it`, and Portuguese `pt`) fitted on large Wikipedia paragraph corpora. These profiles provide production-ready vocabularies, IDF weights, lemma maps, and query expansion networks out of the box.
+
+#### Julia API
+
+You can discover, download, and load pre-trained profiles directly in Julia:
+
+```julia
+using TextSearch
+
+# List available remote profiles published on GitHub releases
+remotes = list_remote_profiles()
+for r in remotes
+    println(r.name, " (", round(r.size / 1024^2; digits=1), " MB) -> ", r.url)
+end
+
+# Download and install a pre-trained profile locally (~/.textsearch/profiles/es.zip)
+path = download_profile("es")
+
+# Load the downloaded profile into memory
+p = load_profile(path)
+```
+
+#### Command-Line Interface (`textsearch`)
+
+The integrated CLI tool `textsearch` (located in `apps/textsearch/`) allows managing the complete lifecycle of profiles from the terminal:
+
+```sh
+# Discover available pre-computed profiles on GitHub releases (or custom --url)
+textsearch list --remote
+
+# Download and install profiles locally
+textsearch download es en pt
+
+# Download from an arbitrary URL or custom release tag
+textsearch download https://example.com/profiles/custom_model.zip --as custom
+textsearch download es --tag v1.1.0 --force
+
+# List locally installed profiles
+textsearch list
+
+# Inspect detailed vocabulary, lineage, and artifact statistics
+textsearch info es
+
+# Search a document collection using the profile's pipeline and expansions
+textsearch search es "aprendizaje automático" --collection dataset.jsonl
+
+# Uninstall an installed profile
+textsearch uninstall custom --force
+```
+
 ---
 
 ## Query Token Resolution and Spelling Normalization

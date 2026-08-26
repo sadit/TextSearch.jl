@@ -188,4 +188,33 @@ using Test, TextSearch, SimilaritySearch, JSON3
             rm(dir; force=true, recursive=true)
         end
     end
+
+    @testset "list_remote_profiles and download_profile" begin
+        # Querying GitHub release assets
+        remotes = list_remote_profiles(; repo="sadit/TextSearch.jl", tag="v1.1.0")
+        @test !isempty(remotes)
+        @test any(r -> r.name == "en", remotes)
+        @test any(r -> r.name == "es", remotes)
+
+        # Custom mock URL returning json release structure
+        mock_json = joinpath(tempname() * ".json")
+        try
+            open(mock_json, "w") do io
+                println(io, """
+                {
+                    "assets": [
+                        {"name": "mock_es.zip", "size": 1024, "browser_download_url": "https://example.com/mock_es.zip"}
+                    ]
+                }
+                """)
+            end
+            mock_remotes = list_remote_profiles(; url="file://" * mock_json)
+            @test length(mock_remotes) == 1
+            @test mock_remotes[1].name == "mock_es"
+            @test mock_remotes[1].size == 1024
+        finally
+            rm(mock_json; force=true)
+        end
+    end
 end
+

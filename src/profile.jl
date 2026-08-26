@@ -1,6 +1,6 @@
 # This file is a part of TextSearch.jl
 
-export save_profile, load_profile, zip_profile, download_profile
+export save_profile, load_profile, zip_profile, download_profile, list_remote_profiles
 
 # Bumped from "1.0" with the policy/artifact split. The freeze at "1.0" was right while every
 # schema change was additive and older files still loaded; this one changes the layout and
@@ -339,22 +339,86 @@ function zip_profile(dir::AbstractString, zippath::AbstractString=dir * ".zip")
 end
 
 """
-    download_profile(nickname::AbstractString;
+    list_remote_profiles(; repo::AbstractString="sadit/TextSearch.jl",
+                           tag::AbstractString="v1.1.0",
+                           url::Union{Nothing,AbstractString}=nothing) -> Vector{NamedTuple}
+
+Queries and returns available pre-computed linguistic profiles from GitHub releases or a custom URL.
+Returns a vector of `(name=nickname, filename=name, size=size_in_bytes, url=download_url, tag=tag)`.
+"""
+function list_remote_profiles(; repo::AbstractString="sadit/TextSearch.jl",
+                                tag::AbstractString="v1.1.0",
+                                url::Union{Nothing,AbstractString}=nothing)
+    api_url = url !== nothing ? String(url) :
+              (tag == "latest" ?
+                  "https://api.github.com/repos/$repo/releases/latest" :
+                  "https://api.github.com/repos/$repo/releases/tags/$tag")
+    tmppath = tempname() * ".json"
+    data = try
+        Downloads.download(api_url, tmppath; headers=["User-Agent" => "TextSearch.jl"])
+        JSON3.read(read(tmppath, String))
+    finally
+        rm(tmppath; force=true)
+    end
+
+    results = NamedTuple{(:name, :filename, :size, :url, :tag), Tuple{String, String, Int, String, String}}[]
+    if haskey(data, :assets)
+        for asset in data.assets
+            name = String(asset.name)
+            if endswith(name, ".zip")
+                nickname = first(splitext(name))
+                sz = Int(asset.size)
+                dl_url = String(asset.browser_download_url)
+                push!(results, (name=nickname, filename=name, size=sz, url=dl_url, tag=String(tag)))
+            end
+        end
+    elseif data isa AbstractVector
+        for item in data
+            if haskey(item, :assets)
+                rtag = haskey(item, :tag_name) ? String(item.tag_name) : String(tag)
+                for asset in item.assets
+                    name = String(asset.name)
+                    if endswith(name, ".zip")
+                        nickname = first(splitext(name))
+                        sz = Int(asset.size)
+                        dl_url = String(asset.browser_download_url)
+                        push!(results, (name=nickname, filename=name, size=sz, url=dl_url, tag=rtag))
+                    end
+                end
+            elseif haskey(item, :name) && endswith(String(item.name), ".zip")
+                name = String(item.name)
+                nickname = first(splitext(name))
+                sz = haskey(item, :size) ? Int(item.size) : 0
+                dl_url = haskey(item, :url) ? String(item.url) : (haskey(item, :browser_download_url) ? String(item.browser_download_url) : "")
+                push!(results, (name=nickname, filename=name, size=sz, url=dl_url, tag=String(tag)))
+            end
+        end
+    end
+    results
+end
+
+"""
+    download_profile(nickname_or_url::AbstractString;
                      repo::AbstractString="sadit/TextSearch.jl",
                      tag::AbstractString="v1.1.0",
                      dest::Union{Nothing,AbstractString}=nothing,
+                     url::Union{Nothing,AbstractString}=nothing,
                      force::Bool=false) -> String
 
-Downloads a pre-computed linguistic profile (`<nickname>.zip`) from a GitHub release of
-`repo` and saves it locally. By default, installs under `~/.textsearch/profiles/<nickname>.zip`
-(or `\$TEXTSEARCH_HOME/profiles/<nickname>.zip`), or into `dest` if explicitly specified.
+Downloads a pre-computed linguistic profile (`<nickname>.zip`) from a GitHub release or direct URL
+and saves it locally. By default, installs under `~/.textsearch/profiles/<nickname>.zip` (or
+`\$TEXTSEARCH_HOME/profiles/<nickname>.zip`), or into `dest` if explicitly specified.
 Returns the file path of the downloaded archive.
 """
-function download_profile(nickname::AbstractString;
+function download_profile(nickname_or_url::AbstractString;
                           repo::AbstractString="sadit/TextSearch.jl",
                           tag::AbstractString="v1.1.0",
                           dest::Union{Nothing,AbstractString}=nothing,
+                          url::Union{Nothing,AbstractString}=nothing,
                           force::Bool=false)
+    is_direct_url = startswith(nickname_or_url, "http://") || startswith(nickname_or_url, "https://")
+    nickname = is_direct_url ? first(splitext(basename(nickname_or_url))) : String(nickname_or_url)
+
     target = dest === nothing ?
         joinpath(get(ENV, "TEXTSEARCH_HOME", joinpath(homedir(), ".textsearch")), "profiles", "$nickname.zip") :
         String(dest)
@@ -362,10 +426,18 @@ function download_profile(nickname::AbstractString;
         return target
     end
     mkpath(dirname(target))
-    url = "https://github.com/$repo/releases/download/$tag/$nickname.zip"
+
+    dl_url = if is_direct_url
+        String(nickname_or_url)
+    elseif url !== nothing
+        endswith(url, ".zip") ? String(url) : joinpath(String(url), "$nickname.zip")
+    else
+        "https://github.com/$repo/releases/download/$tag/$nickname.zip"
+    end
+
     tmppath = tempname() * ".zip"
     try
-        Downloads.download(url, tmppath)
+        Downloads.download(dl_url, tmppath; headers=["User-Agent" => "TextSearch.jl"])
         mv(tmppath, target; force=true)
     catch e
         rm(tmppath; force=true)
