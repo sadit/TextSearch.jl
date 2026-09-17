@@ -353,6 +353,40 @@ end
                     [zp, "musica", "--collection", accented, "--correction-ratio", "0.5"])
             end
 
+            @testset "search: a mistyped token is guessed at, and only as a last resort" begin
+                # `clasica` is not a word of this corpus under any fold -- it is one edit from
+                # `clásica` but the accent means the variant map reaches it, so the interesting
+                # case has to be a real typo: `musixa` for `musica`.
+                typo = joinpath(dir, "typo.jsonl")
+                write_jsonl_corpus(typo, ["la musica suena", "la musica alegre",
+                                          "la pera verde", "el jardin azul"])
+                outdir = joinpath(dir, "profiles_typo")
+                cfgpath = write_fit_config(joinpath(dir, "fit_typo.toml");
+                                           corpus=typo, outdir, lc=false, del_diac=false)
+                TextSearchApp.cmd_fit(["--config", cfgpath])
+                zp = joinpath(outdir, "corpus-0001.zip")
+
+                function texts(args...)
+                    out = capture_stdout() do
+                        TextSearchApp.cmd_search([zp, args..., "--collection", typo,
+                                                  "--format", "jsonl", "--no-query_expansion"])
+                    end
+                    [JSON3.read(l)[:text] for l in filter(!isempty, split(out, '\n'))]
+                end
+
+                # one edit from `musica` and from nothing else: corrected, where before the
+                # typed form matched no document at all
+                @test "la musica suena" in texts("musixa")
+
+                # both escapes reach the literal query, which matches nothing at all -- that
+                # is the whole point: before this, every mistyped query behaved this way
+                @test isempty(texts("musixa", "--no-edit-correction"))
+                @test isempty(texts("musixa", "--correction", "off"))
+
+                # a well-typed token is untouched, and never guessed at
+                @test texts("verde") == ["la pera verde"]
+            end
+
             @testset "search: output is in corpus order, independent of chunking" begin
                 # The matching loop is threaded but each task writes only its own slot and
                 # printing happens afterwards in index order, so neither the thread count
