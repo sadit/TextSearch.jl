@@ -189,6 +189,30 @@ using Test, TextSearch, SimilaritySearch, JSON3
         end
     end
 
+    @testset "zip_profile deflates, and a stored archive still loads" begin
+        # It stored uncompressed for a long time without anyone noticing, because a profile zip
+        # lands within a kilobyte of the sum of its members and that reads like framing overhead.
+        # On a real profile this was 766,486 bytes against 277,874 -- the largest single saving
+        # this format has available.
+        p = TextProfile(mkmodel(); stopwords, lemmas, query_expansion, query_expansion_distances,
+                        lineage)
+        mktempdir() do dir
+            d = joinpath(dir, "prof")
+            save_profile(d, p)
+            members = sum(filesize(joinpath(d, f)) for f in readdir(d))
+
+            deflated = zip_profile(d, joinpath(dir, "c.zip"))
+            stored = zip_profile(d, joinpath(dir, "s.zip"); compress=false)
+            @test filesize(deflated) < filesize(stored)
+            @test filesize(stored) >= members          # stored: members plus framing
+            # both forms read back, and to the same thing -- compression is not a format change
+            a, b = load_profile(deflated), load_profile(stored)
+            @test a.model.voc.token == b.model.voc.token == p.model.voc.token
+            @test a.query_expansion == b.query_expansion == p.query_expansion
+            @test keys(a.query_expansion_distances) == keys(b.query_expansion_distances)
+        end
+    end
+
     @testset "zip_profile default zippath is dir * \".zip\"" begin
         p = TextProfile(mkmodel())
         dir = tempname()
