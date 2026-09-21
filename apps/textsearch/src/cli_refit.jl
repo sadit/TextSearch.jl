@@ -136,10 +136,11 @@ function cmd_refit(args::Vector{String})
     o["min-ndocs"] >= 0 || error("--min-ndocs must be >= 0, got $(o["min-ndocs"])")
 
     kappa = o["kappa"]
-    bw = o["base-weight"]
-    if bw != 0.0
+    base_weight = o["base-weight"]
+    if base_weight != 0.0
         kappa == 0.0 || error("pass either --kappa or --base-weight, not both")
-        0.0 < bw < 1.0 || error("--base-weight must be in (0,1), got $bw")
+        0.0 < base_weight < 1.0 ||
+            error("--base-weight must be in (0,1), got $base_weight")
     end
 
     avgdoclen = if o["avgdoclen"] == "blend"
@@ -193,7 +194,7 @@ function cmd_refit(args::Vector{String})
     end
 
     # --base-weight is expressed relative to the sample, so it needs the sample's size first
-    bw != 0.0 && (kappa = gettrainsize(sample_voc) * bw / (1 - bw))
+    base_weight != 0.0 && (kappa = gettrainsize(sample_voc) * base_weight / (1 - base_weight))
 
     r = refit_profile(base, sample_voc;
                       kappa, apply_lemmas, lemmas=lemmamap,
