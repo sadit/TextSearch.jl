@@ -434,7 +434,7 @@ for (rank, neighbour) in enumerate(net.query_expansion["dog"])
     distance = net.distances["dog"][rank]   # optional; the ranking alone is usually enough
 end
 
-# and to keep expand_query!' previous distance-based weighting
+# and to keep expand_query!'s previous distance-based weighting
 expand_query!(vec, voc, net.query_expansion; distances=net.distances)
 ```
 
