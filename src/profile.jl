@@ -120,20 +120,26 @@ _decode_lineage(d) =
 _write_json(path::AbstractString, data) = open(io -> JSON3.write(io, data), path, "w")
 
 """
-    _profile_reader(path::AbstractString) -> read_file::Function
+    _profile_reader(path::AbstractString) -> read_bytes::Function
 
-Returns a `read_file(name::AbstractString) -> JSON3` closure that fetches and parses a
-named member of the profile at `path` -- a plain directory if `isdir(path)`, otherwise a
-`.zip` archive (opened once and re-read from memory for every subsequent `read_file` call).
-This is what lets [`load_profile`](@ref) not care which of the two forms it was handed.
+Returns a `read_bytes(name::AbstractString) -> Vector{UInt8}` closure that fetches a named
+member of the profile at `path` -- a plain directory if `isdir(path)`, otherwise a `.zip`
+archive (opened once and re-read from memory for every subsequent call). This is what lets
+[`load_profile`](@ref) not care which of the two forms it was handed.
+
+It hands back **bytes** rather than parsed JSON so that one closure serves both kinds of member:
+`load_profile` wraps it in `JSON3.read` for the text ones and passes it straight to
+[`_load_array`](@ref) for the binary ones. Parsing here would have meant a second, parallel
+reader for the binary path -- and two readers that must agree about a directory-versus-zip
+distinction is exactly the kind of duplicated knowledge this format has been bitten by before.
 """
 function _profile_reader(path::AbstractString)
     if isdir(path)
-        name -> JSON3.read(read(joinpath(path, name)))
+        name -> read(joinpath(path, name))
     else
         buf = read(path)
         zr = ZipArchives.ZipReader(buf)
-        name -> JSON3.read(ZipArchives.zip_readentry(zr, name))
+        name -> ZipArchives.zip_readentry(zr, name)
     end
 end
 
@@ -144,14 +150,23 @@ end
 
 Serializes a [`TextProfile`](@ref) into `dir` (created if missing) as a small directory of
 plain, human-readable JSON files: one per "large" piece -- `vocabulary.json`, `weights.json`,
-and `stopwords.json`/`lemmas.json`/`query_expansion.json`/`query_expansion_distances.json` for whichever
-artifacts are non-empty -- tied together by a `manifest.json` holding everything else.
+and `stopwords.json`/`lemmas.json`/`query_expansion.json` for whichever artifacts are non-empty --
+tied together by a `manifest.json` holding everything else.
+
+The one exception is `query_expansion_distances.bin`, which is a **binary** member: tens of
+thousands of cosine distances, `u8`-quantized, described entirely by its manifest entry (see
+`arraystore.jl`). Every other file stays text, and the reason this one does not is measured
+rather than assumed -- as JSON it was 569,045 bytes against 47,501, i.e. 44% of a whole profile
+spent on digits nobody reads, and the quantization is retrieval-identical. The same mechanism is
+what a stored dense projection will use.
 
 The manifest keeps policy and artifacts apart, which is the point of the layout:
 
 ```
 policy:     { normalization: {...}, tokenization: {...} }
-artifacts:  { stopwords: {file, applied}, lemmas: {file, applied}, query_expansion: {file, ...} }
+artifacts:  { stopwords: {file, applied}, lemmas: {file, applied},
+              query_expansion: {file, applied,
+                                distances: {file, dtype, shape, quant, keys}} }
 lineage:    [ {stage, params}, ... ]
 ```
 
@@ -195,22 +210,47 @@ function save_profile(dir::AbstractString, p::TextProfile)
     end
 
     if !isempty(p.query_expansion)
+        syn_order = sort!(collect(keys(p.query_expansion)))
         _write_json(joinpath(dir, "query_expansion.json"),
             Dict(tok => syns for (tok, syns) in p.query_expansion))
         entry = Dict{String,Any}("file" => "query_expansion.json", "applied" => p.applied.query_expansion)
 
         # Only for tokens the ranking carries: a distance list without its words could not be
-        # interpreted, and the distances live in their own file so a consumer that needs only
-        # the ranking -- which is the normal case -- can skip the bulk of the network.
+        # interpreted, and the distances live in their own member so a consumer that needs only
+        # the ranking can skip them.
+        #
+        # That member is BINARY, and quantized to u8, which is the one place this format spends
+        # its inspectability. The content is tens of thousands of cosine distances that nobody
+        # reads by eye, and JSON text costs 12x for them: measured on a real profile, 569,045
+        # bytes against 47,501, on a file that is 44% of the whole profile. The quantization is
+        # free where it counts -- Float32 against u8 gives identical top-1 results and 0.9995
+        # top-10 overlap over 400 queries. See `arraystore.jl`.
+        #
+        # Stored FLAT, against the network's own sorted key order, and naming neither the tokens
+        # nor the per-token lengths -- both are derivable from `query_expansion.json`, which is
+        # right there. Writing them anyway was the first cut of this, and it cost more than the
+        # binary member saved: 6,068 tokens in the manifest took it from 28,055 bytes to 99,528,
+        # a third copy of the vocabulary, which is what this layout exists to avoid.
+        #
+        # What is NOT derivable is which tokens carry distances at all: a ranking may carry none
+        # (`_restrict_query_expansion` keeps a distance list only when it covers the whole list,
+        # all or nothing). So coverage is recorded -- as the string "all" in the normal case,
+        # costing nothing, and as a binary array of positions into the sorted key order otherwise.
         if p.query_expansion_distances !== nothing
-            dd = Dict{String,Vector{Float32}}()
-            for (tok, ds) in p.query_expansion_distances
-                haskey(p.query_expansion, tok) && !isempty(ds) || continue
-                dd[tok] = ds
+            covered = Int[]
+            flat = Float32[]
+            for (i, tok) in enumerate(syn_order)
+                ds = get(p.query_expansion_distances, tok, nothing)
+                (ds === nothing || isempty(ds)) && continue
+                length(ds) == length(p.query_expansion[tok]) || continue
+                push!(covered, i)
+                append!(flat, ds)
             end
-            if !isempty(dd)
-                _write_json(joinpath(dir, "query_expansion_distances.json"), dd)
-                entry["distances_file"] = "query_expansion_distances.json"
+            if !isempty(flat)
+                e = _save_array(dir, "query_expansion_distances.bin", flat; quantize=true)
+                e["keys"] = length(covered) == length(syn_order) ? "all" :
+                    _save_array(dir, "query_expansion_distances_keys.bin", UInt32.(covered))
+                entry["distances"] = e
             end
         end
         artifacts["query_expansion"] = entry
@@ -248,7 +288,8 @@ there is no compatibility path, since carrying two layouts is what let the appli
 copies of an artifact drift apart in the first place.
 """
 function load_profile(path::AbstractString)
-    read_file = _profile_reader(path)
+    read_bytes = _profile_reader(path)
+    read_file(name) = JSON3.read(read_bytes(name))
     manifest = read_file(_PROFILE_MANIFEST_NAME)
     version = String(get(manifest, :format_version, "(missing)"))
     version == _PROFILE_FORMAT_VERSION ||
@@ -298,10 +339,49 @@ function load_profile(path::AbstractString)
         net = read_file(String(e[:file]))
         words = Dict{String,Vector{String}}(
             String(tok) => String[String(s) for s in syns] for (tok, syns) in pairs(net))
-        dists = if haskey(e, :distances_file)
-            dd = read_file(String(e[:distances_file]))
-            Dict{String,Vector{Float32}}(
-                String(tok) => Float32[Float32(d) for d in ds] for (tok, ds) in pairs(dd))
+        # A profile written before the distances became a binary member names them under
+        # `distances_file`. Say so instead of silently loading a profile with no distances at
+        # all: the artifact would simply vanish, `expand_query!` would fall back to rank
+        # weighting, and nothing anywhere would report that it had happened. This is the job the
+        # format version cannot do while it is deliberately held at 1.0.
+        haskey(e, :distances_file) &&
+            error("this profile stores its query_expansion distances as JSON " *
+                  "('$(String(e[:distances_file]))'), which this build no longer reads: they " *
+                  "are now a quantized binary member. Refit the profile.")
+
+        # One flat binary array, cut back up with what is already loaded: the network's sorted
+        # key order says WHICH token each run belongs to, and that token's own neighbour list
+        # says HOW LONG the run is. See `save_profile` for why neither is stored.
+        dists = if haskey(e, :distances)
+            de = e[:distances]
+            flat = _load_array(read_bytes, de)
+            order = sort!(collect(keys(words)))
+            k = _entry(de, :keys)
+            covered = if k isa AbstractString
+                String(k) == "all" ? collect(eachindex(order)) :
+                    error("unknown query_expansion distances coverage: $(repr(String(k)))")
+            else
+                Int[Int(i) for i in _load_array(read_bytes, k)]
+            end
+
+            dd = Dict{String,Vector{Float32}}()
+            at = 1
+            for i in covered
+                1 <= i <= length(order) ||
+                    error("the query_expansion distances name key $i of $(length(order)); " *
+                          "the manifest and the network disagree")
+                tok = order[i]
+                n = length(words[tok])
+                at + n - 1 <= length(flat) ||
+                    error("the query_expansion distances member is shorter than the network it " *
+                          "annotates; the manifest and the network disagree")
+                dd[tok] = flat[at:(at + n - 1)]
+                at += n
+            end
+            at == length(flat) + 1 ||
+                error("the query_expansion distances member carries $(length(flat)) value(s), " *
+                      "$(length(flat) - at + 1) more than the network accounts for")
+            dd
         else
             nothing
         end
@@ -320,19 +400,50 @@ function load_profile(path::AbstractString)
 end
 
 """
-    zip_profile(dir::AbstractString, zippath::AbstractString=dir * ".zip") -> zippath
+    zip_profile(dir, zippath=dir * ".zip"; compress=true, compression_level=-1) -> zippath
 
 Packages a profile directory (as written by [`save_profile`](@ref)) into a single `.zip`
 archive at `zippath`, ready to distribute as one file. [`load_profile`](@ref) reads a
 `.zip` produced this way directly (no extraction needed).
+
+# Compression
+
+Entries are **deflated**. They used to be stored uncompressed -- `zip_writefile` has no
+compression option and always stores -- which went unnoticed because a profile zip is within a
+kilobyte of the sum of its members, and that reads like framing overhead rather than like a
+missing feature.
+
+It is the single largest saving available to this format, by a wide margin, and it costs nothing
+in compatibility: measured on a real profile (16,640 Spanish tweets, `vocsize` 6,068), **766,486
+bytes stored against 277,874 deflated, a 64% reduction**. Per member, the text ones are where it
+comes from -- `query_expansion.json` 525,814 → 177,764, `vocabulary.json` 90,060 → 35,857,
+`weights.json` 58,625 → 8,722 -- while the already-quantized binary member compresses least
+(47,492 → 39,218), which is what one would want: the bytes that were already dense stay dense.
+
+For comparison, the layout changes being considered on top of this are worth a further ~76,000
+bytes. Compression first, then.
+
+`compression_level` is passed through to ZipArchives (`1` fastest, `9` smallest, `-1` its
+default compromise). `compress=false` restores the old stored behaviour, which is worth keeping
+reachable for a caller that is about to compress the archive again anyway.
 """
-function zip_profile(dir::AbstractString, zippath::AbstractString=dir * ".zip")
+function zip_profile(dir::AbstractString, zippath::AbstractString=dir * ".zip";
+                     compress::Bool=true, compression_level::Integer=-1)
     isdir(dir) || error("zip_profile: not a directory: $dir")
     ZipArchives.ZipWriter(zippath) do w
         for name in sort(readdir(dir))
             fpath = joinpath(dir, name)
             isfile(fpath) || continue
-            ZipArchives.zip_writefile(w, name, read(fpath))
+            if compress
+                # `zip_writefile` stores unconditionally, so a compressed entry has to be opened,
+                # written and committed rather than written in one call
+                ZipArchives.zip_newfile(w, name; compress=true,
+                                        compression_level=Int(compression_level))
+                write(w, read(fpath))
+                ZipArchives.zip_commitfile(w)
+            else
+                ZipArchives.zip_writefile(w, name, read(fpath))
+            end
         end
     end
     zippath

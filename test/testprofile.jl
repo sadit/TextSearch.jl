@@ -28,9 +28,12 @@ using Test, TextSearch, SimilaritySearch, JSON3
             # one file per "large" variable, not a single big JSON blob -- and each artifact
             # appears exactly ONCE, which is the point of the layout
             for f in ("manifest.json", "vocabulary.json", "weights.json", "stopwords.json",
-                      "lemmas.json", "query_expansion.json", "query_expansion_distances.json")
+                      "lemmas.json", "query_expansion.json", "query_expansion_distances.bin")
                 @test isfile(joinpath(dir, f))
             end
+            # the distances are the one binary member: JSON text cost 12x for digits nobody
+            # reads (see `arraystore.jl`), so they are u8-quantized instead
+            @test !isfile(joinpath(dir, "query_expansion_distances.json"))
             @test !isfile(joinpath(dir, "lemma_map.json"))            # no second lemma copy
             @test !isfile(joinpath(dir, "stopword_candidates.json"))  # no second stopword copy
 
@@ -49,7 +52,16 @@ using Test, TextSearch, SimilaritySearch, JSON3
             @test q.stopwords == stopwords
             @test q.lemmas == lemmas
             @test q.query_expansion == query_expansion
-            @test q.query_expansion_distances == query_expansion_distances
+            # Quantized, so this is the one field that does NOT round-trip exactly. What has to
+            # survive is the ranking it induces -- that is all `expand_query!` reads it for --
+            # plus a value within the u8 step of the original.
+            @test keys(q.query_expansion_distances) == keys(query_expansion_distances)
+            for (tok, ds) in query_expansion_distances
+                got = q.query_expansion_distances[tok]
+                @test length(got) == length(ds)
+                @test maximum(abs.(got .- ds); init=0f0) < 0.01
+                @test sortperm(got) == sortperm(ds)
+            end
             @test q.applied == p.applied
             @test length(q.lineage) == 1
             @test q.lineage[1].stage === :fit
@@ -174,6 +186,30 @@ using Test, TextSearch, SimilaritySearch, JSON3
             end
         finally
             rm(dir; force=true, recursive=true)
+        end
+    end
+
+    @testset "zip_profile deflates, and a stored archive still loads" begin
+        # It stored uncompressed for a long time without anyone noticing, because a profile zip
+        # lands within a kilobyte of the sum of its members and that reads like framing overhead.
+        # On a real profile this was 766,486 bytes against 277,874 -- the largest single saving
+        # this format has available.
+        p = TextProfile(mkmodel(); stopwords, lemmas, query_expansion, query_expansion_distances,
+                        lineage)
+        mktempdir() do dir
+            d = joinpath(dir, "prof")
+            save_profile(d, p)
+            members = sum(filesize(joinpath(d, f)) for f in readdir(d))
+
+            deflated = zip_profile(d, joinpath(dir, "c.zip"))
+            stored = zip_profile(d, joinpath(dir, "s.zip"); compress=false)
+            @test filesize(deflated) < filesize(stored)
+            @test filesize(stored) >= members          # stored: members plus framing
+            # both forms read back, and to the same thing -- compression is not a format change
+            a, b = load_profile(deflated), load_profile(stored)
+            @test a.model.voc.token == b.model.voc.token == p.model.voc.token
+            @test a.query_expansion == b.query_expansion == p.query_expansion
+            @test keys(a.query_expansion_distances) == keys(b.query_expansion_distances)
         end
     end
 
