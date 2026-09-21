@@ -152,6 +152,21 @@ _find_lemma_map(p::TokenPipeline) = p.lemmas
             @test vocsize(gone.model.voc) < vocsize(kept.model.voc)
         end
 
+        @testset "the default is the bar the base's own fit was run at" begin
+            # recorded by `fit_profile` in the lineage; a refit adopts it rather than
+            # choosing a constant of its own
+            lin = [LineageStep(:fit; trainsize=length(basedocs), min_ndocs=3)]
+            withbar = mkprofile(basedocs; lineage=lin)
+            @test TextSearch._fit_min_ndocs(withbar, 1) == 3
+            @test token2id(refit_profile(withbar, sampledocs; verbose=false).model.voc,
+                           "typoxyz") == 0        # 1 base document, below the inherited bar
+            # an explicit value still wins over the inherited one
+            @test token2id(refit_profile(withbar, sampledocs; min_ndocs=1, verbose=false).model.voc,
+                           "typoxyz") != 0
+            # and a base with nothing recorded falls back to 1
+            @test TextSearch._fit_min_ndocs(base, 1) == 1
+        end
+
         @testset "it is the same knob fit_profile applies, so the names match" begin
             # a base is itself built with min_ndocs; a refit asking for the same bar must
             # mean the same thing by it, which is why there is no second name for it here

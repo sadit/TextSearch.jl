@@ -204,6 +204,9 @@ function fit_profile(textconfig::TextConfig, corpus;
                 lineage=[LineageStep(:fit;
                     encoder=(external === nothing ? "lsi" : "external"),
                     outdim, scaling=String(scaling),
+                    # what bar this vocabulary was built at, so a refit can adopt it instead
+                    # of inventing one (see `refit_profile`)
+                    min_ndocs=Int(min_ndocs),
                     # where external vectors came from is the caller's knowledge, not this
                     # function's: it takes vectors, not a path
                     source_path=String(get(encoder, :source_path, "")),

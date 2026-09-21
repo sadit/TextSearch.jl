@@ -187,10 +187,11 @@ something a caller can reason about, where a rate cannot be read at all without 
 base's size. It is also what keeps a token seen in one or two documents of a huge corpus --
 a typo, an ID -- out of the result.
 
-The default of `1` keeps everything the base has, which is the point: the fit already decided
-what counts as attested, and a refit that silently re-imposed a different bar would be
-overruling that decision with a number the caller never chose. Raising it here is how a
-caller asks for a smaller profile.
+[`refit_profile`](@ref) defaults it to the bar the base's own fit was run at, read from its
+lineage, so everything the base has is kept: the fit already decided what counts as
+attested, and a refit silently re-imposing a different bar would overrule that with a number
+the caller never chose. Raising it is how a caller asks for a smaller profile; lowering it
+below the fit's bar does nothing, because the tokens it would admit were never in the base.
 
 Whatever the gate keeps is then representable: `ndocs` is floored at one document. That floor
 is what makes `min_ndocs` a control rather than a suggestion, because without it `kappa`
@@ -311,6 +312,26 @@ function _blended_numtokens(avgdoclen, voc::Vocabulary, voc_sample::Vocabulary)
 end
 
 """
+    _fit_min_ndocs(p::TextProfile, default::Integer) -> Int
+
+The `min_ndocs` the fit that produced `p` was run at, read from its lineage, or `default`
+when it is not recorded -- profiles fitted before it was recorded, and bases assembled in
+memory rather than fitted.
+
+This is what lets a refit adopt the bar the profile was actually built at instead of a
+constant of its own. Note that adopting it can never delete anything: `_fit_vocabulary`
+already pruned below it, so every token the base holds clears it by construction. That is the
+property worth having in a default -- it is named rather than magic, and it cannot surprise.
+"""
+function _fit_min_ndocs(p::TextProfile, default::Integer)
+    for s in p.lineage
+        s.stage === :fit && haskey(s.params, "min_ndocs") &&
+            return Int(s.params["min_ndocs"])
+    end
+    Int(default)
+end
+
+"""
     refit_profile(base, sample_voc::Vocabulary; kwargs...) -> NamedTuple
     refit_profile(base, sample_docs; kwargs...) -> NamedTuple
 
@@ -359,7 +380,7 @@ the fold/cap counts from any lemma folding.
 """
 function refit_profile(base::TextProfile, sample_voc::Vocabulary;
                         kappa::Real=0, apply_lemmas::Bool=true, lemmas=nothing,
-                        min_ndocs::Integer=1, avgdoclen=:blend,
+                        min_ndocs=nothing, avgdoclen=:blend,
                         doc_freq_threshold::Real=0.5, verbose::Bool=true)
     gw, lw = base.model.global_weighting, base.model.local_weighting
     gw isa EntropyWeighting &&
@@ -384,7 +405,11 @@ function refit_profile(base::TextProfile, sample_voc::Vocabulary;
             "ndocs capped at trainsize for $(f.capped))")
     end
 
-    voc = blend_vocabularies(base_voc, sample_voc; kappa, min_ndocs, avgdoclen)
+    # `nothing` means "the bar this profile was built at", which is the honest default: the
+    # refit does not get to invent an evidence threshold the fit never chose.
+    fitbar = _fit_min_ndocs(base, 1)
+    keep_ndocs = min_ndocs === nothing ? fitbar : Int(min_ndocs)
+    voc = blend_vocabularies(base_voc, sample_voc; kappa, min_ndocs=keep_ndocs, avgdoclen)
 
     syn, sdist = _restrict_query_expansion(base.query_expansion, base.query_expansion_distances, voc)
     # Restricted to entries whose target survived the prune. No reconciliation step follows:
@@ -420,7 +445,13 @@ function refit_profile(base::TextProfile, sample_voc::Vocabulary;
             "refit: vocsize $(vocsize(base.model.voc)) (base) + $(vocsize(sample_voc)) (sample) " *
             "-> $(vocsize(voc)); $fromsample token(s) seen in the sample, " *
             "$(vocsize(voc) - fromsample) carried from the base alone " *
-            "($atfloor of them at the one-document floor; raise min_ndocs to carry fewer)")
+            "($atfloor of them at the one-document floor)")
+        println(stderr,
+            "refit: min_ndocs=$keep_ndocs " *
+            (min_ndocs === nothing ? "(the bar the base's own fit used); raise it to carry fewer" :
+             keep_ndocs < fitbar ?
+                "(the base's fit used $fitbar, so nothing below that exists to keep)" :
+                "(the base's fit used $fitbar)"))
         # TextSearch.avgdoclen, qualified deliberately: the `avgdoclen` KEYWORD shadows the
         # function of that name throughout this body, and calling it bare is a MethodError
         # ("objects of type Symbol are not callable") that only fires when verbose is on.

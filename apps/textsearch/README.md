@@ -351,8 +351,10 @@ Two consequences fall out of that arithmetic, and they are the point of the whol
   documents rather than a rate, since "at least 12 base documents" can be reasoned about and
   a rate cannot without knowing the base's size.
 
-  The default `1` keeps everything the base has: the fit already decided what counts as
-  attested. Raising it makes the profile smaller and costs recall, measured on a
+  The default `0` means "the bar the base's own fit was run at", which `fit` now records in
+  the lineage, so everything the base has is kept: the fit already decided what counts as
+  attested. Lowering it below that bar does nothing, since the tokens it would admit were
+  never in the base. Raising it makes the profile smaller and costs recall, measured on a
   16,640-document base refitted against 100 documents of another corpus (1,000 known-item
   queries, 10,000-document index): the default gives recall@10 0.921, `12` gives 0.875 for
   29% of the bytes, `17` gives 0.833 for 20%. Letting the old kappa-rounding decide instead

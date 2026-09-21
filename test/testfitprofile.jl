@@ -19,6 +19,9 @@ using Test, TextSearch, SimilaritySearch
         # the threshold is recorded because `merge_profiles` needs it to impute what a batch
         # that removed a stopword never counted
         @test last(p.lineage).params["doc_freq_threshold"] == 0.5
+        # and the bar the vocabulary was built at, which is what a refit adopts as its own
+        # default instead of inventing one (see `_fit_min_ndocs`)
+        @test last(p.lineage).params["min_ndocs"] == 2
     end
 
     @testset "stopwords are removed before the vocabulary the encoder trains on" begin
