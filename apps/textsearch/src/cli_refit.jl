@@ -26,13 +26,12 @@ function parse_refit_args(args::Vector{String})
             help = "column/JSON-key holding the document text"
             default = "text"
         "--kappa"
-            help = "the base's authority, in documents (0 = as many as the sample has, " *
-                   "weighting the two sides equally). Mutually exclusive with --base-weight."
-            arg_type = Float64
-            default = 0.0
-        "--base-weight"
-            help = "the base's share of the blend as a fraction in (0,1), converted to a " *
-                   "kappa relative to the sample size; 0.5 matches the --kappa default"
+            help = "the base's authority, in documents; 0 (the default) means as many as " *
+                   "the sample has, weighting the two sides equally. A fraction w of the " *
+                   "blend is kappa = sample_size * w / (1 - w), so there is one flag rather " *
+                   "than two units for one knob. Measured, this is a weak control: an 18x " *
+                   "range of the base's effective weight moved recall@10 by at most 1.5 " *
+                   "points, where --min-ndocs moves 29"
             arg_type = Float64
             default = 0.0
         "--extend-lemmas"
@@ -72,16 +71,16 @@ function parse_refit_args(args::Vector{String})
                    "Whether to lemmatize is the refit's decision, which is why a base " *
                    "profile normally leaves the map unapplied."
             action = :store_true
-        "--keep-rate"
-            help = "a token absent from the sample is kept only if its base document-frequency " *
-                   "rate is at least this"
-            arg_type = Float64
-            default = 1e-5
-        "--keep-floor"
-            help = "...and only if it was seen in at least this many base documents, so a " *
-                   "single-document typo cannot clear a small rate threshold"
+        "--min-ndocs"
+            help = "the control on what the base contributes, and the same document count " *
+                   "'fit' applies to its own corpus: a token absent from the sample is kept " *
+                   "only if the base saw it in at least this many documents. 0 (the default) " *
+                   "adopts the bar the base's own fit was run at, so everything the base has " *
+                   "is kept. Raising it makes the profile smaller and costs recall -- on a " *
+                   "16,640-document base refitted against 100 documents, 12 keeps 84% of the " *
+                   "recall gain for 29% of the bytes"
             arg_type = Int
-            default = 3
+            default = 0
         "--doc-freq-threshold"
             help = "document-frequency ratio above which a token is reported as a stopword " *
                    "candidate (the APPLIED stopword set stays the base's)"
@@ -133,14 +132,10 @@ function cmd_refit(args::Vector{String})
     out = o["out"]
     endswith(out, ".zip") || error("--out must end in .zip, got '$out'")
     o["chunk"] >= 1 || error("--chunk must be >= 1, got $(o["chunk"])")
-    o["keep-floor"] >= 0 || error("--keep-floor must be >= 0, got $(o["keep-floor"])")
+    o["min-ndocs"] >= 0 || error("--min-ndocs must be >= 0, got $(o["min-ndocs"])")
 
     kappa = o["kappa"]
-    bw = o["base-weight"]
-    if bw != 0.0
-        kappa == 0.0 || error("pass either --kappa or --base-weight, not both")
-        0.0 < bw < 1.0 || error("--base-weight must be in (0,1), got $bw")
-    end
+    kappa >= 0.0 || error("--kappa must be >= 0, got $kappa")
 
     avgdoclen = if o["avgdoclen"] == "blend"
         :blend
@@ -192,12 +187,11 @@ function cmd_refit(args::Vector{String})
         end
     end
 
-    # --base-weight is expressed relative to the sample, so it needs the sample's size first
-    bw != 0.0 && (kappa = gettrainsize(sample_voc) * bw / (1 - bw))
-
+    # 0 is how a numeric flag spells "not given"; the library takes `nothing` for it, same
+    # as --min-ndocs
     r = refit_profile(base, sample_voc;
-                      kappa, apply_lemmas, lemmas=lemmamap,
-                      keep_rate=o["keep-rate"], keep_floor=o["keep-floor"],
+                      kappa=(kappa == 0.0 ? nothing : kappa), apply_lemmas, lemmas=lemmamap,
+                      min_ndocs=(o["min-ndocs"] == 0 ? nothing : o["min-ndocs"]),
                       avgdoclen, doc_freq_threshold=o["doc-freq-threshold"],
                       verbose=true)
 

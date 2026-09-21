@@ -85,40 +85,39 @@ and resurrecting it here would smuggle back a token the pipeline deliberately ex
 function fold_lemmas(voc::Vocabulary, lemmas)
     isempty(lemmas) && return (; voc, folded=0, capped=0, dropped=0)
 
-    N = gettrainsize(voc)
-    out = Vocabulary(voc.textconfig, Int64(N), Int64(getnumtokens(voc)))
+    trainsize = gettrainsize(voc)
+    merged = Vocabulary(voc.textconfig, Int64(trainsize), Int64(getnumtokens(voc)))
     folded = 0
     dropped = 0
 
     for id in eachindex(voc)
-        t = voc[id]
-        lemma = get(lemmas, t.token, t.token)
-        if lemma != t.token
+        entry = voc[id]
+        lemma = get(lemmas, entry.token, entry.token)
+        if lemma != entry.token
             if token2id(voc, lemma) == 0
                 dropped += 1
                 continue
             end
             folded += 1
         end
-        push_token!(out, lemma, t.occs, t.ndocs)
+        push_token!(merged, lemma, entry.occs, entry.ndocs)
     end
 
     capped = 0
-    if N > 0
-        @inbounds for i in eachindex(out.ndocs)
-            if out.ndocs[i] > N
-                out.ndocs[i] = Int32(N)
+    if trainsize > 0
+        @inbounds for i in eachindex(merged.ndocs)
+            if merged.ndocs[i] > trainsize
+                merged.ndocs[i] = Int32(trainsize)
                 capped += 1
             end
         end
     end
 
-    (; voc=out, folded, capped, dropped)
+    (; voc=merged, folded, capped, dropped)
 end
 
 """
-    blend_vocabularies(voc_base, voc_sample;
-                       kappa::Real=0, keep_rate::Real=1e-5, keep_floor::Integer=3,
+    blend_vocabularies(voc_base, voc_sample; kappa=nothing, min_ndocs::Integer=1,
                        avgdoclen=:blend)
         -> Vocabulary
 
@@ -127,20 +126,38 @@ documents** and `voc_sample` as observed evidence.
 
 # The blend
 
-Read `κ` as "the base is worth this many documents". Both counters are then scaled the same
-way -- by the base's average **per document** -- and added to what the sample observed:
+Read `kappa` as "the base is worth this many documents". Both counters are then scaled the
+same way -- by the base's average **per document** -- and added to what the sample observed:
 
 ```
-ndocs(t)  = ndocs_s(t) + round(κ * ndocs_b(t) / N_b)
-occs(t)   = occs_s(t)  + round(κ * occs_b(t)  / N_b)
-trainsize = N_s + κ
-numtokens = sum(occs)                    # recomputed from the survivors
+base_doc_rate(t) = ndocs_base(t) / N_base       # fraction of base documents holding t
+base_occ_rate(t) = occs_base(t)  / N_base       # occurrences of t per base document
+
+ndocs(t)  = ndocs_sample(t) + round(kappa * base_doc_rate(t))
+occs(t)   = occs_sample(t)  + round(kappa * base_occ_rate(t))
+trainsize = N_sample + kappa
+numtokens = sum(occs)                           # recomputed from the survivors
 ```
 
-`kappa <= 0` defaults to `gettrainsize(voc_sample)`, which weights the two sides equally; halve
+`kappa = nothing` (the default) means `N_sample`, which weights the two sides equally; halve
 it for 1/3 base, double it for 2/3. Expressing the base's authority in documents rather than
-as a fraction is what makes the output sample-sized -- so a refitted profile is naturally
-lighter than the generic one it came from -- and makes the knob mean something concrete.
+as a fraction is what makes the knob mean something concrete -- and it is the only spelling,
+since the fraction `w` is just `kappa = N_sample * w / (1 - w)` and one knob with two units
+is one knob too many.
+
+The knob is weak, which is worth knowing before reaching for it. Swept against 1,000
+known-item queries at three sample sizes, an 18x range of the base's effective weight
+(`kappa / (N_sample + kappa)`, from 0.048 to 0.926) moved recall@10 by at most 1.5 points,
+and never against the base: more prior was mildly better at every sample size, including one
+20x larger than the base's own influence would suggest. `min_ndocs` moves 29 points on the
+same measurement. Set `kappa` when you have a reason; the default is not costing you
+anything measurable.
+
+`kappa` sets weight, and only weight. It used to decide membership as well -- a base-only
+token whose `round(kappa * base_doc_rate)` came out zero simply vanished -- so the
+vocabulary shrank hardest
+at small samples, which is exactly where the base is the only evidence there is. What the
+vocabulary keeps is the gate's decision now.
 
 Using the same per-document denominator for both counters is what keeps the result a
 *possible* corpus. Scaling `occs` by the base's share of total tokens instead (`occs_b/T_b`)
@@ -157,7 +174,7 @@ is the honest reading of the blend -- the pseudo-documents the prior contributes
 documents, and they are as long as base documents are. But it moves BM25's length
 normalization toward the base, and when the two corpora's documents are nothing alike the
 effect is large: Wikipedia-es against 400 product reviews lands at 141 tokens/document at
-`κ = N_s` and 56 at `κ = N_s/4`, against the sample's own ~21.
+`kappa = N_sample` and 56 at `kappa = N_sample/4`, against the sample's own ~21.
 
 `avgdoclen = :sample` instead sets `numtokens` so the average matches the sample's, and a
 positive number sets it to that average directly. This deliberately decouples `numtokens`
@@ -168,72 +185,120 @@ and through it `BM25Scorer`'s length normalization. (`TpWeighting` also divides 
 -- which is the usual reason to refit at all -- and leave it on `:blend` when the base's
 documents are representative of what you will index.
 
-# The prune
+# The gate
 
-A token absent from the sample is kept only if the base considered it important:
+A token absent from the sample is kept when the base saw it in enough documents:
 
 ```
-keep(t) = ndocs_s(t) > 0 || (r_b(t) >= keep_rate && ndocs_b(t) >= keep_floor)
+keep(t) = ndocs_sample(t) > 0 || ndocs_base(t) >= min_ndocs
 ```
 
-`keep_rate` is scale-free; `keep_floor` is an absolute floor that stops a token seen in one
-or two documents of a huge base corpus -- a typo, an ID -- from clearing a small rate
-threshold. Everything surviving must additionally round to `ndocs >= 1`, so a token whose
-blended presence is negligible falls out on its own.
+`min_ndocs` is the same knob [`fit_profile`](@ref) applies to its own corpus, in the same
+unit and with the same meaning: how many documents of evidence a token needs to be in a
+vocabulary. There is deliberately only one, and it is a document count rather than a rate,
+because that is the unit the evidence arrives in -- "seen in at least 12 base documents" is
+something a caller can reason about, where a rate cannot be read at all without knowing the
+base's size. It is also what keeps a token seen in one or two documents of a huge corpus --
+a typo, an ID -- out of the result.
+
+[`refit_profile`](@ref) defaults it to the bar the base's own fit was run at, read from its
+lineage, so everything the base has is kept: the fit already decided what counts as
+attested, and a refit silently re-imposing a different bar would overrule that with a number
+the caller never chose. Raising it is how a caller asks for a smaller profile; lowering it
+below the fit's bar does nothing, because the tokens it would admit were never in the base.
+
+Whatever the gate keeps is then representable: `ndocs` is floored at one document. That floor
+is what makes `min_ndocs` a control rather than a suggestion, because without it `kappa`
+decides membership, and it decides it backwards.
+
+Measured on a 6,068-token base (16,640 documents) refitted against samples of a different
+corpus, scoring 1,000 known-item queries against a 10,000-document index:
+
+| sample | decided by | vocsize | recall@10 | recall@1 | archive |
+|---|---|---|---|---|---|
+| 100 documents | rounding (old) | 663 | 0.632 | 0.376 | 18 KB |
+| 100 documents | the gate | 6,284 | 0.921 | 0.799 | 227 KB |
+| 2,000 documents | either | 9,824 | 0.949 | 0.842 | 257 KB |
+
+(Archive sizes are deflated zips; a stored one is about 3x each, and the ratios between them
+are what the knob trades, not the absolute figures.)
+
+The two agree from about `kappa > N_base / (2 * min ndocs_base)` upward -- 1,664 for that
+base -- since above it the rounding was keeping everything anyway. Below it, the gap is the
+difference between a profile that answers and one that cannot.
+
+The cost is real, and trading it is what `min_ndocs` is for: a refitted profile is no longer
+automatically sample-sized, and at `kappa = 100` above it costs 12x the bytes. The curve
+is steep
+at the cheap end, on the same measurement -- `min_ndocs = 12` keeps 84% of the recall gain
+for 29% of the bytes, `min_ndocs = 9` keeps 91% for 41% -- so a caller who needs a small
+profile raises it and reads what it costs. That is a decision; letting `kappa` make it
+silently was not.
 
 Note what needs no rule: a token the base *did* consider important but the sample never
-shows keeps only its `κ`-weighted share, so it survives with reduced weight automatically.
+shows keeps only its `kappa`-weighted share, so it survives with reduced weight
+automatically.
 Lowering importance is arithmetic; dropping is the only part that needs a decision.
 """
 function blend_vocabularies(voc_base::Vocabulary, voc_sample::Vocabulary;
-                             kappa::Real=0, keep_rate::Real=1e-5, keep_floor::Integer=3,
-                             avgdoclen=:blend)
-    N_s = gettrainsize(voc_sample)
-    N_b = gettrainsize(voc_base)
-    N_s > 0 || throw(ArgumentError("blend_vocabularies: the sample vocabulary has trainsize 0"))
+                             kappa=nothing, min_ndocs::Integer=1, avgdoclen=:blend)
+    N_sample = gettrainsize(voc_sample)
+    N_base = gettrainsize(voc_base)
+    N_sample > 0 || throw(ArgumentError("blend_vocabularies: the sample vocabulary has trainsize 0"))
 
-    κ = kappa <= 0 ? Float64(N_s) : Float64(kappa)
+    kappa === nothing || kappa > 0 ||
+        throw(ArgumentError("kappa must be positive, or `nothing` for the sample's own " *
+                            "document count; got $kappa"))
+    kappa = kappa === nothing ? Float64(N_sample) : Float64(kappa)
     # a vocabulary's counters are Int32, so a prior larger than that cannot be represented;
     # say so here rather than surfacing an InexactError from a rounding deep in the loop
-    κ <= typemax(Int32) ||
+    kappa <= typemax(Int32) ||
         throw(ArgumentError("kappa=$kappa exceeds what a vocabulary's Int32 counters can " *
                             "hold (max $(typemax(Int32))); a prior that large would in any " *
                             "case leave the sample no influence at all"))
-    N = round(Int64, N_s + κ)
+    trainsize = round(Int64, N_sample + kappa)
 
     # numtokens is a placeholder here and recomputed from the survivors below
-    out = Vocabulary(voc_sample.textconfig, N, Int64(0))
+    blended = Vocabulary(voc_sample.textconfig, trainsize, Int64(0))
 
     # The sample goes in first so the output's token order leads with what was observed.
     for id in eachindex(voc_sample)
-        t = voc_sample[id]
-        push_token!(out, t.token, t.occs, t.ndocs)
+        entry = voc_sample[id]
+        push_token!(blended, entry.token, entry.occs, entry.ndocs)
     end
 
     for id in eachindex(voc_base)
-        t = voc_base[id]
+        entry = voc_base[id]
         # both counters share the per-document denominator, so occs >= ndocs survives
-        r = N_b > 0 ? t.ndocs / N_b : 0.0
-        q = N_b > 0 ? t.occs / N_b : 0.0
-        insample = token2id(voc_sample, t.token) != 0
+        base_doc_rate = N_base > 0 ? entry.ndocs / N_base : 0.0
+        base_occ_rate = N_base > 0 ? entry.occs / N_base : 0.0
 
-        if !insample
-            (r >= keep_rate && t.ndocs >= keep_floor) || continue
+        if token2id(voc_sample, entry.token) == 0
+            (N_base > 0 && entry.ndocs >= min_ndocs) || continue
+            # A token the gate kept has to be representable, and for a small sample the
+            # kappa-scaled count of a base-only token is routinely below one document:
+            # `round` alone sent it to zero and the token disappeared. Floor it instead.
+            ndocs = max(one(Int32), round(Int32, kappa * base_doc_rate))
+            push_token!(blended, entry.token,
+                        max(ndocs, round(Int32, kappa * base_occ_rate)), ndocs)
+        else
+            push_token!(blended, entry.token,
+                        round(Int32, kappa * base_occ_rate),
+                        round(Int32, kappa * base_doc_rate))
         end
-
-        nd = round(Int32, κ * r)
-        oc = round(Int32, κ * q)
-        # a base-only token that contributes nothing measurable is not worth a slot
-        (!insample && nd == 0 && oc == 0) && continue
-        push_token!(out, t.token, oc, nd)
     end
 
-    # cap before pruning: the cap can only lower a count, never take one below 1
-    @inbounds for i in eachindex(out.ndocs)
-        out.ndocs[i] > N && (out.ndocs[i] = Int32(N))
+    # cap before the check below: the cap can only lower a count, never take one below 1
+    @inbounds for i in eachindex(blended.ndocs)
+        blended.ndocs[i] > trainsize && (blended.ndocs[i] = Int32(trainsize))
     end
 
-    voc = filter_tokens(t -> t.ndocs >= 1, out)
+    # Not a prune any more -- the gate above already decided, and nothing reaching here can
+    # be at zero. It stays as the structural guarantee that `ndocs == 0` never reaches the
+    # weighting, where `log2((0.5 + trainsize) / (0.5 + ndocs))` would make an unobserved
+    # token the single heaviest in the model: 10.64 bits against 9.06 for the heaviest real
+    # one, a gap that is 1.58 bits at every trainsize.
+    voc = filter_tokens(t -> t.ndocs >= 1, blended)
     voc.numtokens[] = _blended_numtokens(avgdoclen, voc, voc_sample)
     voc
 end
@@ -268,6 +333,26 @@ function _blended_numtokens(avgdoclen, voc::Vocabulary, voc_sample::Vocabulary)
 end
 
 """
+    _fit_min_ndocs(p::TextProfile, default::Integer) -> Int
+
+The `min_ndocs` the fit that produced `p` was run at, read from its lineage, or `default`
+when it is not recorded -- profiles fitted before it was recorded, and bases assembled in
+memory rather than fitted.
+
+This is what lets a refit adopt the bar the profile was actually built at instead of a
+constant of its own. Note that adopting it can never delete anything: `_fit_vocabulary`
+already pruned below it, so every token the base holds clears it by construction. That is the
+property worth having in a default -- it is named rather than magic, and it cannot surprise.
+"""
+function _fit_min_ndocs(p::TextProfile, default::Integer)
+    for s in p.lineage
+        s.stage === :fit && haskey(s.params, "min_ndocs") &&
+            return Int(s.params["min_ndocs"])
+    end
+    Int(default)
+end
+
+"""
     refit_profile(base, sample_voc::Vocabulary; kwargs...) -> NamedTuple
     refit_profile(base, sample_docs; kwargs...) -> NamedTuple
 
@@ -288,9 +373,11 @@ apply_lemmas)`, and is checked against it. The second form is a convenience that
 
 # What is adjusted, and what is not
 
-- **Counters** are interpolated by [`blend_vocabularies`](@ref) and the vocabulary pruned
-  there; the weight vector is then *recomputed*, which is what makes the tf-idf and BM25
-  paths tuned by one operation rather than only the former.
+- **Counters** are interpolated by [`blend_vocabularies`](@ref), which also decides what the
+  vocabulary keeps -- `min_ndocs`, the same document count `fit_profile` uses, is that
+  control; the weight
+  vector is then *recomputed*, which is what makes the tf-idf and BM25 paths tuned by one
+  operation rather than only the former.
 - **Lemmas** are reused rather than re-derived: the base already paid for them. With
   `apply_lemmas`, they enter the `TextConfig` and the base's counters are folded through the
   same map ([`fold_lemmas`](@ref)) so both sides stay comparable. `extend_lemmas` (corpus
@@ -313,35 +400,40 @@ Set `verbose` to see the vocabulary sizes, how much of the result the base accou
 the fold/cap counts from any lemma folding.
 """
 function refit_profile(base::TextProfile, sample_voc::Vocabulary;
-                        kappa::Real=0, apply_lemmas::Bool=true, lemmas=nothing,
-                        keep_rate::Real=1e-5, keep_floor::Integer=3, avgdoclen=:blend,
+                        kappa=nothing, apply_lemmas::Bool=true, lemmas=nothing,
+                        min_ndocs=nothing, avgdoclen=:blend,
                         doc_freq_threshold::Real=0.5, verbose::Bool=true)
-    gw, lw = base.model.global_weighting, base.model.local_weighting
-    gw isa EntropyWeighting &&
+    global_weighting, local_weighting = base.model.global_weighting, base.model.local_weighting
+    global_weighting isa EntropyWeighting &&
         error("cannot refit an EntropyWeighting profile: its weights are supervised and " *
               "would have to be recomputed from the labeled corpus, which a profile does not carry")
 
     lemmamap = lemmas === nothing ? base.lemmas : lemmas
-    tc = refit_textconfig(base; apply_lemmas, lemmas=lemmamap)
-    _check_refit_textconfig(tc, sample_voc.textconfig)
+    textconfig = refit_textconfig(base; apply_lemmas, lemmas=lemmamap)
+    _check_refit_textconfig(textconfig, sample_voc.textconfig)
 
     base_voc = base.model.voc
     # Fold only when the refit ADDS a lemma step the base did not have. If the base already
     # lemmatized, its counters are exact and folding again would be wrong. The marker says
     # this directly now, instead of being inferred from the shape of the pipeline.
     if apply_lemmas && !isempty(lemmamap) && !base.applied.lemmas
-        f = fold_lemmas(base_voc, lemmamap)
-        base_voc = f.voc
+        folding = fold_lemmas(base_voc, lemmamap)
+        base_voc = folding.voc
         verbose && println(stderr,
-            "refit: folded $(f.folded) base token(s) into their lemmas " *
+            "refit: folded $(folding.folded) base token(s) into their lemmas " *
             "($(vocsize(base.model.voc)) -> $(vocsize(base_voc)) tokens; " *
-            "$(f.dropped) dropped whose lemma was not in the base vocabulary; " *
-            "ndocs capped at trainsize for $(f.capped))")
+            "$(folding.dropped) dropped whose lemma was not in the base vocabulary; " *
+            "ndocs capped at trainsize for $(folding.capped))")
     end
 
-    voc = blend_vocabularies(base_voc, sample_voc; kappa, keep_rate, keep_floor, avgdoclen)
+    # `nothing` means "the bar this profile was built at", which is the honest default: the
+    # refit does not get to invent an evidence threshold the fit never chose.
+    fit_min_ndocs = _fit_min_ndocs(base, 1)
+    resolved_min_ndocs = min_ndocs === nothing ? fit_min_ndocs : Int(min_ndocs)
+    voc = blend_vocabularies(base_voc, sample_voc; kappa, min_ndocs=resolved_min_ndocs, avgdoclen)
 
-    syn, sdist = _restrict_query_expansion(base.query_expansion, base.query_expansion_distances, voc)
+    expansion, expansion_distances =
+        _restrict_query_expansion(base.query_expansion, base.query_expansion_distances, voc)
     # Restricted to entries whose target survived the prune. No reconciliation step follows:
     # the profile constructor materializes the TextConfig from THIS map, so the applied map
     # and the saved map are the same object by construction. (They used to be assembled
@@ -349,38 +441,50 @@ function refit_profile(base::TextProfile, sample_voc::Vocabulary;
     kept_lemmas = Dict{String,String}(
         tok => lemma for (tok, lemma) in lemmamap if token2id(voc, lemma) != 0)
 
-    model = VectorModel(gw, lw, voc)
+    model = VectorModel(global_weighting, local_weighting, voc)
 
     stopwords = Set{String}(stopword_candidates(voc, doc_freq_threshold))
     union!(stopwords, base.stopwords)
 
-    κ = kappa <= 0 ? Float64(gettrainsize(sample_voc)) : Float64(kappa)
+    prior_docs = kappa === nothing ? Float64(gettrainsize(sample_voc)) : Float64(kappa)
     applied = AppliedArtifacts(stopwords=base.applied.stopwords,
                                lemmas=(apply_lemmas && !isempty(kept_lemmas)),
                                query_expansion=base.applied.query_expansion)
     lineage = LineageStep[base.lineage...,
-                          LineageStep(:refit; kappa=κ,
+                          LineageStep(:refit; kappa=prior_docs,
                                               sample_trainsize=gettrainsize(sample_voc),
                                               trainsize=gettrainsize(voc),
                                               lemmas_applied=applied.lemmas)]
 
     if verbose
-        fromsample = count(id -> token2id(sample_voc, gettoken(voc, id)) != 0, eachindex(voc))
+        from_sample = count(id -> token2id(sample_voc, gettoken(voc, id)) != 0, eachindex(voc))
+        # How many carried tokens sit at the one-document floor says how much of the result
+        # rests on the gate rather than on evidence -- the number `min_ndocs` trades against.
+        at_floor = count(eachindex(voc)) do id
+            getndocs(voc, id) == 1 && token2id(sample_voc, gettoken(voc, id)) == 0
+        end
         println(stderr,
             "refit: vocsize $(vocsize(base.model.voc)) (base) + $(vocsize(sample_voc)) (sample) " *
-            "-> $(vocsize(voc)); $fromsample token(s) seen in the sample, " *
-            "$(vocsize(voc) - fromsample) carried from the base alone")
+            "-> $(vocsize(voc)); $from_sample token(s) seen in the sample, " *
+            "$(vocsize(voc) - from_sample) carried from the base alone " *
+            "($at_floor of them at the one-document floor)")
+        println(stderr,
+            "refit: min_ndocs=$resolved_min_ndocs " *
+            (min_ndocs === nothing ? "(the bar the base's own fit used); raise it to carry fewer" :
+             resolved_min_ndocs < fit_min_ndocs ?
+                "(the base's fit used $fit_min_ndocs, so nothing below that exists to keep)" :
+                "(the base's fit used $fit_min_ndocs)"))
         # TextSearch.avgdoclen, qualified deliberately: the `avgdoclen` KEYWORD shadows the
         # function of that name throughout this body, and calling it bare is a MethodError
         # ("objects of type Symbol are not callable") that only fires when verbose is on.
         println(stderr,
-            "refit: kappa=$(round(κ; digits=1)) documents of prior against a " *
+            "refit: kappa=$(round(prior_docs; digits=1)) documents of prior against a " *
             "$(gettrainsize(sample_voc))-document sample -> trainsize=$(gettrainsize(voc)), " *
             "avgdoclen=$(round(TextSearch.avgdoclen(voc); digits=2)), " *
             "lemmas=$(applied.lemmas ? "applied" : "carried only")")
     end
 
-    TextProfile(model, stopwords, kept_lemmas, syn, sdist, applied, lineage)
+    TextProfile(model, stopwords, kept_lemmas, expansion, expansion_distances, applied, lineage)
 end
 
 function refit_profile(base::TextProfile, sample_docs; apply_lemmas::Bool=true, extend_lemmas::Bool=false,
@@ -389,8 +493,8 @@ function refit_profile(base::TextProfile, sample_docs; apply_lemmas::Bool=true, 
                         lemma_selector::Symbol=:most_frequent,
                         verbose::Bool=true, kwargs...)
     lemmamap = base.lemmas
-    tc = refit_textconfig(base; apply_lemmas, lemmas=lemmamap)
-    sample_voc = Vocabulary(tc, sample_docs; verbose=false)
+    textconfig = refit_textconfig(base; apply_lemmas, lemmas=lemmamap)
+    sample_voc = Vocabulary(textconfig, sample_docs; verbose=false)
 
     if extend_lemmas && apply_lemmas
         ext = _extend_lemmas_from_sample(base, sample_voc, lemmamap;
@@ -401,8 +505,8 @@ function refit_profile(base::TextProfile, sample_docs; apply_lemmas::Bool=true, 
             # Retokenize rather than folding the vocabulary we already have: the sample is
             # small by definition, so a second pass is cheap and exact, where folding would
             # over-count ndocs for any document holding two forms of a newly-found family.
-            tc = refit_textconfig(base; apply_lemmas, lemmas=lemmamap)
-            sample_voc = Vocabulary(tc, sample_docs; verbose=false)
+            textconfig = refit_textconfig(base; apply_lemmas, lemmas=lemmamap)
+            sample_voc = Vocabulary(textconfig, sample_docs; verbose=false)
             verbose && println(stderr,
                 "refit: extended the lemma map with $(length(ext)) morphological entr" *
                 "$(length(ext) == 1 ? "y" : "ies") for token(s) the base had not seen")
@@ -482,9 +586,9 @@ function _restrict_query_expansion(query_expansion, distances, voc::Vocabulary)
         dl = distances === nothing ? nothing : get(distances, tok, nothing)
         words = String[]
         ds = Float32[]
-        for (rank, syn) in enumerate(neighbors)
-            token2id(voc, syn) == 0 && continue
-            push!(words, syn)
+        for (rank, neighbor) in enumerate(neighbors)
+            token2id(voc, neighbor) == 0 && continue
+            push!(words, neighbor)
             dl !== nothing && rank <= length(dl) && push!(ds, Float32(dl[rank]))
         end
         isempty(words) && continue

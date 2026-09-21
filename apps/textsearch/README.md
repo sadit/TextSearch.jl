@@ -8,7 +8,7 @@ corpus, packaged as a single `.zip` you can install, share, and query.
 <!-- The version this document's commands and outputs were produced against. Checked by
      apps/textsearch/test/runtests.jl against TextSearch's Project.toml, because a marker
      nobody verifies drifts exactly the way the examples themselves did. -->
-Documented for **TextSearch v1.1**. Every command in the Tutorial was run to write it and the
+Documented for **TextSearch v1.2**. Every command in the Tutorial was run to write it and the
 output shown is real.
 
 - **[Install](#install)**
@@ -355,8 +355,8 @@ since recomputing supervised weights would need the labeled corpus.
 ```
 textsearch refit <base-profile> --sample PATH --out OUT.zip
                  [--format FMT] [--text-key KEY]
-                 [--kappa N | --base-weight W] [--no-lemmas]
-                 [--keep-rate T] [--keep-floor N] [--drop-distances] [--chunk N]
+                 [--kappa N] [--no-lemmas]
+                 [--min-ndocs N] [--drop-distances] [--chunk N]
 ```
 
 A profile fit from a large generic corpus is a **bootstrap** model: reasonable statistics
@@ -379,19 +379,37 @@ trainsize = trainsize_sample + kappa
 ```
 
 `--kappa 0` (the default) uses the sample's own document count, weighting the two sides
-equally; halve it for 1/3 base, double it for 2/3. `--base-weight 0.75` says the same thing
-as a fraction. Expressing the base's authority *in documents* is what makes the output
-sample-sized rather than base-sized, and what makes the knob mean something concrete.
+equally; halve it for 1/3 base, double it for 2/3. A fraction `w` of the blend is just
+`kappa = sample_size * w / (1 - w)`, so there is one flag and not two units for one knob.
+Expressing the base's authority *in documents* is what makes it mean something concrete. It
+sets weight only: what the vocabulary keeps is `--min-ndocs`'s decision, not a side effect
+of how `--kappa` rounds.
+
+It is also a weak knob, which is worth knowing before turning it: swept against 1,000
+known-item queries at three sample sizes, an 18x range of the base's effective weight moved
+recall@10 by at most 1.5 points, and more prior was mildly better everywhere. `--min-ndocs`
+moves 29 points on the same measurement.
 
 Two consequences fall out of that arithmetic, and they are the point of the whole command:
 
 - A word the base considers important but the sample never shows **keeps only its
   kappa-weighted share**, so it survives with reduced importance. Nothing special is done
   for it; lowering weight is just what the interpolation does.
-- A word that mattered in neither is **dropped**: `--keep-rate`/`--keep-floor` decide, and
-  anything whose blended count rounds below one document falls out regardless. `--keep-floor`
-  is an absolute document count, so a single-document typo in a huge base corpus cannot clear
-  a small rate threshold.
+- A word that mattered in neither is **dropped**, and `--min-ndocs` is what decides: the base
+  must have seen it in at least that many documents. It is the same flag `textsearch fit`
+  applies to its own corpus, in the same unit, because it is the same question -- how much
+  evidence a token needs to be in a vocabulary. There is only one of it, and it counts
+  documents rather than a rate, since "at least 12 base documents" can be reasoned about and
+  a rate cannot without knowing the base's size.
+
+  The default `0` means "the bar the base's own fit was run at", which `fit` now records in
+  the lineage, so everything the base has is kept: the fit already decided what counts as
+  attested. Lowering it below that bar does nothing, since the tokens it would admit were
+  never in the base. Raising it makes the profile smaller and costs recall, measured on a
+  16,640-document base refitted against 100 documents of another corpus (1,000 known-item
+  queries, 10,000-document index): the default gives recall@10 0.921, `12` gives 0.875 for
+  29% of the bytes, `17` gives 0.833 for 20%. Letting the old kappa-rounding decide instead
+  gave 0.632 -- the knob exists so that trade is made on purpose.
 
 **Why counters and not weights.** BM25 never reads a model's precomputed weight vector -- it
 derives its own IDF from `ndocs`/`trainsize` and normalizes by `avgdoclen`. Blending weights
@@ -408,7 +426,7 @@ out as a weighted mean of the two corpora's average lengths rather than the samp
 honest, since the pseudo-documents the prior contributes are base documents, but it pulls
 length normalization toward the base, and the pull is large when the two corpora are nothing
 alike: Wikipedia-es against 400 product reviews lands at 141 tokens/document at the default
-kappa and 56 at `--base-weight 0.2`, against the sample's own 9.2. `--avgdoclen sample` pins it
+kappa and 56 at a quarter of it, against the sample's own 9.2. `--avgdoclen sample` pins it
 to the sample's instead (or pass a number); use it when the profile will index documents shaped
 like the sample, which is the usual reason to refit. Only `numtokens` moves -- the counts the
 weights come from are untouched -- because that field's single consumer is `avgdoclen` itself.
