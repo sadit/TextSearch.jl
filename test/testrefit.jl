@@ -63,10 +63,13 @@ _find_lemma_map(p::TokenPipeline) = p.lemmas
         # trainsize is sample-sized plus the prior's weight in documents, NOT base-sized:
         # this is what makes a refitted profile lighter than the generic one
         @test gettrainsize(voc) == 2 * length(sampledocs)
-        # the result is base-survivors plus the sample, so it is smaller than their union:
-        # some of the base was pruned rather than carried
+        # At the default min_ndocs the refit carries what the base already decided to keep,
+        # so the result is their union rather than a subset of it. Pruning is min_ndocs'
+        # decision and nothing else's -- raising it is what makes the vocabulary smaller.
         svoc = Vocabulary(refit_textconfig(base), sampledocs; verbose=false)
-        @test vocsize(voc) < vocsize(bvoc) + vocsize(svoc)
+        @test vocsize(voc) <= vocsize(bvoc) + vocsize(svoc)
+        @test vocsize(refit_profile(base, sampledocs; min_ndocs=3, verbose=false).model.voc) <
+              vocsize(voc)
 
         # every count stays within its corpus: this is the guard against a negative idf and
         # a negative BM25 numerator, both of which a folded/blended ndocs could produce
@@ -119,10 +122,44 @@ _find_lemma_map(p::TokenPipeline) = p.lemmas
     end
 
     @testset "a base-unimportant token absent from the sample is dropped" begin
-        r = refit_profile(base, sampledocs; keep_floor=3, verbose=false)
+        r = refit_profile(base, sampledocs; min_ndocs=3, verbose=false)
         # seen in exactly 1 of 100 base documents and never in the sample
         @test token2id(base.model.voc, "typoxyz") != 0
         @test token2id(r.model.voc, "typoxyz") == 0
+    end
+
+    @testset "the gate decides what the base contributes, not kappa's rounding" begin
+        # "abstruso" is in 5 of the 100 base documents, so at the default kappa (= 5, the
+        # sample size) its scaled count is round(5 * 0.05) = 0. That is what used to delete
+        # it, and deleting it is not free: a token absent from the vocabulary cannot match
+        # in a document or a query, since `bagofwords!` skips token2id == 0 on both sides.
+        r = refit_profile(base, sampledocs; verbose=false)
+        voc = r.model.voc
+        id = token2id(voc, "abstruso")
+        @test id != 0
+        @test getndocs(voc, id) == 1                  # floored at one document
+        @test getoccs(voc, id) >= getndocs(voc, id)   # still a possible corpus
+        # and nothing reaches the weighting at zero, where idf would make an unobserved
+        # token the heaviest in the model
+        @test all(i -> getndocs(voc, i) >= 1, eachindex(voc))
+
+        @testset "min_ndocs is the control" begin
+            kept = refit_profile(base, sampledocs; min_ndocs=5, verbose=false)
+            gone = refit_profile(base, sampledocs; min_ndocs=6, verbose=false)
+            @test token2id(kept.model.voc, "abstruso") != 0   # seen in exactly 5
+            @test token2id(gone.model.voc, "abstruso") == 0
+            @test token2id(gone.model.voc, "gato") != 0       # seen in 40, unaffected
+            @test vocsize(gone.model.voc) < vocsize(kept.model.voc)
+        end
+
+        @testset "it is the same knob fit_profile applies, so the names match" begin
+            # a base is itself built with min_ndocs; a refit asking for the same bar must
+            # mean the same thing by it, which is why there is no second name for it here
+            @test token2id(refit_profile(base, sampledocs; min_ndocs=2, verbose=false).model.voc,
+                           "typoxyz") == 0        # 1 base document
+            @test token2id(refit_profile(base, sampledocs; min_ndocs=1, verbose=false).model.voc,
+                           "typoxyz") != 0        # the default keeps what the base kept
+        end
     end
 
     @testset "kappa controls how much the base counts for" begin
@@ -135,8 +172,12 @@ _find_lemma_map(p::TokenPipeline) = p.lemmas
         @test abs(rate(big.model.voc, "wikipedia") - base_rate) <
               abs(rate(small.model.voc, "wikipedia") - base_rate)
 
-        # a tiny prior cannot keep base-only tokens: they round to zero and fall out
-        @test vocsize(small.model.voc) < vocsize(big.model.voc)
+        # Membership does not depend on kappa: the gate decides it, so a tiny prior keeps the
+        # same tokens as a huge one and only their weight differs. It used to be the reverse
+        # -- base-only tokens rounded to zero and fell out -- which pruned hardest at the
+        # small samples where the base is the only evidence there is.
+        tokens(v) = Set(gettoken(v, id) for id in eachindex(v))
+        @test tokens(small.model.voc) == tokens(big.model.voc)
         @test gettrainsize(small.model.voc) < gettrainsize(big.model.voc)
         @test last(big.lineage).params["kappa"] == 10_000.0
     end
@@ -374,7 +415,9 @@ _find_lemma_map(p::TokenPipeline) = p.lemmas
         sdist = Dict("gato" => Float32[0.1, 0.2, 0.3])
         sbase = mkprofile(basedocs; query_expansion=syn, query_expansion_distances=sdist)
 
-        r = refit_profile(sbase, sampledocs; verbose=false)
+        # min_ndocs=3 so "typoxyz" (one base document) is genuinely pruned: the restriction
+        # is what this tests, and at the default nothing the base holds is dropped.
+        r = refit_profile(sbase, sampledocs; min_ndocs=3, verbose=false)
         @test haskey(r.query_expansion, "gato")
         # "typoxyz" was pruned and "noexisteenvocab" never existed: both must go, and the
         # distances must stay aligned with what remains
@@ -383,9 +426,17 @@ _find_lemma_map(p::TokenPipeline) = p.lemmas
 
         @testset "a network with no distances survives the restriction" begin
             nbase = mkprofile(basedocs; query_expansion=syn)
-            r2 = refit_profile(nbase, sampledocs; verbose=false)
+            r2 = refit_profile(nbase, sampledocs; min_ndocs=3, verbose=false)
             @test r2.query_expansion["gato"] == ["wikipedia"]
             @test r2.query_expansion_distances === nothing
+        end
+
+        @testset "at the default the entry survives, because the token does" begin
+            # the mirror of the case above, and the reason the default is 1: an entry is
+            # dropped only when the vocabulary really lost the token it names
+            rd = refit_profile(sbase, sampledocs; verbose=false)
+            @test rd.query_expansion["gato"] == ["wikipedia", "typoxyz"]
+            @test rd.query_expansion_distances["gato"] == Float32[0.1, 0.2]
         end
     end
 

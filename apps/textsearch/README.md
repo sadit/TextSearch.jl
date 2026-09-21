@@ -311,7 +311,7 @@ since recomputing supervised weights would need the labeled corpus.
 textsearch refit <base-profile> --sample PATH --out OUT.zip
                  [--format FMT] [--text-key KEY]
                  [--kappa N | --base-weight W] [--no-lemmas]
-                 [--keep-rate T] [--keep-floor N] [--drop-distances] [--chunk N]
+                 [--min-ndocs N] [--drop-distances] [--chunk N]
 ```
 
 A profile fit from a large generic corpus is a **bootstrap** model: reasonable statistics
@@ -335,18 +335,28 @@ trainsize = trainsize_sample + kappa
 
 `--kappa 0` (the default) uses the sample's own document count, weighting the two sides
 equally; halve it for 1/3 base, double it for 2/3. `--base-weight 0.75` says the same thing
-as a fraction. Expressing the base's authority *in documents* is what makes the output
-sample-sized rather than base-sized, and what makes the knob mean something concrete.
+as a fraction. Expressing the base's authority *in documents* is what makes the knob mean
+something concrete. It sets weight only: what the vocabulary keeps is `--min-ndocs`'s
+decision, not a side effect of how `--kappa` rounds.
 
 Two consequences fall out of that arithmetic, and they are the point of the whole command:
 
 - A word the base considers important but the sample never shows **keeps only its
   kappa-weighted share**, so it survives with reduced importance. Nothing special is done
   for it; lowering weight is just what the interpolation does.
-- A word that mattered in neither is **dropped**: `--keep-rate`/`--keep-floor` decide, and
-  anything whose blended count rounds below one document falls out regardless. `--keep-floor`
-  is an absolute document count, so a single-document typo in a huge base corpus cannot clear
-  a small rate threshold.
+- A word that mattered in neither is **dropped**, and `--min-ndocs` is what decides: the base
+  must have seen it in at least that many documents. It is the same flag `textsearch fit`
+  applies to its own corpus, in the same unit, because it is the same question -- how much
+  evidence a token needs to be in a vocabulary. There is only one of it, and it counts
+  documents rather than a rate, since "at least 12 base documents" can be reasoned about and
+  a rate cannot without knowing the base's size.
+
+  The default `1` keeps everything the base has: the fit already decided what counts as
+  attested. Raising it makes the profile smaller and costs recall, measured on a
+  16,640-document base refitted against 100 documents of another corpus (1,000 known-item
+  queries, 10,000-document index): the default gives recall@10 0.921, `12` gives 0.875 for
+  29% of the bytes, `17` gives 0.833 for 20%. Letting the old kappa-rounding decide instead
+  gave 0.632 -- the knob exists so that trade is made on purpose.
 
 **Why counters and not weights.** BM25 never reads a model's precomputed weight vector -- it
 derives its own IDF from `ndocs`/`trainsize` and normalizes by `avgdoclen`. Blending weights

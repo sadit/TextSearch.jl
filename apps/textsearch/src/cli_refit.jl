@@ -72,16 +72,16 @@ function parse_refit_args(args::Vector{String})
                    "Whether to lemmatize is the refit's decision, which is why a base " *
                    "profile normally leaves the map unapplied."
             action = :store_true
-        "--keep-rate"
-            help = "a token absent from the sample is kept only if its base document-frequency " *
-                   "rate is at least this"
-            arg_type = Float64
-            default = 1e-5
-        "--keep-floor"
-            help = "...and only if it was seen in at least this many base documents, so a " *
-                   "single-document typo cannot clear a small rate threshold"
+        "--min-ndocs"
+            help = "the control on what the base contributes, and the same document count " *
+                   "'fit' applies to its own corpus: a token absent from the sample is kept " *
+                   "only if the base saw it in at least this many documents. The default 1 " *
+                   "keeps everything the base has, since the fit already decided that. " *
+                   "Raising it makes the profile smaller and costs recall -- on a " *
+                   "16,640-document base refitted against 100 documents, 12 keeps 84% of the " *
+                   "recall gain for 29% of the bytes"
             arg_type = Int
-            default = 3
+            default = 1
         "--doc-freq-threshold"
             help = "document-frequency ratio above which a token is reported as a stopword " *
                    "candidate (the APPLIED stopword set stays the base's)"
@@ -133,7 +133,7 @@ function cmd_refit(args::Vector{String})
     out = o["out"]
     endswith(out, ".zip") || error("--out must end in .zip, got '$out'")
     o["chunk"] >= 1 || error("--chunk must be >= 1, got $(o["chunk"])")
-    o["keep-floor"] >= 0 || error("--keep-floor must be >= 0, got $(o["keep-floor"])")
+    o["min-ndocs"] >= 1 || error("--min-ndocs must be >= 1, got $(o["min-ndocs"])")
 
     kappa = o["kappa"]
     bw = o["base-weight"]
@@ -197,7 +197,7 @@ function cmd_refit(args::Vector{String})
 
     r = refit_profile(base, sample_voc;
                       kappa, apply_lemmas, lemmas=lemmamap,
-                      keep_rate=o["keep-rate"], keep_floor=o["keep-floor"],
+                      min_ndocs=o["min-ndocs"],
                       avgdoclen, doc_freq_threshold=o["doc-freq-threshold"],
                       verbose=true)
 

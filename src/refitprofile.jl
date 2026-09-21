@@ -117,8 +117,7 @@ function fold_lemmas(voc::Vocabulary, lemmas)
 end
 
 """
-    blend_vocabularies(voc_base, voc_sample;
-                       kappa::Real=0, keep_rate::Real=1e-5, keep_floor::Integer=3,
+    blend_vocabularies(voc_base, voc_sample; kappa::Real=0, min_ndocs::Integer=1,
                        avgdoclen=:blend)
         -> Vocabulary
 
@@ -139,8 +138,12 @@ numtokens = sum(occs)                    # recomputed from the survivors
 
 `kappa <= 0` defaults to `gettrainsize(voc_sample)`, which weights the two sides equally; halve
 it for 1/3 base, double it for 2/3. Expressing the base's authority in documents rather than
-as a fraction is what makes the output sample-sized -- so a refitted profile is naturally
-lighter than the generic one it came from -- and makes the knob mean something concrete.
+as a fraction is what makes the knob mean something concrete.
+
+`kappa` sets weight, and only weight. It used to decide membership as well -- a base-only
+token whose `round(κ * r)` came out zero simply vanished -- so the vocabulary shrank hardest
+at small samples, which is exactly where the base is the only evidence there is. What the
+vocabulary keeps is the gate's decision now.
 
 Using the same per-document denominator for both counters is what keeps the result a
 *possible* corpus. Scaling `occs` by the base's share of total tokens instead (`occs_b/T_b`)
@@ -168,26 +171,60 @@ and through it `BM25Scorer`'s length normalization. (`TpWeighting` also divides 
 -- which is the usual reason to refit at all -- and leave it on `:blend` when the base's
 documents are representative of what you will index.
 
-# The prune
+# The gate
 
-A token absent from the sample is kept only if the base considered it important:
+A token absent from the sample is kept when the base saw it in enough documents:
 
 ```
-keep(t) = ndocs_s(t) > 0 || (r_b(t) >= keep_rate && ndocs_b(t) >= keep_floor)
+keep(t) = ndocs_s(t) > 0 || ndocs_b(t) >= min_ndocs
 ```
 
-`keep_rate` is scale-free; `keep_floor` is an absolute floor that stops a token seen in one
-or two documents of a huge base corpus -- a typo, an ID -- from clearing a small rate
-threshold. Everything surviving must additionally round to `ndocs >= 1`, so a token whose
-blended presence is negligible falls out on its own.
+`min_ndocs` is the same knob [`fit_profile`](@ref) applies to its own corpus, in the same
+unit and with the same meaning: how many documents of evidence a token needs to be in a
+vocabulary. There is deliberately only one, and it is a document count rather than a rate,
+because that is the unit the evidence arrives in -- "seen in at least 12 base documents" is
+something a caller can reason about, where a rate cannot be read at all without knowing the
+base's size. It is also what keeps a token seen in one or two documents of a huge corpus --
+a typo, an ID -- out of the result.
+
+The default of `1` keeps everything the base has, which is the point: the fit already decided
+what counts as attested, and a refit that silently re-imposed a different bar would be
+overruling that decision with a number the caller never chose. Raising it here is how a
+caller asks for a smaller profile.
+
+Whatever the gate keeps is then representable: `ndocs` is floored at one document. That floor
+is what makes `min_ndocs` a control rather than a suggestion, because without it `kappa`
+decides membership, and it decides it backwards.
+
+Measured on a 6,068-token base (16,640 documents) refitted against samples of a different
+corpus, scoring 1,000 known-item queries against a 10,000-document index:
+
+| sample | decided by | vocsize | recall@10 | recall@1 | archive |
+|---|---|---|---|---|---|
+| 100 documents | rounding (old) | 663 | 0.632 | 0.376 | 18 KB |
+| 100 documents | the gate | 6,284 | 0.921 | 0.799 | 227 KB |
+| 2,000 documents | either | 9,824 | 0.949 | 0.842 | 257 KB |
+
+(Archive sizes are deflated zips; a stored one is about 3x each, and the ratios between them
+are what the knob trades, not the absolute figures.)
+
+The two agree from about `κ > N_b / (2 * min ndocs_b)` upward -- 1,664 documents for that
+base -- since above it the rounding was keeping everything anyway. Below it, the gap is the
+difference between a profile that answers and one that cannot.
+
+The cost is real, and trading it is what `min_ndocs` is for: a refitted profile is no longer
+automatically sample-sized, and at `κ = 100` above it costs 12x the bytes. The curve is steep
+at the cheap end, on the same measurement -- `min_ndocs = 12` keeps 84% of the recall gain
+for 29% of the bytes, `min_ndocs = 9` keeps 91% for 41% -- so a caller who needs a small
+profile raises it and reads what it costs. That is a decision; letting `kappa` make it
+silently was not.
 
 Note what needs no rule: a token the base *did* consider important but the sample never
 shows keeps only its `κ`-weighted share, so it survives with reduced weight automatically.
 Lowering importance is arithmetic; dropping is the only part that needs a decision.
 """
 function blend_vocabularies(voc_base::Vocabulary, voc_sample::Vocabulary;
-                             kappa::Real=0, keep_rate::Real=1e-5, keep_floor::Integer=3,
-                             avgdoclen=:blend)
+                             kappa::Real=0, min_ndocs::Integer=1, avgdoclen=:blend)
     N_s = gettrainsize(voc_sample)
     N_b = gettrainsize(voc_base)
     N_s > 0 || throw(ArgumentError("blend_vocabularies: the sample vocabulary has trainsize 0"))
@@ -210,29 +247,35 @@ function blend_vocabularies(voc_base::Vocabulary, voc_sample::Vocabulary;
         push_token!(out, t.token, t.occs, t.ndocs)
     end
 
+
     for id in eachindex(voc_base)
         t = voc_base[id]
         # both counters share the per-document denominator, so occs >= ndocs survives
         r = N_b > 0 ? t.ndocs / N_b : 0.0
         q = N_b > 0 ? t.occs / N_b : 0.0
-        insample = token2id(voc_sample, t.token) != 0
 
-        if !insample
-            (r >= keep_rate && t.ndocs >= keep_floor) || continue
+        if token2id(voc_sample, t.token) == 0
+            (N_b > 0 && t.ndocs >= min_ndocs) || continue
+            # A token the gate kept has to be representable, and for a small sample the
+            # kappa-scaled count of a base-only token is routinely below one document:
+            # `round` alone sent it to zero and the token disappeared. Floor it instead.
+            nd = max(one(Int32), round(Int32, κ * r))
+            push_token!(out, t.token, max(nd, round(Int32, κ * q)), nd)
+        else
+            push_token!(out, t.token, round(Int32, κ * q), round(Int32, κ * r))
         end
-
-        nd = round(Int32, κ * r)
-        oc = round(Int32, κ * q)
-        # a base-only token that contributes nothing measurable is not worth a slot
-        (!insample && nd == 0 && oc == 0) && continue
-        push_token!(out, t.token, oc, nd)
     end
 
-    # cap before pruning: the cap can only lower a count, never take one below 1
+    # cap before the check below: the cap can only lower a count, never take one below 1
     @inbounds for i in eachindex(out.ndocs)
         out.ndocs[i] > N && (out.ndocs[i] = Int32(N))
     end
 
+    # Not a prune any more -- the gate above already decided, and nothing reaching here can
+    # be at zero. It stays as the structural guarantee that `ndocs == 0` never reaches the
+    # weighting, where `log2((0.5 + trainsize) / (0.5 + ndocs))` would make an unobserved
+    # token the single heaviest in the model: 10.64 bits against 9.06 for the heaviest real
+    # one, a gap that is 1.58 bits at every trainsize.
     voc = filter_tokens(t -> t.ndocs >= 1, out)
     voc.numtokens[] = _blended_numtokens(avgdoclen, voc, voc_sample)
     voc
@@ -288,9 +331,11 @@ apply_lemmas)`, and is checked against it. The second form is a convenience that
 
 # What is adjusted, and what is not
 
-- **Counters** are interpolated by [`blend_vocabularies`](@ref) and the vocabulary pruned
-  there; the weight vector is then *recomputed*, which is what makes the tf-idf and BM25
-  paths tuned by one operation rather than only the former.
+- **Counters** are interpolated by [`blend_vocabularies`](@ref), which also decides what the
+  vocabulary keeps -- `min_ndocs`, the same document count `fit_profile` uses, is that
+  control; the weight
+  vector is then *recomputed*, which is what makes the tf-idf and BM25 paths tuned by one
+  operation rather than only the former.
 - **Lemmas** are reused rather than re-derived: the base already paid for them. With
   `apply_lemmas`, they enter the `TextConfig` and the base's counters are folded through the
   same map ([`fold_lemmas`](@ref)) so both sides stay comparable. `extend_lemmas` (corpus
@@ -314,7 +359,7 @@ the fold/cap counts from any lemma folding.
 """
 function refit_profile(base::TextProfile, sample_voc::Vocabulary;
                         kappa::Real=0, apply_lemmas::Bool=true, lemmas=nothing,
-                        keep_rate::Real=1e-5, keep_floor::Integer=3, avgdoclen=:blend,
+                        min_ndocs::Integer=1, avgdoclen=:blend,
                         doc_freq_threshold::Real=0.5, verbose::Bool=true)
     gw, lw = base.model.global_weighting, base.model.local_weighting
     gw isa EntropyWeighting &&
@@ -339,7 +384,7 @@ function refit_profile(base::TextProfile, sample_voc::Vocabulary;
             "ndocs capped at trainsize for $(f.capped))")
     end
 
-    voc = blend_vocabularies(base_voc, sample_voc; kappa, keep_rate, keep_floor, avgdoclen)
+    voc = blend_vocabularies(base_voc, sample_voc; kappa, min_ndocs, avgdoclen)
 
     syn, sdist = _restrict_query_expansion(base.query_expansion, base.query_expansion_distances, voc)
     # Restricted to entries whose target survived the prune. No reconciliation step follows:
@@ -366,10 +411,16 @@ function refit_profile(base::TextProfile, sample_voc::Vocabulary;
 
     if verbose
         fromsample = count(id -> token2id(sample_voc, gettoken(voc, id)) != 0, eachindex(voc))
+        # How many carried tokens sit at the one-document floor says how much of the result
+        # rests on the gate rather than on evidence -- the number `min_ndocs` trades against.
+        atfloor = count(eachindex(voc)) do id
+            getndocs(voc, id) == 1 && token2id(sample_voc, gettoken(voc, id)) == 0
+        end
         println(stderr,
             "refit: vocsize $(vocsize(base.model.voc)) (base) + $(vocsize(sample_voc)) (sample) " *
             "-> $(vocsize(voc)); $fromsample token(s) seen in the sample, " *
-            "$(vocsize(voc) - fromsample) carried from the base alone")
+            "$(vocsize(voc) - fromsample) carried from the base alone " *
+            "($atfloor of them at the one-document floor; raise min_ndocs to carry fewer)")
         # TextSearch.avgdoclen, qualified deliberately: the `avgdoclen` KEYWORD shadows the
         # function of that name throughout this body, and calling it bare is a MethodError
         # ("objects of type Symbol are not callable") that only fires when verbose is on.
