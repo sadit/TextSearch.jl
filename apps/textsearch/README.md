@@ -151,6 +151,7 @@ Notes:
 textsearch search <profile> <query> --collection PATH [--format FORMAT]
                    [--text-key KEY] [-t THRESHOLD]
                    [--no-lemmas] [--correction MODE] [--correction-ratio R]
+                   [--no-edit-correction]
                    [--no-query_expansion] [--query_expansion-k K] [--chunk N]
 ```
 
@@ -203,9 +204,53 @@ that is itself common), and `--correction-ratio` moves the line between "rarer" 
 (`1` = anything but the commonest spelling, `Inf` = never). Correction and expansion are the two
 guesses a search makes about intent, so both are on by default and both can be turned off.
 
+**A token no fold can reach is guessed at, once.** `musica` and `León` are the *same words*
+differently spelled, which is why folding and the stored variant map find them. A genuine typo is
+a *different* word -- `guerar` for `guerra`, a transposition -- and until it is corrected it
+contributes nothing at all, since a token absent from the vocabulary is skipped in silence. So a
+typed token the vocabulary holds under no spelling is corrected to the one word within a single
+Damerau-Levenshtein edit of it (here against a profile fitted from 16,640 Spanish tweets, hence
+the small vocabulary):
+
+```
+$ textsearch search panes-0001.zip "la guerar civil" --collection panes.jsonl -t 2
+  ~ indexed 6068 token(s) for edit correction in 0.11s
+query: 3 token(s) -> civil guerra la
+  ~ guerar not found, searched as guerra (edit) instead
+  ~ to search as typed instead: --correction off (or --no-edit-correction to keep folding but not guessing)
+```
+
+Only when there is **exactly one** such word. That rule is what keeps a guess from behaving like
+one: measured over 3,000 synthetic typos against a Spanish vocabulary, acting on the most frequent
+candidate is right 86.8% of the time, while acting only on a unique candidate is right **99.9%**
+of the time and still fires on 70% of typos. Ambiguity is answered by declining rather than by
+picking. End to end, of 1,931 mistyped queries that previously matched nothing at all, 1,484 now
+find the right word, 1 finds a wrong one, and 446 are declined.
+
+**What it cannot know is whether you meant a word this corpus simply lacks.** Uniqueness bounds
+the damage; it does not remove it. On that same tweet profile:
+
+```
+$ textsearch search panes-0001.zip "los politicos mienten" --collection panes.jsonl -t 2
+query: 3 token(s) -> los politicos sienten
+  ~ mienten not found, searched as sienten (edit) instead
+```
+
+`mienten` is a perfectly good Spanish word that these 16,640 tweets happen never to use, and
+`sienten` is its only neighbour at one edit -- so the guess fires and is wrong. This is the shape
+of the residual risk, and it is why the escape is printed every time: measured on held-out text,
+34.8% of genuinely-unseen tokens have some neighbour one edit away. A larger vocabulary shrinks
+this (the word stops being unknown); a small or narrow one does not.
+
+The index is built from the vocabulary on the spot -- nothing is stored in the profile -- and
+**only when the query actually contains an unknown token**, so a well-typed query pays nothing for
+the feature. `--no-edit-correction` keeps folding and the variant map but stops the guessing;
+`--correction off` stops all of it.
+
 This makes `search` the way to exercise a profile's artifacts end to end, so each can be
 switched off to see what it contributes: `--no-lemmas` removes the lemma step from the
-tokenization pipeline (on both sides), `--no-query_expansion` skips expansion, and `--query_expansion-k`
+tokenization pipeline (on both sides), `--no-edit-correction` stops the guessing,
+`--no-query_expansion` skips expansion, and `--query_expansion-k`
 caps how many query_expansion each query token may contribute (`0`, the default, uses every one the
 profile stored). The effective query token set, what was corrected, what the query_expansion added,
 and whether the profile actually carries a lemma map are all reported on **stderr**, leaving stdout

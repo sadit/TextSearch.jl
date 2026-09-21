@@ -141,13 +141,16 @@ Reasons currently produced:
   `madrid` reaching `Madrid`, `usa` reaching `USA`. Nothing is stored for these.
 - `:variant` -- a spelling that had to be stored, because it cannot be computed: `practico`
   reaching `practicó`, `leon` reaching `León`.
+- `:edit` -- a spelling reached by *guessing*: the single vocabulary token within
+  Damerau-Levenshtein distance 1 of what was typed, `guerar` -> `guerra`, a transposition no fold
+  can reach. Offered only for a token absent from the vocabulary and only when that neighbour is
+  unique; see [`edit_candidates`](@ref). Nothing is stored for these either -- the index is
+  derived from the vocabulary by [`derive_edits`](@ref).
 
-The reason is a symbol rather than a Bool so that a future mechanism reports through the same
-channel without changing this signature. The obvious next one is edit-distance correction --
-`guerar` -> `guerra`, a transposition no fold can reach -- which SimilaritySearch can index the
-vocabulary's strings for; it would report as `:edit`. Keeping the reasons open matters because a
-deterministic fold and a distance guess are different kinds of claim, and a consumer telling the
-user what was searched should be able to distinguish them. Deliberately not built yet.
+Keeping the reason a symbol rather than a Bool is what lets these coexist: a deterministic fold
+and a distance guess are different kinds of claim, and a consumer telling the user what was
+searched should be able to distinguish them. That is also the order they are tried in -- see
+[`_candidate_group`](@ref) -- so the cheapest and most certain source is exhausted first.
 """
 struct ResolvedToken
     typed::String
@@ -283,7 +286,7 @@ on the document side, and the split is the point: the corpus keeps the distincti
 embeddings stay per-sense, while the query bridges it.
 """
 function resolve_query_tokens(voc::Vocabulary, tokens, variants=nothing,
-                              policy::QueryPolicy=QueryPolicy())
+                              policy::QueryPolicy=QueryPolicy(); edits=nothing)
     norm = voc.textconfig.normalization
     out = String[]
     resolved = ResolvedToken[]
@@ -293,7 +296,7 @@ function resolve_query_tokens(voc::Vocabulary, tokens, variants=nothing,
         typedn = id == 0 ? 0 : Int(getndocs(voc, id))
 
         cands = policy.correction === :off ? Tuple{String,Symbol,Int}[] :
-                                             _candidate_group(voc, tok, variants, norm)
+                                             _candidate_group(voc, tok, variants, norm, edits)
         if isempty(cands)
             tok in out || push!(out, tok)
             push!(resolved, ResolvedToken(tok, typedn, true, Pair{String,Symbol}[],
@@ -331,13 +334,20 @@ function resolve_query_tokens(voc::Vocabulary, tokens, variants=nothing,
 end
 
 """
-    _candidate_group(voc, tok, variants, norm) -> Vector{Tuple{String,Symbol,Int}}
+    _candidate_group(voc, tok, variants, norm, edits=nothing) -> Vector{Tuple{String,Symbol,Int}}
 
 The vocabulary spellings `tok` could be searched as besides itself, each with the reason it was
-reached and its document count. Computed spellings come first, then stored ones, so the order a
-caller sees follows how much had to be assumed.
+reached and its document count. Computed spellings come first, then stored ones, then guessed
+ones, so the order a caller sees follows how much had to be assumed.
+
+The guess is a genuine last resort, gated twice over. It runs only when `tok` is **absent from
+the vocabulary** -- unlike an accent, where presence is weak evidence (`musica` at 9 documents
+against `música`'s 4,404), an arbitrary edit is well evidenced against by the corpus simply
+holding the word. And it runs only when the folds above found *nothing*: if `leon` already
+reaches `León`, guessing at a second, differently-spelled word adds risk to an answer that is
+already had.
 """
-function _candidate_group(voc::Vocabulary, tok, variants, norm)
+function _candidate_group(voc::Vocabulary, tok, variants, norm, edits=nothing)
     cands = Tuple{String,Symbol,Int}[]
     f = _fold(tok; lc=!norm.lc, diac=!norm.del_diac)
 
@@ -358,5 +368,12 @@ function _candidate_group(voc::Vocabulary, tok, variants, norm)
             offer(t, :variant)
         end
     end
+
+    if edits !== nothing && isempty(cands) && token2id(voc, tok) == 0
+        c = edit_candidates(edits, tok)
+        # exactly one, never the most frequent of several: 0.999 precision against 0.868
+        length(c) == 1 && offer(gettoken(voc, only(c)), :edit)
+    end
+
     cands
 end

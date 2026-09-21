@@ -3,11 +3,12 @@
 export QueryPipeline, QueryTerm, ResolvedQuery, query_tokens, querytokenset, querybow, queryvector
 
 """
-    QueryPipeline(; policy=QueryPolicy(), variants=nothing, expansion=nothing, distances=nothing)
+    QueryPipeline(; policy=QueryPolicy(), variants=nothing, edits=nothing,
+                    expansion=nothing, distances=nothing)
 
 Everything the query side of a model needs, as plain data: the [`QueryPolicy`](@ref) to answer a
-query under, the orthographic variant map correction bridges with, and the expansion network with
-its optional distances.
+query under, the orthographic variant map and edit index correction bridges with, and the
+expansion network with its optional distances.
 
 There is one query pipeline and it lives here, which is the point of this type. Before it, the
 work existed twice with each copy able to do something the other could not:
@@ -25,27 +26,32 @@ where correction is possible, and emits weights, so nothing is lost. What each c
 those weights is its own business -- see [`querybow`](@ref), [`queryvector`](@ref) and
 [`querytokenset`](@ref).
 
-`variants` may be `nothing`, which disables correction as surely as `policy.correction = :off`;
-derive one with [`derive_variants`](@ref) once per model rather than once per query, since it is a
-pure function of the vocabulary and costs 0.6s over 479,245 tokens.
+`variants` and `edits` may each be `nothing`, which disables that half of correction as surely as
+`policy.correction = :off`. Both are pure functions of the vocabulary, so derive them once per
+model rather than once per query: [`derive_variants`](@ref) costs 0.6s over 479,245 tokens and
+[`derive_edits`](@ref) 2.13s over 60,636. They are separate fields rather than one because they
+answer different questions -- `variants` bridges spellings of the *same* word, `edits` guesses
+which *other* word was meant -- and a consumer may well want the first without the second.
 """
 struct QueryPipeline
     policy::QueryPolicy
     variants::Union{Nothing,Dict{String,Vector{String}}}
+    edits::Union{Nothing,EditIndex}
     expansion::Union{Nothing,Dict{String,Vector{String}}}
     distances::Union{Nothing,Dict{String,Vector{Float32}}}
 
     function QueryPipeline(; policy::QueryPolicy=QueryPolicy(),
-                             variants=nothing, expansion=nothing, distances=nothing)
+                             variants=nothing, edits=nothing, expansion=nothing, distances=nothing)
         distances === nothing || expansion !== nothing ||
             throw(ArgumentError("distances were given without an expansion network to align them with"))
-        new(policy, variants, expansion, distances)
+        new(policy, variants, edits, expansion, distances)
     end
 end
 
 function Base.show(io::IO, qp::QueryPipeline)
     print(io, "QueryPipeline(", qp.policy)
     qp.variants === nothing || print(io, ", variants=", length(qp.variants))
+    qp.edits === nothing || print(io, ", edits=", length(qp.edits))
     qp.expansion === nothing || print(io, ", expansion=", length(qp.expansion))
     qp.distances === nothing || print(io, "+distances")
     print(io, ")")
@@ -56,10 +62,12 @@ end
 
 One term to search for, where it came from, and how much of that source's weight it carries.
 
-`reason` is `:typed` for a spelling the person wrote, `:derived` or `:variant` for a correction
-(see [`ResolvedToken`](@ref)), and `:expansion` for a neighbour the network contributed. For the
-first three `source == token` and `factor == 1`: they are the *same word* differently spelled, and
-nothing about a corrected spelling makes it a weaker match than the typo it replaced.
+`reason` is `:typed` for a spelling the person wrote, `:derived`, `:variant` or `:edit` for a
+correction (see [`ResolvedToken`](@ref)), and `:expansion` for a neighbour the network
+contributed. For all but the last `source == token` and `factor == 1`: a correction is the word
+the person meant, and nothing about having been misspelled makes it a weaker match. That holds
+for `:edit` too -- the guess is either right, in which case it deserves full weight, or wrong, in
+which case attenuating it would only make a wrong answer quieter rather than absent.
 
 An expansion term names the query token whose list it came from, and `factor` is `exp(-d)` or
 `1/rank`. It is a factor rather than an absolute weight because that is what a weighted
@@ -108,7 +116,7 @@ exists to make possible. Building a whole pipeline per call would rederive nothi
 still be a second place where the pipeline gets assembled.
 
 Reusing the maps under any policy is correct rather than merely cheap: correction never reads
-`variants` when `policy.correction === :off` (see [`resolve_query_tokens`](@ref)), and expansion
+`variants` or `edits` when `policy.correction === :off` (see [`resolve_query_tokens`](@ref)), and expansion
 is gated on `policy.expansion` here, so handing over a map or a network that this call has been
 told not to use changes nothing.
 
@@ -119,7 +127,8 @@ be, since the vocabulary's ids and counts came from it.
 Then, in order:
 
 1. **Correction.** [`resolve_query_tokens`](@ref) replaces spellings the evidence says are wrong
-   and leaves the rest alone. Every spelling it produces weighs `1`.
+   and leaves the rest alone -- by folding and the variant map, and, for a token the vocabulary
+   does not hold at all, by the edit index. Every spelling it produces weighs `1`.
 2. **Expansion.** For each typed token, the network is looked up under *one* spelling -- the
    commonest of its corrected group, per [`expansion_sources`](@ref) -- and its neighbours are
    added with a weight: `exp(-d)` when `qp.distances` covers them, `1/rank` otherwise. Both are
@@ -135,7 +144,7 @@ function query_tokens(voc::Vocabulary, query, qp::QueryPipeline=QueryPipeline();
                       policy::QueryPolicy=qp.policy)
     tokens = query isa AbstractVector{<:AbstractString} ? query :
              collect(tokenize(voc.textconfig, query))
-    res = resolve_query_tokens(voc, tokens, qp.variants, policy)
+    res = resolve_query_tokens(voc, tokens, qp.variants, policy; edits=qp.edits)
 
     terms = QueryTerm[]
     seen = Set{String}()

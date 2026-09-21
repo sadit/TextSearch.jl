@@ -52,6 +52,14 @@ function parse_search_args(args::Vector{String})
                    "commonest, Inf = never)"
             arg_type = Float64
             default = 50.0
+        "--no-edit-correction"
+            help = "do not guess at a mistyped query token. By default a token the vocabulary " *
+                   "does not hold at all, and that folding and the variant map cannot bridge, " *
+                   "is corrected to the single word within one Damerau-Levenshtein edit of it " *
+                   "-- when there is exactly one, which is what keeps the guess at 99.9% " *
+                   "precision. The index this needs is built only when the query actually has " *
+                   "such a token, so a well-typed query pays nothing"
+            action = :store_true
         "--query_expansion-k"
             help = "use at most this many query_expansion per query token (0 = all the profile stored)"
             arg_type = Int
@@ -80,7 +88,7 @@ function _resolve_profile_path(spec::AbstractString)
 end
 
 """
-    _query_report(p, query, tc, policy::QueryPolicy, variants) -> (Set{String}, report)
+    _query_report(p, query, tc, policy::QueryPolicy, variants, edits=nothing) -> (Set{String}, report)
 
 Runs the library's [`query_tokens`](@ref) and keeps the pieces this command reports on.
 
@@ -89,10 +97,10 @@ The pipeline itself is not here and must not be: it is the same one the inverted
 left is presentation -- which set came from where, for the stderr summary that is the point of
 this being a probe command.
 """
-function _query_report(p, query::AbstractString, tc, policy::QueryPolicy, variants)
+function _query_report(p, query::AbstractString, tc, policy::QueryPolicy, variants, edits=nothing)
     raw = collect(tokenize(tc, query))
     rq = query_tokens(p.model.voc, raw,
-                      QueryPipeline(; policy, variants,
+                      QueryPipeline(; policy, variants, edits,
                                     expansion = policy.expansion ? p.query_expansion : nothing,
                                     distances = policy.expansion ? p.query_expansion_distances : nothing))
     base = Set{String}(t.token for t in rq.terms if t.reason !== :expansion)
@@ -173,7 +181,24 @@ function cmd_search(args::Vector{String})
     # stale one, since a merge cannot union per-part maps correctly. 0.24s over the 479,245-token
     # Portuguese Wikipedia vocabulary, once per invocation.
     variants = policy.correction === :off ? nothing : derive_variants(p.model.voc)
-    qtokens, rep = _query_report(p, o["query"], tc, policy, variants)
+    # Built only when the query has a token the vocabulary does not hold, which is the only
+    # case it can act on (see `_candidate_group`). That matters here and not in the library:
+    # `derive_edits` is an order of magnitude dearer than `derive_variants` -- 2.1s against
+    # 0.21s on a 15,346-token vocabulary, and it grows with the vocabulary -- so paying it on
+    # every invocation of a probe command that is already slow to start would be the wrong
+    # default. A well-typed query pays nothing at all.
+    edits = if policy.correction === :off || o["no-edit-correction"]
+        nothing
+    elseif any(t -> token2id(p.model.voc, t) == 0, tokenize(tc, o["query"]))
+        t0 = time()
+        ei = derive_edits(p.model.voc)
+        println(stderr, "  ~ indexed $(length(ei)) token(s) for edit correction in " *
+                        "$(round(time() - t0; digits=2))s")
+        ei
+    else
+        nothing
+    end
+    qtokens, rep = _query_report(p, o["query"], tc, policy, variants, edits)
     isempty(qtokens) && error("the query has no tokens under this profile's TextConfig " *
                               "(every term may have been a stopword); nothing could match")
 
@@ -186,8 +211,11 @@ function cmd_search(args::Vector{String})
     for line in explain(rep.resolution)
         println(stderr, "  ~ $line")
     end
-    any(t -> !t.kept, rep.resolution.resolved) &&
-        println(stderr, "  ~ to search as typed instead: --correction off")
+    if any(t -> !t.kept, rep.resolution.resolved)
+        guessed = any(t -> any(p -> last(p) === :edit, t.added), rep.resolution.resolved)
+        println(stderr, "  ~ to search as typed instead: --correction off" *
+                        (guessed ? " (or --no-edit-correction to keep folding but not guessing)" : ""))
+    end
     isempty(rep.expanded) ||
         println(stderr, "  + $(length(rep.expanded)) query_expansion(s) -> $expstr")
     # report what the profile actually carries, not what was requested: --no-lemmas on a
