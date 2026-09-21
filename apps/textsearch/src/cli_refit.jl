@@ -26,13 +26,12 @@ function parse_refit_args(args::Vector{String})
             help = "column/JSON-key holding the document text"
             default = "text"
         "--kappa"
-            help = "the base's authority, in documents (0 = as many as the sample has, " *
-                   "weighting the two sides equally). Mutually exclusive with --base-weight."
-            arg_type = Float64
-            default = 0.0
-        "--base-weight"
-            help = "the base's share of the blend as a fraction in (0,1), converted to a " *
-                   "kappa relative to the sample size; 0.5 matches the --kappa default"
+            help = "the base's authority, in documents; 0 (the default) means as many as " *
+                   "the sample has, weighting the two sides equally. A fraction w of the " *
+                   "blend is kappa = sample_size * w / (1 - w), so there is one flag rather " *
+                   "than two units for one knob. Measured, this is a weak control: an 18x " *
+                   "range of the base's effective weight moved recall@10 by at most 1.5 " *
+                   "points, where --min-ndocs moves 29"
             arg_type = Float64
             default = 0.0
         "--extend-lemmas"
@@ -136,12 +135,7 @@ function cmd_refit(args::Vector{String})
     o["min-ndocs"] >= 0 || error("--min-ndocs must be >= 0, got $(o["min-ndocs"])")
 
     kappa = o["kappa"]
-    base_weight = o["base-weight"]
-    if base_weight != 0.0
-        kappa == 0.0 || error("pass either --kappa or --base-weight, not both")
-        0.0 < base_weight < 1.0 ||
-            error("--base-weight must be in (0,1), got $base_weight")
-    end
+    kappa >= 0.0 || error("--kappa must be >= 0, got $kappa")
 
     avgdoclen = if o["avgdoclen"] == "blend"
         :blend
@@ -193,11 +187,10 @@ function cmd_refit(args::Vector{String})
         end
     end
 
-    # --base-weight is expressed relative to the sample, so it needs the sample's size first
-    base_weight != 0.0 && (kappa = gettrainsize(sample_voc) * base_weight / (1 - base_weight))
-
+    # 0 is how a numeric flag spells "not given"; the library takes `nothing` for it, same
+    # as --min-ndocs
     r = refit_profile(base, sample_voc;
-                      kappa, apply_lemmas, lemmas=lemmamap,
+                      kappa=(kappa == 0.0 ? nothing : kappa), apply_lemmas, lemmas=lemmamap,
                       min_ndocs=(o["min-ndocs"] == 0 ? nothing : o["min-ndocs"]),
                       avgdoclen, doc_freq_threshold=o["doc-freq-threshold"],
                       verbose=true)

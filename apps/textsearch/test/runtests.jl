@@ -596,13 +596,14 @@ end
                 @testset "invalid arguments are rejected" begin
                     @test_throws Exception TextSearchApp.cmd_refit(
                         [zippath, "--sample", samplepath, "--out", joinpath(dir, "x.tar")])
-                    # kappa and base-weight say the same thing two ways
-                    @test_throws Exception TextSearchApp.cmd_refit(
-                        [zippath, "--sample", samplepath, "--out", joinpath(dir, "y.zip"),
-                         "--kappa", "10", "--base-weight", "0.5"])
+                    # --base-weight is gone: a fraction is kappa in another unit, and one
+                    # knob with two spellings needed a mutual-exclusion rule to police it.
+                    # Its absence is not asserted here: ArgParse answers an unknown flag by
+                    # printing usage and exiting the process, which would take the test
+                    # runner with it rather than throw.
                     @test_throws Exception TextSearchApp.cmd_refit(
                         [zippath, "--sample", samplepath, "--out", joinpath(dir, "z.zip"),
-                         "--base-weight", "1.5"])
+                         "--kappa", "-1"])
                     @test_throws Exception TextSearchApp.cmd_refit(
                         [zippath, "--sample", samplepath, "--out", joinpath(dir, "v.zip"),
                          "--avgdoclen", "nonsense"])

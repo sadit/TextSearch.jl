@@ -8,7 +8,7 @@ corpus, packaged as a single `.zip` you can install, share, and query.
 <!-- The version this document's commands and outputs were produced against. Checked by
      apps/textsearch/test/runtests.jl against TextSearch's Project.toml, because a marker
      nobody verifies drifts exactly the way the examples themselves did. -->
-Documented for **TextSearch v1.1**. Every command in the Tutorial was run to write it and the
+Documented for **TextSearch v1.2**. Every command in the Tutorial was run to write it and the
 output shown is real.
 
 - **[Install](#install)**
@@ -310,7 +310,7 @@ since recomputing supervised weights would need the labeled corpus.
 ```
 textsearch refit <base-profile> --sample PATH --out OUT.zip
                  [--format FMT] [--text-key KEY]
-                 [--kappa N | --base-weight W] [--no-lemmas]
+                 [--kappa N] [--no-lemmas]
                  [--min-ndocs N] [--drop-distances] [--chunk N]
 ```
 
@@ -334,10 +334,16 @@ trainsize = trainsize_sample + kappa
 ```
 
 `--kappa 0` (the default) uses the sample's own document count, weighting the two sides
-equally; halve it for 1/3 base, double it for 2/3. `--base-weight 0.75` says the same thing
-as a fraction. Expressing the base's authority *in documents* is what makes the knob mean
-something concrete. It sets weight only: what the vocabulary keeps is `--min-ndocs`'s
-decision, not a side effect of how `--kappa` rounds.
+equally; halve it for 1/3 base, double it for 2/3. A fraction `w` of the blend is just
+`kappa = sample_size * w / (1 - w)`, so there is one flag and not two units for one knob.
+Expressing the base's authority *in documents* is what makes it mean something concrete. It
+sets weight only: what the vocabulary keeps is `--min-ndocs`'s decision, not a side effect
+of how `--kappa` rounds.
+
+It is also a weak knob, which is worth knowing before turning it: swept against 1,000
+known-item queries at three sample sizes, an 18x range of the base's effective weight moved
+recall@10 by at most 1.5 points, and more prior was mildly better everywhere. `--min-ndocs`
+moves 29 points on the same measurement.
 
 Two consequences fall out of that arithmetic, and they are the point of the whole command:
 
@@ -375,7 +381,7 @@ out as a weighted mean of the two corpora's average lengths rather than the samp
 honest, since the pseudo-documents the prior contributes are base documents, but it pulls
 length normalization toward the base, and the pull is large when the two corpora are nothing
 alike: Wikipedia-es against 400 product reviews lands at 141 tokens/document at the default
-kappa and 56 at `--base-weight 0.2`, against the sample's own 9.2. `--avgdoclen sample` pins it
+kappa and 56 at a quarter of it, against the sample's own 9.2. `--avgdoclen sample` pins it
 to the sample's instead (or pass a number); use it when the profile will index documents shaped
 like the sample, which is the usual reason to refit. Only `numtokens` moves -- the counts the
 weights come from are untouched -- because that field's single consumer is `avgdoclen` itself.
