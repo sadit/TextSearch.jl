@@ -437,7 +437,10 @@ _find_lemma_map(p::TokenPipeline) = p.lemmas
         # "typoxyz" was pruned and "noexisteenvocab" never existed: both must go, and the
         # distances must stay aligned with what remains
         @test r.query_expansion["gato"] == ["wikipedia"]
-        @test r.query_expansion_distances["gato"] == Float32[0.1]
+        # The distances are a quantized profile member, so they come back within a u8 step
+        # of what went in rather than equal to it -- see testprofile.jl's round trip.
+        @test length(r.query_expansion_distances["gato"]) == 1
+        @test abs(only(r.query_expansion_distances["gato"]) - 0.1f0) < 0.01
 
         @testset "a network with no distances survives the restriction" begin
             nbase = mkprofile(basedocs; query_expansion=syn)
@@ -451,7 +454,9 @@ _find_lemma_map(p::TokenPipeline) = p.lemmas
             # dropped only when the vocabulary really lost the token it names
             rd = refit_profile(sbase, sampledocs; verbose=false)
             @test rd.query_expansion["gato"] == ["wikipedia", "typoxyz"]
-            @test rd.query_expansion_distances["gato"] == Float32[0.1, 0.2]
+            got = rd.query_expansion_distances["gato"]
+            @test maximum(abs.(got .- Float32[0.1, 0.2])) < 0.01
+            @test sortperm(got) == [1, 2]      # the ranking is what survives quantization
         end
     end
 
