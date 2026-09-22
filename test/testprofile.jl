@@ -7,7 +7,9 @@ using Test, TextSearch, SimilaritySearch, JSON3
         "la manzana roja",
         "la pera verde esta rica",
     ]
-    query_expansion = Dict("casa" => ["hogar", "vivienda"], "pera" => ["manzana"])
+    # Every key and neighbour is a vocabulary token: the network is stored as ids now, and
+    # a name the vocabulary lacks could never have matched anything anyway.
+    query_expansion = Dict("casa" => ["roja", "verde"], "pera" => ["manzana"])
     query_expansion_distances = Dict("casa" => Float32[0.12, 0.20], "pera" => Float32[0.1])
     lemmas = Dict("casas" => "casa", "peras" => "pera")
     stopwords = Set(["la", "esta"])
@@ -28,11 +30,13 @@ using Test, TextSearch, SimilaritySearch, JSON3
             # one file per "large" variable, not a single big JSON blob -- and each artifact
             # appears exactly ONCE, which is the point of the layout
             for f in ("manifest.json", "vocabulary.json", "weights.json", "stopwords.json",
-                      "lemmas.json", "query_expansion.json", "query_expansion_distances.bin")
+                      "lemmas.json", "query_expansion_counts.bin",
+                      "query_expansion_neighbors.bin", "query_expansion_distances.bin")
                 @test isfile(joinpath(dir, f))
             end
-            # the distances are the one binary member: JSON text cost 12x for digits nobody
-            # reads (see `arraystore.jl`), so they are u8-quantized instead
+            # the network is the binary part: as strings it was 86% of a real profile, mostly a
+            # permuted second copy of the vocabulary (see `_save_expansion`)
+            @test !isfile(joinpath(dir, "query_expansion.json"))
             @test !isfile(joinpath(dir, "query_expansion_distances.json"))
             @test !isfile(joinpath(dir, "lemma_map.json"))            # no second lemma copy
             @test !isfile(joinpath(dir, "stopword_candidates.json"))  # no second stopword copy
@@ -78,7 +82,8 @@ using Test, TextSearch, SimilaritySearch, JSON3
         dir = tempname()
         try
             save_profile(dir, p)
-            for f in ("stopwords.json", "lemmas.json", "query_expansion.json", "query_expansion_distances.json")
+            for f in ("stopwords.json", "lemmas.json", "query_expansion_counts.bin",
+                      "query_expansion_neighbors.bin", "query_expansion_distances.bin")
                 @test !isfile(joinpath(dir, f))
             end
 
@@ -113,13 +118,29 @@ using Test, TextSearch, SimilaritySearch, JSON3
         end
     end
 
+    @testset "a network naming a token the vocabulary lacks is refused at save time" begin
+        # The layout stores ids, so it cannot express one; and the query path could not have
+        # used it either, since `bagofwords!` and `expand_query!` both skip an id of 0. Better
+        # to say so than to drop it on the way out.
+        p = TextProfile(mkmodel(); query_expansion=Dict("casa" => ["hogar"]))
+        dir = tempname()
+        try
+            err = try (save_profile(dir, p); nothing) catch e; e end
+            @test err isa ErrorException
+            @test occursin("not in the vocabulary", err.msg)
+            @test occursin("hogar", err.msg)
+        finally
+            rm(dir; force=true, recursive=true)
+        end
+    end
+
     @testset "query_expansion distances are optional and can be dropped" begin
         p = TextProfile(mkmodel(); query_expansion)   # ranking only
         dir = tempname()
         try
             save_profile(dir, p)
-            @test isfile(joinpath(dir, "query_expansion.json"))
-            @test !isfile(joinpath(dir, "query_expansion_distances.json"))
+            @test isfile(joinpath(dir, "query_expansion_neighbors.bin"))
+            @test !isfile(joinpath(dir, "query_expansion_distances.bin"))
             q = load_profile(dir)
             @test q.query_expansion == query_expansion
             @test q.query_expansion_distances === nothing

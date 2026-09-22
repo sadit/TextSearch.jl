@@ -92,8 +92,13 @@ using Test, TextSearch, SimilaritySearch
     end
 
     @testset "OOV query_expansion/lemmas are dropped, not carried over" begin
-        a = roundtrip(docs; query_expansion=Dict("casa" => ["noexisteenvocab"]),
-                            lemmas=Dict("casa" => "tampocoexiste"))
+        # Built in memory rather than round-tripped: `save_profile` refuses a network naming a
+        # token the vocabulary lacks (the layout stores ids), and what this tests is that
+        # `merge_profiles` is robust to one it is handed.
+        a = TextProfile(VectorModel(IdfWeighting(), TfWeighting(),
+                                    Vocabulary(tc, docs; verbose=false));
+                        query_expansion=Dict("casa" => ["noexisteenvocab"]),
+                        lemmas=Dict("casa" => "tampocoexiste"))
         merged = merge_profiles([a, roundtrip(docs)])
         @test !haskey(merged.query_expansion, "casa") || isempty(merged.query_expansion["casa"])
         @test !haskey(merged.lemmas, "casa")

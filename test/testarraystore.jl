@@ -65,10 +65,13 @@ using Test, TextSearch, JSON3
         end
     end
 
-    @testset "a profile written with JSON distances is refused, not silently emptied" begin
-        # Found the hard way: the first cut of this change simply did not look for the old key,
-        # so an older profile loaded fine and came back with NO distances -- `expand_query!`
-        # would quietly fall back to rank weighting and nothing would say why.
+    @testset "an older profile is refused by version, not silently emptied" begin
+        # Found the hard way: the first cut of the binary-distances change simply did not look
+        # for the old JSON key, so an older profile loaded fine and came back with NO distances
+        # -- `expand_query!` would quietly fall back to rank weighting and nothing would say
+        # why. That was patched with an ad-hoc check on the moved key; the format version does
+        # the job properly now that it is allowed to move, and catches every other way an older
+        # file differs at the same time.
         corpus = ["la casa roja", "la casa verde", "la pera verde esta rica"]
         p = fit_profile(TextConfig(), corpus; min_ndocs=1,
                         encoder=(; outdim=2), expansion=(; k=2), verbose=false)
@@ -76,10 +79,14 @@ using Test, TextSearch, JSON3
             save_profile(dir, p)
             mpath = joinpath(dir, "manifest.json")
             m = JSON3.read(read(mpath), Dict{String,Any})
+            m["format_version"] = "1.0"
             m["artifacts"]["query_expansion"]["distances_file"] = "query_expansion_distances.json"
             delete!(m["artifacts"]["query_expansion"], "distances")
             open(io -> JSON3.write(io, m), mpath, "w")
-            @test_throws ErrorException load_profile(dir)
+            err = try (load_profile(dir); nothing) catch e; e end
+            @test err isa ErrorException
+            @test occursin("format_version", err.msg)
+            @test occursin("Refit", err.msg)
         end
     end
 
