@@ -388,10 +388,13 @@ apply_lemmas)`, and is checked against it. The second form is a convenience that
   see [`blend_vocabularies`](@ref) for why that choice matters to BM25.
 - **Query expansion** are inherited, restricted to tokens that survived. No embedding is fit here --
   that is exactly what makes a refit cheap next to a fit, and the point of bootstrapping.
-- **Stopword candidates** are recomputed from the blended counters, but the *applied* stopword
-  set stays the base's. It has to: the base's counts were collected under that set, and
-  swapping it mid-blend would compare two incomparable vocabularies. New candidates are
-  reported for review, the same detected-versus-applied split the profile format already has.
+- **Stopwords** are the base's, unchanged. A stopword belongs to a language, not to a dataset,
+  and the base is what models the language; a word that clears `doc_freq_threshold` here and
+  is not a stopword of the language is a peculiarity of this dataset. Those are **reported**
+  under `verbose`, for the operator to act on or ignore, and never filtered. Adding one would
+  also be unsound: the blended counters were collected under the base's set, so the token
+  would keep its counters, its weight and its share of `numtokens` while the tokenizer could
+  no longer produce it.
 
 `EntropyWeighting` is rejected, as it is for a merge: its weights are supervised and cannot
 be re-derived from a profile's contents.
@@ -443,8 +446,17 @@ function refit_profile(base::TextProfile, sample_voc::Vocabulary;
 
     model = VectorModel(global_weighting, local_weighting, voc)
 
-    stopwords = Set{String}(stopword_candidates(voc, doc_freq_threshold))
-    union!(stopwords, base.stopwords)
+    # The stopword set is the base's, unchanged. A stopword is a property of a LANGUAGE, and
+    # the base is where the language is modelled; a word that looks like one in this dataset
+    # and not in the language is a peculiarity of the dataset, which is worth telling the
+    # operator about and is not worth filtering on.
+    #
+    # It also cannot be added safely even if one wanted to. The blended counters were
+    # collected under the base's set, and `TextProfile` materializes the tokenizer from
+    # whatever set it is handed, so a token added here would keep its counters, its weight
+    # and its share of `numtokens` while becoming impossible for the tokenizer to ever
+    # produce again -- dead in the vocabulary and silently unmatched in a query.
+    stopwords = Set{String}(base.stopwords)
 
     prior_docs = kappa === nothing ? Float64(gettrainsize(sample_voc)) : Float64(kappa)
     applied = AppliedArtifacts(stopwords=base.applied.stopwords,
@@ -468,6 +480,17 @@ function refit_profile(base::TextProfile, sample_voc::Vocabulary;
             "-> $(vocsize(voc)); $from_sample token(s) seen in the sample, " *
             "$(vocsize(voc) - from_sample) carried from the base alone " *
             "($at_floor of them at the one-document floor)")
+        # computed only to be reported, so it is not worth a pass over the vocabulary
+        # when nobody is reading
+        dataset_only = setdiff(Set{String}(stopword_candidates(voc, doc_freq_threshold)), stopwords)
+        if !isempty(dataset_only)
+            shown = sort!(collect(dataset_only))
+            println(stderr,
+                "refit: $(length(shown)) token(s) exceed doc_freq_threshold=$doc_freq_threshold " *
+                "in this dataset but are NOT stopwords of the language, so they are reported " *
+                "rather than filtered: " *
+                join(first(shown, 20), ", ") * (length(shown) > 20 ? ", ..." : ""))
+        end
         println(stderr,
             "refit: min_ndocs=$resolved_min_ndocs " *
             (min_ndocs === nothing ? "(the bar the base's own fit used); raise it to carry fewer" :

@@ -390,6 +390,14 @@ known-item queries at three sample sizes, an 18x range of the base's effective w
 recall@10 by at most 1.5 points, and more prior was mildly better everywhere. `--min-ndocs`
 moves 29 points on the same measurement.
 
+**Stopwords are the base's and stay the base's.** A stopword belongs to a language, and the
+base is what models the language; a word that is everywhere in *this* dataset is a fact about
+the dataset. `refit` reports those on stderr — `N token(s) exceed doc_freq_threshold=... but
+are NOT stopwords of the language` — and filters none of them, which is what
+`--doc-freq-threshold` now tunes: the report's sensitivity, nothing else. Filtering one would
+be unsound anyway, since the blended counters were collected under the base's set: the token
+would keep its counters and its weight while the tokenizer could no longer produce it.
+
 Two consequences fall out of that arithmetic, and they are the point of the whole command:
 
 - A word the base considers important but the sample never shows **keeps only its

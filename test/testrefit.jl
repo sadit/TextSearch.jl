@@ -177,6 +177,40 @@ _find_lemma_map(p::TokenPipeline) = p.lemmas
         end
     end
 
+    @testset "stopwords come from the base; dataset-only candidates are reported, not applied" begin
+        # A stopword belongs to a language, so it is the base's to decide. A word that looks
+        # like one HERE is a fact about this dataset, and filtering on it would be unsound
+        # besides: the blended counters were collected under the base's set, so the token
+        # would keep its counters and its weight while the tokenizer could no longer produce
+        # it -- dead in the vocabulary, silently unmatched in a query.
+        swbase = mkprofile(basedocs;
+                           textconfig=TextConfig(tc; pipeline=TokenPipeline(stopwords=Set(["de"]))),
+                           stopwords=Set(["de"]), applied=AppliedArtifacts(stopwords=true))
+        @test swbase.applied.stopwords
+
+        # kappa=1 so the sample's own rates survive the blend's trainsize: "perro" is in 5 of
+        # the 5 sample documents, i.e. 5/6 of the blended corpus, well over the 0.5 threshold
+        r = refit_profile(swbase, sampledocs; kappa=1, verbose=false)
+
+        @test r.stopwords == swbase.stopwords                 # unchanged, not unioned
+        @test r.applied.stopwords
+        @test token2id(r.model.voc, "perro") != 0             # still a token...
+        @test "perro" in collect(tokenize(gettextconfig(r), "el perro ladra"))   # ...and still producible
+        @test "de" ∉ collect(tokenize(gettextconfig(r), "algo de cosas"))        # the base's set still applies
+
+        @testset "and the operator is told" begin
+            msg = mktemp() do path, io
+                redirect_stderr(io) do
+                    refit_profile(swbase, sampledocs; kappa=1, verbose=true)
+                end
+                flush(io)
+                read(path, String)
+            end
+            @test occursin("perro", msg)
+            @test occursin("NOT stopwords of the language", msg)
+        end
+    end
+
     @testset "kappa controls how much the base counts for" begin
         small = refit_profile(base, sampledocs; kappa=1, verbose=false)
         big = refit_profile(base, sampledocs; kappa=10_000, verbose=false)
