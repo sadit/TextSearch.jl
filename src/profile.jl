@@ -1,6 +1,7 @@
 # This file is a part of TextSearch.jl
 
-export save_profile, load_profile, zip_profile, download_profile, list_remote_profiles
+export save_profile, load_profile, zip_profile, download_profile, list_remote_profiles,
+       profile_id
 
 # Bumped to "1.1" for the expansion network's move to ids (see `_save_expansion`).
 #
@@ -10,6 +11,11 @@ export save_profile, load_profile, zip_profile, download_profile, list_remote_pr
 # fetches. So the version starts doing the job it was always shaped for: a file from before
 # this is refused by version, with one sentence saying so, instead of being caught further in
 # by an ad-hoc check on some key that happens to have moved.
+#
+# Under "1.1", also for the record: the network's move to ids, and the `id` field that names
+# what a profile does to text (see `profile_id`). The field went in without a further bump for
+# the same reason the freeze at "1.0" was right for as long as it was -- nothing is published
+# at "1.1" yet, so there is no file out there for the version to protect.
 #
 # What changed under "1.0", for the record: the policy/artifacts split, the rename of the
 # artifact from "synonyms" to "query_expansion" (manifest key and both files), and the
@@ -73,7 +79,10 @@ function _encode_normalization(n::NormalizationConfig)
         "group_num" => n.group_num, "group_url" => n.group_url, "group_usr" => n.group_usr,
         "group_emo" => n.group_emo, "lc" => n.lc,
         "re_user" => n.re_user.pattern, "re_url" => n.re_url.pattern, "re_num" => n.re_num.pattern,
-        "emojis" => [string(c) for c in n.emojis],
+        # sorted because the source is a `Set{Char}`, whose iteration order is arbitrary:
+        # unsorted, two saves of one profile produced manifests that differed in this array
+        # alone, which defeats diffing them and makes `profile_id` unstable
+        "emojis" => [string(c) for c in sort!(collect(n.emojis))],
     )
 end
 
@@ -143,6 +152,122 @@ function _profile_reader(path::AbstractString)
     end
 end
 
+# ── profile identity ─────────────────────────────────────────────────────────
+#
+# An id for WHAT A PROFILE DOES TO TEXT, so an artifact fitted against one can say which one
+# and be checked. The case that needs it is a stored LSI projection: its columns are indexed
+# by vocabulary id, so pointed at the wrong profile it does not fail -- every column is off by
+# some amount and every answer is quietly wrong.
+#
+# What goes in is chosen by that job, not by "what is in the file":
+#
+#   in   the policy, and the artifacts the pipeline APPLIES -- they decide which tokens a text
+#        yields at all
+#   in   the token sequence in id order -- it IS the column index of anything fitted over the
+#        vocabulary
+#   in   the counters and the weighting scheme -- they decide the coordinates, and the weight
+#        vector follows from them by recomputation, so it needs no separate contribution
+#   out  the expansion network, the artifacts that are carried but not applied, the lineage --
+#        a profile can gain or lose any of them and still turn text into the same vector
+#
+# The consequences are the point: a profile RE-SAVED keeps its id, and one whose lineage note
+# or expansion network changed keeps it too. An id that moved every time the file was rewritten
+# would be no use to anything.
+#
+# This is deliberately NOT an integrity check. A profile travels as a zip, and ZipArchives
+# verifies the CRC32 of every entry it reads, so damage in transit is already caught by the
+# container -- and covering the whole file here would mean rehashing megabytes on every load to
+# re-prove what the reader just proved. `save_profile` records the id so a tool can read it
+# without parsing a vocabulary; anything that must not be fooled recomputes it with
+# `profile_id`, which cannot be edited.
+
+"""
+    profile_id(p::TextProfile) -> String
+
+A 16-hex-character identifier for what `p` does to text: its policy, the artifacts it applies,
+its token sequence, its counters and its weighting. Two profiles share an id exactly when they
+turn any text into the same vector, so an artifact fitted against one -- a stored dense
+projection, say -- can record the id and refuse anything else.
+
+Derived rather than stored, so it cannot disagree with the profile it describes.
+[`save_profile`](@ref) also writes it to the manifest as `id`, for tools that want it without
+loading anything, and that copy is a convenience: it is not what a check should read.
+"""
+function profile_id(p::TextProfile)
+    ctx = SHA2_256_CTX()
+    txt(s) = update!(ctx, codeunits(string(s)))
+    field(k, v) = (txt(k); txt("\x1f"); txt(v); txt("\x1e"))
+
+    # the scheme itself is versioned: changing what goes in must change every id
+    txt("textsearch-profile-id/1\x1e")
+
+    _hash_canonical(ctx, _encode_policy(getpolicy(p)))
+    field("applied.stopwords", p.applied.stopwords)
+    field("applied.lemmas", p.applied.lemmas)
+    if p.applied.stopwords
+        for w in sort!(collect(p.stopwords)); field("stopword", w); end
+    end
+    if p.applied.lemmas
+        for k in sort!(collect(keys(p.lemmas))); field(k, p.lemmas[k]); end
+    end
+
+    model = p.model
+    field("global_weighting", _encode_global_weighting(model.global_weighting))
+    field("local_weighting", _encode_local_weighting(model.local_weighting))
+
+    voc = model.voc
+    field("trainsize", gettrainsize(voc))
+    field("numtokens", getnumtokens(voc))
+    field("vocsize", vocsize(voc))
+    for id in eachindex(voc); txt(gettoken(voc, id)); txt("\x1f"); end
+    txt("\x1e")
+    _hash_le(ctx, voc.occs)
+    _hash_le(ctx, voc.ndocs)
+
+    bytes2hex(digest!(ctx))[1:16]
+end
+
+"""
+    _hash_canonical(ctx, v)
+
+Folds `v` into `ctx` in an order that does not depend on how a `Dict` happens to iterate --
+which in Julia is not a stable order, and would otherwise make an id differ between two runs
+over the same profile.
+"""
+function _hash_canonical(ctx, v)
+    if v isa AbstractDict
+        for k in sort!(collect(keys(v)); by=string)
+            update!(ctx, codeunits(string(k))); update!(ctx, codeunits("\x1f"))
+            _hash_canonical(ctx, v[k])
+        end
+    elseif v isa AbstractVector || v isa AbstractSet
+        for x in v; _hash_canonical(ctx, x); end
+    else
+        update!(ctx, codeunits(string(v)))
+    end
+    update!(ctx, codeunits("\x1e"))
+end
+
+"""
+    _hash_le(ctx, A)
+
+Folds a numeric array into `ctx` in **little-endian** order, for the same reason
+`arraystore.jl` writes its members that way: a profile is published and read back by whoever,
+and an id that depended on the host's byte order would not survive the trip.
+"""
+function _hash_le(ctx, A::AbstractArray{T}) where {T}
+    if _islittle()
+        update!(ctx, reinterpret(UInt8, A))
+    else
+        buf = Vector{UInt8}(undef, sizeof(T))
+        for v in A
+            u = htol(v)
+            unsafe_copyto!(pointer(buf), Ptr{UInt8}(pointer_from_objref(Ref(u))), sizeof(T))
+            update!(ctx, buf)
+        end
+    end
+end
+
 # ── save_profile / load_profile / zip_profile ────────────────────────────────
 
 """
@@ -166,6 +291,7 @@ same join the loader does.
 The manifest keeps policy and artifacts apart, which is the point of the layout:
 
 ```
+id:         "914ca66f4ddd5767"          # see `profile_id`
 policy:     { normalization: {...}, tokenization: {...} }
 artifacts:  { stopwords: {file, applied}, lemmas: {file, applied},
               query_expansion: {applied, layout: "csc",
@@ -220,6 +346,9 @@ function save_profile(dir::AbstractString, p::TextProfile)
 
     _write_json(joinpath(dir, _PROFILE_MANIFEST_NAME), Dict(
         "format_version" => _PROFILE_FORMAT_VERSION,
+        # Recorded so a tool can read it without parsing a vocabulary. It is a convenience
+        # copy: a check that must not be fooled calls `profile_id` on what it loaded.
+        "id" => profile_id(p),
         "policy" => _encode_policy(getpolicy(p)),
         "artifacts" => artifacts,
         "vocabulary_file" => "vocabulary.json",

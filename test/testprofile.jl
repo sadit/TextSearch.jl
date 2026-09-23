@@ -77,6 +77,67 @@ using Test, TextSearch, SimilaritySearch, JSON3
         end
     end
 
+    @testset "profile_id names what a profile does to text" begin
+        # The job is binding an artifact fitted against a profile -- a stored dense projection
+        # indexed by vocabulary id -- to the profile it belongs to. Pointed at the wrong one it
+        # would not fail, it would answer wrongly, so the id has to cover exactly what decides
+        # a text's vector and nothing else.
+        mk(; kwargs...) = TextProfile(mkmodel(); kwargs...)
+        base = mk()
+
+        @test length(profile_id(base)) == 16
+        @test profile_id(base) == profile_id(mk())          # deterministic across builds
+
+        @testset "what must NOT move it" begin
+            # a profile can gain any of these and still turn text into the same vector
+            @test profile_id(mk(lineage=lineage)) == profile_id(base)
+            @test profile_id(mk(query_expansion=query_expansion)) == profile_id(base)
+            @test profile_id(mk(stopwords=stopwords)) == profile_id(base)   # carried, not applied
+            @test profile_id(mk(lemmas=lemmas)) == profile_id(base)         # carried, not applied
+        end
+
+        @testset "what must move it" begin
+            @test profile_id(mk(stopwords=stopwords,
+                                applied=AppliedArtifacts(stopwords=true))) != profile_id(base)
+            @test profile_id(mk(lemmas=lemmas,
+                                applied=AppliedArtifacts(lemmas=true))) != profile_id(base)
+            @test profile_id(TextProfile(VectorModel(BinaryGlobalWeighting(), TfWeighting(),
+                                                     Vocabulary(tc, corpus; verbose=false)))) !=
+                  profile_id(base)
+            @test profile_id(TextProfile(mkmodel(vcat(corpus, "un documento mas")))) !=
+                  profile_id(base)
+        end
+
+        @testset "it survives the round trip, and the manifest records it" begin
+            p = mk(stopwords=stopwords, applied=AppliedArtifacts(stopwords=true),
+                   query_expansion=query_expansion, lineage=lineage)
+            dir = tempname()
+            try
+                save_profile(dir, p)
+                m = JSON3.read(read(joinpath(dir, "manifest.json")))
+                @test String(m.id) == profile_id(p)
+                q = load_profile(dir)
+                @test profile_id(q) == profile_id(p)
+
+                # and saving again reproduces it, which is what makes the id usable as a
+                # reference at all: it names the profile, not the file it was written to
+                dir2 = tempname()
+                try
+                    save_profile(dir2, q)
+                    m2 = JSON3.read(read(joinpath(dir2, "manifest.json")))
+                    @test String(m2.id) == String(m.id)
+                    # the whole manifest is byte-identical, not only the id -- an unsorted
+                    # emoji set used to make two saves of one profile differ here
+                    @test read(joinpath(dir2, "manifest.json")) == read(joinpath(dir, "manifest.json"))
+                finally
+                    rm(dir2; force=true, recursive=true)
+                end
+            finally
+                rm(dir; force=true, recursive=true)
+            end
+        end
+    end
+
     @testset "no artifacts: files and manifest keys omitted" begin
         p = TextProfile(mkmodel())
         dir = tempname()
