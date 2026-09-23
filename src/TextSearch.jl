@@ -111,6 +111,7 @@ include("lemmas.jl")
 include("fitprofile.jl")
 
 include("randomindexing.jl")
+include("lsistore.jl")
 using .RI: RandomIndexing, RIModel, BitSketch, bitsketch, bitsketch_corpus
 export RI, RandomIndexing, RIModel, BitSketch, bitsketch, bitsketch_corpus
 
