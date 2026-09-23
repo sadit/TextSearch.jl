@@ -48,12 +48,12 @@ using SimilaritySearch.ScalarQuant: SQu8
         end
     end
 
-    @testset "k truncates exactly, so one artifact serves every smaller k" begin
+    @testset "outdim truncates exactly, so one artifact serves every smaller one" begin
         mktempdir() do dir
             d = joinpath(dir, "art")
             save_lsi(d, lsi, p)
             full = load_lsi(d, p)
-            cut = load_lsi(d, p; k=3)
+            cut = load_lsi(d, p; outdim=3)
 
             @test outdim(cut) == 3
             @test cut.s == full.s[1:3]
@@ -61,8 +61,8 @@ using SimilaritySearch.ScalarQuant: SQu8
             # quantization is per column, so dropping rows changes nothing that remains
             @test all(cut.P[i, j] === full.P[i, j] for i in 1:3, j in 1:m)
 
-            @test_throws ArgumentError load_lsi(d, p; k=0)
-            @test_throws ArgumentError load_lsi(d, p; k=outdim(lsi) + 1)
+            @test_throws ArgumentError load_lsi(d, p; outdim=0)
+            @test_throws ArgumentError load_lsi(d, p; outdim=outdim(lsi) + 1)
         end
     end
 

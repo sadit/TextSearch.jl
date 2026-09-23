@@ -7,7 +7,7 @@ export save_lsi, load_lsi, QuantizedProjection
 # A fitted LSI is thrown away today: `fit_profile` uses `wordvectors(lsi)` for the expansion
 # network and the lemma clusters, and nothing downstream can project anything new. Keeping it
 # is what gives a consumer dense document vectors without an LLM, a BM25 + dense hybrid, and
-# expansion at any k rather than the k frozen at fit time.
+# expansion at any neighbour count rather than the one frozen at fit time.
 #
 # It is NOT part of the profile, and that is the whole shape of this file. A profile is 3 MB
 # where a projection is tens of megabytes, and most consumers never project anything; making
@@ -113,8 +113,8 @@ avoid.
 act on; nothing here fetches anything. What makes the binding safe is not that reference but
 [`profile_id`](@ref), recorded beside it and checked by [`load_lsi`](@ref).
 
-Store one artifact at the largest `k` worth keeping: truncating a truncated SVD is exact, so
-`load_lsi(...; k)` serves every smaller `k` from the same file.
+Store one artifact at the largest `outdim` worth keeping: truncating a truncated SVD is exact,
+so `load_lsi(...; outdim)` serves every smaller one from the same file.
 """
 function save_lsi(dir::AbstractString, lsi::LatentSemanticIndexing, profile::TextProfile;
                   name::AbstractString="", repo::AbstractString="", tag::AbstractString="")
@@ -132,7 +132,7 @@ function save_lsi(dir::AbstractString, lsi::LatentSemanticIndexing, profile::Tex
         "profile" => Dict{String,Any}(
             "id" => profile_id(profile),
             "name" => String(name), "repo" => String(repo), "tag" => String(tag)),
-        "k" => outdim(lsi),
+        "outdim" => outdim(lsi),
         "maxoutdim" => lsi.maxoutdim,
         "scaling" => String(lsi.scaling),
         "codes" => _save_array(dir, "projection_codes.bin", codes),
@@ -146,7 +146,7 @@ function save_lsi(dir::AbstractString, lsi::LatentSemanticIndexing, profile::Tex
 end
 
 """
-    load_lsi(path, profile::TextProfile; k=nothing) -> LatentSemanticIndexing
+    load_lsi(path, profile::TextProfile; outdim=nothing) -> LatentSemanticIndexing
 
 Reads the artifact at `path` (a directory or a zip) and rebuilds an LSI over `profile`.
 
@@ -155,11 +155,14 @@ one is handed in this errors naming the one the artifact was fitted against. Get
 profile is the caller's job -- see [`download_profile`](@ref) -- because downloading hundreds
 of megabytes as a side effect of opening a file is not something this should decide.
 
-`k` truncates. Truncating a truncated SVD is exact, since the singular values come out ordered
-and the quantization is per column, so `k` coordinates read out of a `k'>k` artifact are
-exactly the first `k` coordinates it stores.
+`outdim` truncates: it is the number of LSI components to keep, the same quantity
+[`outdim`](@ref) reports and `maxoutdim` requests -- not the neighbour count that
+[`query_expansion`](@ref) calls `k`, which is a different number entirely. Truncating a
+truncated SVD is exact, since the singular values come out ordered and the quantization is per
+column, so the coordinates read out of a larger artifact are exactly the first ones it stores.
 """
-function load_lsi(path::AbstractString, profile::TextProfile; k::Union{Nothing,Integer}=nothing)
+function load_lsi(path::AbstractString, profile::TextProfile;
+                  outdim::Union{Nothing,Integer}=nothing)
     read_bytes = _profile_reader(path)
     manifest = JSON3.read(read_bytes(_LSI_MANIFEST_NAME))
 
@@ -186,22 +189,22 @@ function load_lsi(path::AbstractString, profile::TextProfile; k::Union{Nothing,I
     scales = Vector{Float32}(_load_array(read_bytes, manifest[:scales]))
     svals = Vector{Float32}(_load_array(read_bytes, manifest[:singular_values]))
 
-    stored_k = Int(manifest[:k])
-    size(codes, 1) == stored_k ||
-        error("the LSI artifact says k=$stored_k and its codes have $(size(codes, 1)) row(s)")
+    stored = Int(manifest[:outdim])
+    size(codes, 1) == stored ||
+        error("the LSI artifact says outdim=$stored and its codes have $(size(codes, 1)) row(s)")
     size(codes, 2) == vocsize(profile.model) ||
         error("the LSI artifact has $(size(codes, 2)) column(s) and the profile holds " *
               "$(vocsize(profile.model)) token(s); they must agree")
 
-    want_k = k === nothing ? stored_k : Int(k)
-    0 < want_k <= stored_k ||
-        throw(ArgumentError("k must be in 1:$stored_k for this artifact, got $want_k"))
-    if want_k < stored_k
-        codes = codes[1:want_k, :]
-        svals = svals[1:want_k]
+    want = outdim === nothing ? stored : Int(outdim)
+    0 < want <= stored ||
+        throw(ArgumentError("outdim must be in 1:$stored for this artifact, got $want"))
+    if want < stored
+        codes = codes[1:want, :]
+        svals = svals[1:want]
     end
 
     P = QuantizedProjection(codes, mins, scales)
-    LatentSemanticIndexing(profile.model, P, svals, want_k, Int(manifest[:maxoutdim]),
+    LatentSemanticIndexing(profile.model, P, svals, want, Int(manifest[:maxoutdim]),
                            Symbol(String(manifest[:scaling])))
 end
