@@ -10,6 +10,7 @@ using SimilaritySearch, LinearAlgebra, SparseArrays
 using SimilaritySearch: getminbatch
 using JSON3
 using ZipArchives
+using SHA: SHA2_256_CTX, update!, digest!
 using Downloads
 
 using ProgressMeter
