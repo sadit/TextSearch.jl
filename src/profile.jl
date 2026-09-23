@@ -2,23 +2,23 @@
 
 export save_profile, load_profile, zip_profile, download_profile, list_remote_profiles
 
-# Bumped from "1.0" with the policy/artifact split. The freeze at "1.0" was right while every
-# schema change was additive and older files still loaded; this one changes the layout and
-# drops compatibility, so the version's job flips from "irrelevant" to "refuse an older file
-# with a sentence that says what happened" rather than half-parsing it.
-# Held at 1.0 deliberately. The format has no released consumers -- nothing is published and no
-# profile exists outside this repository -- so the version is not yet a compatibility mechanism
-# and bumping it on every layout change buys nothing. `load_profile` still refuses a mismatch, so
-# the field is ready to do that job from the first release onward; until then a layout change just
-# means the profiles in `corpus-profiles/` get refitted, which they need anyway.
+# Bumped to "1.1" for the expansion network's move to ids (see `_save_expansion`).
 #
-# For the record of what has changed under 1.0: the policy/artifacts split, and the rename of the
-# artifact from "synonyms" to "query_expansion" (manifest key and both files). That rename
-# mattered beyond tidiness -- calling it a synonym network invited judging its entries as
-# substitutable words, and a long stretch of work went into filtering it on that basis before the
-# objective was restated: the artifact exists to enrich a query, and topically related terms are
-# what serve that. See the note in `src/lsi.jl`.
-const _PROFILE_FORMAT_VERSION = "1.0"
+# The freeze at "1.0" was justified by there being no released consumers -- "nothing is
+# published and no profile exists outside this repository" -- and that stopped being true at
+# v1.1.0, which ships seven profiles as release assets and is what `textsearch download`
+# fetches. So the version starts doing the job it was always shaped for: a file from before
+# this is refused by version, with one sentence saying so, instead of being caught further in
+# by an ad-hoc check on some key that happens to have moved.
+#
+# What changed under "1.0", for the record: the policy/artifacts split, the rename of the
+# artifact from "synonyms" to "query_expansion" (manifest key and both files), and the
+# distances becoming a quantized binary member. That rename mattered beyond tidiness -- calling
+# it a synonym network invited judging its entries as substitutable words, and a long stretch
+# of work went into filtering it on that basis before the objective was restated: the artifact
+# exists to enrich a query, and topically related terms are what serve that. See the note in
+# `src/lsi.jl`.
+const _PROFILE_FORMAT_VERSION = "1.1"
 const _PROFILE_MANIFEST_NAME = "manifest.json"
 
 # ── weighting tag tables ─────────────────────────────────────────────────────
@@ -150,23 +150,28 @@ end
 
 Serializes a [`TextProfile`](@ref) into `dir` (created if missing) as a small directory of
 plain, human-readable JSON files: one per "large" piece -- `vocabulary.json`, `weights.json`,
-and `stopwords.json`/`lemmas.json`/`query_expansion.json` for whichever artifacts are non-empty --
-tied together by a `manifest.json` holding everything else.
+and `stopwords.json`/`lemmas.json` for whichever artifacts are non-empty -- tied together by a
+`manifest.json` holding everything else.
 
-The one exception is `query_expansion_distances.bin`, which is a **binary** member: tens of
-thousands of cosine distances, `u8`-quantized, described entirely by its manifest entry (see
-`arraystore.jl`). Every other file stays text, and the reason this one does not is measured
-rather than assumed -- as JSON it was 569,045 bytes against 47,501, i.e. 44% of a whole profile
-spent on digits nobody reads, and the quantization is retrieval-identical. The same mechanism is
-what a stored dense projection will use.
+The exception is the **expansion network**, which is three binary members over vocabulary ids
+(`query_expansion_counts.bin`, `query_expansion_neighbors.bin` and, when the profile carries
+them, `u8`-quantized `query_expansion_distances.bin`). Both departures from text are measured
+rather than assumed. On the published Spanish profile the network and its distances were
+141,088,462 bytes of JSON -- 86% of the whole file -- against 28,680,775 as ids, because every
+neighbour string was already in `vocabulary.json` and was being stored again in every list that
+named it. The quantization is retrieval-identical (`arraystore.jl` has those numbers). Every
+other file stays text, and a reader who wants tokens joins against the vocabulary, which is the
+same join the loader does.
 
 The manifest keeps policy and artifacts apart, which is the point of the layout:
 
 ```
 policy:     { normalization: {...}, tokenization: {...} }
 artifacts:  { stopwords: {file, applied}, lemmas: {file, applied},
-              query_expansion: {file, applied,
-                                distances: {file, dtype, shape, quant, keys}} }
+              query_expansion: {applied, layout: "csc",
+                                counts:    {file, dtype, shape},
+                                neighbors: {file, dtype, shape},
+                                distances: {file, dtype, shape, quant, columns}} }
 lineage:    [ {stage, params}, ... ]
 ```
 
@@ -210,50 +215,7 @@ function save_profile(dir::AbstractString, p::TextProfile)
     end
 
     if !isempty(p.query_expansion)
-        syn_order = sort!(collect(keys(p.query_expansion)))
-        _write_json(joinpath(dir, "query_expansion.json"),
-            Dict(tok => syns for (tok, syns) in p.query_expansion))
-        entry = Dict{String,Any}("file" => "query_expansion.json", "applied" => p.applied.query_expansion)
-
-        # Only for tokens the ranking carries: a distance list without its words could not be
-        # interpreted, and the distances live in their own member so a consumer that needs only
-        # the ranking can skip them.
-        #
-        # That member is BINARY, and quantized to u8, which is the one place this format spends
-        # its inspectability. The content is tens of thousands of cosine distances that nobody
-        # reads by eye, and JSON text costs 12x for them: measured on a real profile, 569,045
-        # bytes against 47,501, on a file that is 44% of the whole profile. The quantization is
-        # free where it counts -- Float32 against u8 gives identical top-1 results and 0.9995
-        # top-10 overlap over 400 queries. See `arraystore.jl`.
-        #
-        # Stored FLAT, against the network's own sorted key order, and naming neither the tokens
-        # nor the per-token lengths -- both are derivable from `query_expansion.json`, which is
-        # right there. Writing them anyway was the first cut of this, and it cost more than the
-        # binary member saved: 6,068 tokens in the manifest took it from 28,055 bytes to 99,528,
-        # a third copy of the vocabulary, which is what this layout exists to avoid.
-        #
-        # What is NOT derivable is which tokens carry distances at all: a ranking may carry none
-        # (`_restrict_query_expansion` keeps a distance list only when it covers the whole list,
-        # all or nothing). So coverage is recorded -- as the string "all" in the normal case,
-        # costing nothing, and as a binary array of positions into the sorted key order otherwise.
-        if p.query_expansion_distances !== nothing
-            covered = Int[]
-            flat = Float32[]
-            for (i, tok) in enumerate(syn_order)
-                ds = get(p.query_expansion_distances, tok, nothing)
-                (ds === nothing || isempty(ds)) && continue
-                length(ds) == length(p.query_expansion[tok]) || continue
-                push!(covered, i)
-                append!(flat, ds)
-            end
-            if !isempty(flat)
-                e = _save_array(dir, "query_expansion_distances.bin", flat; quantize=true)
-                e["keys"] = length(covered) == length(syn_order) ? "all" :
-                    _save_array(dir, "query_expansion_distances_keys.bin", UInt32.(covered))
-                entry["distances"] = e
-            end
-        end
-        artifacts["query_expansion"] = entry
+        artifacts["query_expansion"] = _save_expansion(dir, p)
     end
 
     _write_json(joinpath(dir, _PROFILE_MANIFEST_NAME), Dict(
@@ -271,6 +233,204 @@ function save_profile(dir::AbstractString, p::TextProfile)
     ))
 
     dir
+end
+
+
+# ── the expansion network, as CSC over vocabulary ids ────────────────────────
+#
+# The network used to be a `Dict{String,Vector{String}}` in JSON, which stored every neighbour
+# as a full token string in every list it appears in, plus the keys. `vocabulary.json` already
+# holds all of those strings once, so the file was, byte for byte, mostly a permuted second copy
+# of the vocabulary. Measured on the published Spanish profile (vocsize 730,320, 5,590,091
+# edges, k = 8):
+#
+#   query_expansion.json             70,933,553 B stored     33,744,114 B deflated
+#   query_expansion_distances.json   70,154,909 B            31,351,092 B
+#   the three arrays below           28,680,775 B            20,741,393 B   (-80% / -68%)
+#
+# and the whole profile goes 163,945,326 -> 28,651,426, i.e. 17% of what shipped.
+#
+# The layout is CSC with the SOURCE TOKEN AS THE COLUMN. That orientation is forced rather than
+# chosen: every consumer asks "give me this token's neighbours", so the source has to be the
+# contiguous axis, which in column-major Julia means the column -- and it matches `lsi.jl`'s
+# term = row, item = column convention.
+#
+# Entries within a column stay in RANK ORDER, which is why this is deliberately not handed out
+# as a `SparseMatrixCSC`: that type requires `rowval` ascending within a column and does not
+# check it, so an unsorted one misbehaves silently rather than erroring. Sorting by id instead
+# would be worth 2.8% of the bytes and would cost the ranking, because rank cannot be recovered
+# from the score once it is quantized -- measured, the u8 step leaves 57% of columns with ties
+# against 1.7% at Float32.
+#
+# The column axis is stored as PER-COLUMN COUNTS, not offsets, and the loader cumulates them:
+# 115,248 deflated bytes against 1,037,000, because counts are a short run-heavy alphabet (here
+# {0, 8} almost everywhere) while offsets are 730,321 distinct rising integers. The dtype is
+# whatever fits -- `u8` while no token has more than 255 neighbours, `u32` beyond that -- and
+# `arraystore.jl` already records dtype per member, so this needs no new format concept and
+# imposes no cap.
+#
+# The one thing this layout cannot express is a token that is not in the vocabulary, and
+# `save_profile` refuses rather than dropping it. Every path the library itself has already
+# guarantees the property -- `_restrict_query_expansion` enforces it on a refit, `fit_profile`
+# derives the network from the vocabulary, and the published merged profile measured 100% on
+# both keys and neighbours -- and an entry naming a non-vocabulary token could never have
+# matched anything anyway, since the query path skips a token whose id is 0.
+
+"""
+    _save_expansion(dir, p::TextProfile) -> Dict{String,Any}
+
+Writes the expansion network under `dir` as three binary members over vocabulary ids -- column
+counts, concatenated neighbour ids in rank order, and optionally their quantized distances --
+and returns the manifest entry describing them.
+
+Errors if the network names a token the vocabulary lacks; see the note above for why that is a
+refusal rather than a silent drop.
+"""
+function _save_expansion(dir::AbstractString, p::TextProfile)
+    voc = p.model.voc
+    n = vocsize(voc)
+    counts = zeros(UInt32, n)
+
+    examples = String[]
+    nbad = 0
+    note(t) = (nbad += 1; length(examples) < 5 && push!(examples, repr(t)); nothing)
+
+    for (tok, neighbors) in p.query_expansion
+        id = token2id(voc, tok)
+        id == 0 && (note(tok); continue)
+        kept = 0
+        for s in neighbors
+            token2id(voc, s) == 0 ? note(s) : (kept += 1)
+        end
+        counts[id] = kept
+    end
+
+    nbad == 0 || error(
+        "save_profile: the query_expansion network names $nbad token(s) that are not in the " *
+        "vocabulary (e.g. $(join(examples, ", "))). The network is stored as ids over the " *
+        "vocabulary, so such an entry cannot be written -- and it could never have matched " *
+        "anything either, since the query path skips a token whose id is 0. Restrict the " *
+        "network to the vocabulary first; `refit_profile` does that on its own.")
+
+    nnz = Int(sum(counts))
+    neighbors_flat = Vector{UInt32}(undef, nnz)
+    dvalues = Float32[]
+    dcolumns = UInt32[]
+    ncolumns = 0
+
+    at = 1
+    for id in 1:n
+        counts[id] == 0 && continue
+        ncolumns += 1
+        tok = gettoken(voc, id)
+        neighbors = p.query_expansion[tok]
+        for s in neighbors
+            j = token2id(voc, s)
+            j == 0 && continue
+            neighbors_flat[at] = j
+            at += 1
+        end
+        # All or nothing per column: a distance list that does not cover its own ranking could
+        # not be lined up against it on the way back in.
+        ds = p.query_expansion_distances === nothing ? nothing :
+            get(p.query_expansion_distances, tok, nothing)
+        if ds !== nothing && length(ds) == Int(counts[id])
+            push!(dcolumns, UInt32(id))
+            append!(dvalues, ds)
+        end
+    end
+
+    # u8 while it fits, which is every profile this has been run on; the dtype travels in the
+    # manifest, so widening is a data question and not a format change
+    counts_stored = maximum(counts; init=UInt32(0)) <= 255 ? UInt8.(counts) : counts
+    entry = Dict{String,Any}(
+        "applied" => p.applied.query_expansion,
+        "layout" => "csc",
+        "counts" => _save_array(dir, "query_expansion_counts.bin", counts_stored),
+        "neighbors" => _save_array(dir, "query_expansion_neighbors.bin", neighbors_flat),
+    )
+
+    if !isempty(dvalues)
+        d = _save_array(dir, "query_expansion_distances.bin", dvalues; quantize=true)
+        d["columns"] = length(dcolumns) == ncolumns ? "all" :
+            _save_array(dir, "query_expansion_distance_columns.bin", dcolumns)
+        entry["distances"] = d
+    end
+
+    entry
+end
+
+"""
+    _load_expansion(read_bytes, entry, voc) -> (query_expansion, distances)
+
+Rebuilds the network from the members [`_save_expansion`](@ref) wrote, turning ids back into the
+tokens `voc` holds. `distances` is `nothing` when the profile carries only the ranking.
+"""
+function _load_expansion(read_bytes, entry, voc::Vocabulary)
+    String(_entry(entry, :layout, "csc")) == "csc" ||
+        error("unknown query_expansion layout: $(repr(String(_entry(entry, :layout))))")
+
+    counts = _load_array(read_bytes, _entry(entry, :counts))
+    neighbors_flat = _load_array(read_bytes, _entry(entry, :neighbors))
+    n = vocsize(voc)
+    length(counts) == n ||
+        error("the query_expansion column counts describe $(length(counts)) token(s) but the " *
+              "vocabulary holds $n; the manifest and the vocabulary disagree")
+    Int(sum(counts)) == length(neighbors_flat) ||
+        error("the query_expansion column counts add up to $(Int(sum(counts))) neighbour(s) " *
+              "and the member carries $(length(neighbors_flat)); they must agree")
+
+    words = Dict{String,Vector{String}}()
+    starts = Vector{Int}(undef, n)     # where each column begins, for the distance pass
+    at = 1
+    for id in 1:n
+        c = Int(counts[id])
+        starts[id] = at
+        c == 0 && continue
+        run = Vector{String}(undef, c)
+        for r in 1:c
+            j = Int(neighbors_flat[at + r - 1])
+            1 <= j <= n ||
+                error("the query_expansion network names token id $j, outside a vocabulary of $n")
+            run[r] = gettoken(voc, j)
+        end
+        words[gettoken(voc, id)] = run
+        at += c
+    end
+
+    dists = if _haskey(entry, :distances)
+        de = _entry(entry, :distances)
+        flat = _load_array(read_bytes, de)
+        k = _entry(de, :columns)
+        columns = if k isa AbstractString
+            String(k) == "all" ? [id for id in 1:n if counts[id] > 0] :
+                error("unknown query_expansion distances coverage: $(repr(String(k)))")
+        else
+            Int[Int(i) for i in _load_array(read_bytes, k)]
+        end
+
+        dd = Dict{String,Vector{Float32}}()
+        seen = 0
+        for id in columns
+            1 <= id <= n && counts[id] > 0 ||
+                error("the query_expansion distances name column $id, which carries no " *
+                      "neighbours; the manifest and the network disagree")
+            c = Int(counts[id])
+            seen + c <= length(flat) ||
+                error("the query_expansion distances member is shorter than the network it " *
+                      "annotates; the manifest and the network disagree")
+            dd[gettoken(voc, id)] = flat[(seen + 1):(seen + c)]
+            seen += c
+        end
+        seen == length(flat) ||
+            error("the query_expansion distances member carries $(length(flat)) value(s), " *
+                  "$(length(flat) - seen) more than the network accounts for")
+        dd
+    else
+        nothing
+    end
+
+    words, dists
 end
 
 """
@@ -336,55 +496,7 @@ function load_profile(path::AbstractString)
 
     query_expansion, syndists, syn_applied = if haskey(art, :query_expansion)
         e = art[:query_expansion]
-        net = read_file(String(e[:file]))
-        words = Dict{String,Vector{String}}(
-            String(tok) => String[String(s) for s in syns] for (tok, syns) in pairs(net))
-        # A profile written before the distances became a binary member names them under
-        # `distances_file`. Say so instead of silently loading a profile with no distances at
-        # all: the artifact would simply vanish, `expand_query!` would fall back to rank
-        # weighting, and nothing anywhere would report that it had happened. This is the job the
-        # format version cannot do while it is deliberately held at 1.0.
-        haskey(e, :distances_file) &&
-            error("this profile stores its query_expansion distances as JSON " *
-                  "('$(String(e[:distances_file]))'), which this build no longer reads: they " *
-                  "are now a quantized binary member. Refit the profile.")
-
-        # One flat binary array, cut back up with what is already loaded: the network's sorted
-        # key order says WHICH token each run belongs to, and that token's own neighbour list
-        # says HOW LONG the run is. See `save_profile` for why neither is stored.
-        dists = if haskey(e, :distances)
-            de = e[:distances]
-            flat = _load_array(read_bytes, de)
-            order = sort!(collect(keys(words)))
-            k = _entry(de, :keys)
-            covered = if k isa AbstractString
-                String(k) == "all" ? collect(eachindex(order)) :
-                    error("unknown query_expansion distances coverage: $(repr(String(k)))")
-            else
-                Int[Int(i) for i in _load_array(read_bytes, k)]
-            end
-
-            dd = Dict{String,Vector{Float32}}()
-            at = 1
-            for i in covered
-                1 <= i <= length(order) ||
-                    error("the query_expansion distances name key $i of $(length(order)); " *
-                          "the manifest and the network disagree")
-                tok = order[i]
-                n = length(words[tok])
-                at + n - 1 <= length(flat) ||
-                    error("the query_expansion distances member is shorter than the network it " *
-                          "annotates; the manifest and the network disagree")
-                dd[tok] = flat[at:(at + n - 1)]
-                at += n
-            end
-            at == length(flat) + 1 ||
-                error("the query_expansion distances member carries $(length(flat)) value(s), " *
-                      "$(length(flat) - at + 1) more than the network accounts for")
-            dd
-        else
-            nothing
-        end
+        words, dists = _load_expansion(read_bytes, e, voc)
         words, dists, Bool(e[:applied])
     else
         Dict{String,Vector{String}}(), nothing, false
@@ -413,15 +525,17 @@ compression option and always stores -- which went unnoticed because a profile z
 kilobyte of the sum of its members, and that reads like framing overhead rather than like a
 missing feature.
 
-It is the single largest saving available to this format, by a wide margin, and it costs nothing
-in compatibility: measured on a real profile (16,640 Spanish tweets, `vocsize` 6,068), **766,486
-bytes stored against 277,874 deflated, a 64% reduction**. Per member, the text ones are where it
-comes from -- `query_expansion.json` 525,814 → 177,764, `vocabulary.json` 90,060 → 35,857,
-`weights.json` 58,625 → 8,722 -- while the already-quantized binary member compresses least
-(47,492 → 39,218), which is what one would want: the bytes that were already dense stay dense.
+It was the single largest saving available to this format until the expansion network moved to
+ids, and it still costs nothing in compatibility. Measured on the published Spanish profile
+rebuilt under the current layout (`vocsize` 730,320, 5,590,091 edges), **48,392,862 bytes of
+directory against 27,638,434 deflated, a 43% reduction**. Per member, the text ones are where
+it comes from -- `vocabulary.json` 12,566,619 → 5,449,046, `weights.json` 7,117,381 → 1,283,405
+-- while the binary ones give up least, which is what one would want: `neighbors.bin`
+22,360,364 → 15,949,444 and the u8-quantized `distances.bin` 5,590,091 → 4,676,701. Bytes that
+were already dense stay dense.
 
-For comparison, the layout changes being considered on top of this are worth a further ~76,000
-bytes. Compression first, then.
+The two changes compose rather than compete: that same profile shipped at 163,945,326 bytes,
+deflating alone would have made it 73,005,239, and the id layout takes it the rest of the way.
 
 `compression_level` is passed through to ZipArchives (`1` fastest, `9` smallest, `-1` its
 default compromise). `compress=false` restores the old stored behaviour, which is worth keeping

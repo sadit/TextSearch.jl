@@ -462,7 +462,12 @@ _find_lemma_map(p::TokenPipeline) = p.lemmas
     @testset "query_expansion are inherited and restricted to survivors" begin
         syn = Dict("gato" => ["wikipedia", "typoxyz", "noexisteenvocab"])
         sdist = Dict("gato" => Float32[0.1, 0.2, 0.3])
-        sbase = mkprofile(basedocs; query_expansion=syn, query_expansion_distances=sdist)
+        # In memory rather than through `mkprofile`: the saved layout stores ids, so it refuses
+        # "noexisteenvocab" outright. Keeping the case here is still worth it -- a refit has to
+        # drop a name the vocabulary never had as surely as one the prune removed.
+        mkvoc(docs) = Vocabulary(tc, docs; verbose=false)
+        sbase = TextProfile(VectorModel(IdfWeighting(), TfWeighting(), mkvoc(basedocs));
+                            query_expansion=syn, query_expansion_distances=sdist)
 
         # min_ndocs=3 so "typoxyz" (one base document) is genuinely pruned: the restriction
         # is what this tests, and at the default nothing the base holds is dropped.
@@ -477,7 +482,8 @@ _find_lemma_map(p::TokenPipeline) = p.lemmas
         @test abs(only(r.query_expansion_distances["gato"]) - 0.1f0) < 0.01
 
         @testset "a network with no distances survives the restriction" begin
-            nbase = mkprofile(basedocs; query_expansion=syn)
+            nbase = TextProfile(VectorModel(IdfWeighting(), TfWeighting(), mkvoc(basedocs));
+                                query_expansion=syn)
             r2 = refit_profile(nbase, sampledocs; min_ndocs=3, verbose=false)
             @test r2.query_expansion["gato"] == ["wikipedia"]
             @test r2.query_expansion_distances === nothing
