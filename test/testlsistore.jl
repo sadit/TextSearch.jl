@@ -115,21 +115,27 @@ using SimilaritySearch.ScalarQuant: SQu8, SQMinC, Cosine
             ids(R) = collect(IdView(R))
             nbrs(idx, db, j) = Set(ids(search(idx, ctx, db[j], knnqueue(KnnSorted, 3))))
             ref(j) = Set(ids(search(dense, ctx, W[j], knnqueue(KnnSorted, 3))))
+            dists(R) = sort!(collect(Float32, DistView(R)))
+            qdist(j) = dists(search(quant, ctx, q[j], knnqueue(KnnSorted, 3)))
+            rdist(j) = dists(search(dense, ctx, W[j], knnqueue(KnnSorted, 3)))
 
-            # As SETS, not as ordered lists. This corpus is small enough that six pairs of
-            # tokens occur in exactly the same documents -- casa/tiene, una/y, manzana/pera,
-            # esta/rica, es/grande, cielo/sobre -- so LSI gives each pair one identical column
-            # and their order within a result is an arbitrary tie-break that neither path
-            # promises. The dense reference does not even return every token as its own
-            # nearest neighbour here, for the same reason.
-            @test all(nbrs(quant, q, j) == ref(j) for j in 1:m)
+            # Compared by DISTANCE, not by which ids came back. This corpus is small enough
+            # that six pairs of tokens occur in exactly the same documents -- casa/tiene,
+            # una/y, manzana/pera, esta/rica, es/grande, cielo/sobre -- so LSI gives each pair
+            # one identical column. Which member of a tied pair a search returns, and which of
+            # two equidistant tokens lands inside a top-3 cut, is an arbitrary tie-break that
+            # neither path promises; `Vocabulary` is built threaded and can order its tokens
+            # differently between runs, which moves those ties around. What both paths DO
+            # promise is finding neighbours that are equally close, and that is the claim.
+            # Both distances are 1 - cosine, so they are directly comparable.
+            @test all(isapprox(qdist(j), rdist(j); atol=0.02) for j in 1:m)
 
             @testset "and the dense route gives the same thing" begin
                 qd = quantized_wordvectors(lsi)
                 @test qd isa SQu8.SQu8Database
                 @test length(qd) == m
-                @test Set(ids(search(ExhaustiveSearch(Cosine(), qd), ctx, qd[1],
-                                     knnqueue(KnnSorted, 3)))) == ref(1)
+                @test isapprox(dists(search(ExhaustiveSearch(Cosine(), qd), ctx, qd[1],
+                                            knnqueue(KnnSorted, 3))), rdist(1); atol=0.02)
             end
 
             @testset "the distance is load-bearing, not interchangeable" begin
