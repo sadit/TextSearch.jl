@@ -331,12 +331,14 @@ using Test, TextSearch, SimilaritySearch, JSON3
                 println(io, """
                 {
                     "assets": [
-                        {"name": "mock_es.zip", "size": 1024, "browser_download_url": "https://example.com/mock_es.zip"}
+                        {"name": "mock_es.zip", "size": 1024, "browser_download_url": "https://example.com/mock_es.zip"},
+                        {"name": "mock_es-lsi.zip", "size": 4096, "browser_download_url": "https://example.com/mock_es-lsi.zip"}
                     ]
                 }
                 """)
             end
             mock_remotes = list_remote_profiles(; url="file://" * mock_json)
+            # the LSI artifact beside it is not a profile, so it is not listed
             @test length(mock_remotes) == 1
             @test mock_remotes[1].name == "mock_es"
             @test mock_remotes[1].size == 1024

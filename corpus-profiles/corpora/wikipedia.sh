@@ -15,7 +15,11 @@
 #   corpora/wikipedia.sh --lang es --steps fetch          # download only
 #
 # Produces profiles/wiki<SNAPSHOT>-<LANG>/wiki<SNAPSHOT>-<LANG>-NNNN.zip -- one independent
-# profile per part (see --parts), which `textsearch merge` folds back into one.
+# profile per part (see --parts) -- and, with the merge and lsi steps, the two release assets:
+# profiles/wiki<SNAPSHOT>-<LANG>.zip (the parts folded into one by `textsearch merge`) and
+# profiles/wiki<SNAPSHOT>-<LANG>-lsi.zip (its LSI projection, see lib/fit_lsi.jl).
+#
+#   corpora/wikipedia.sh --lang es --split-paragraphs --batch-size 800000 --steps merge,lsi
 #
 # Only downloads and fits; nothing is published. Verify a profile (textsearch info, a few
 # textsearch search queries) before attaching it to a release -- see ../README.md.
@@ -76,7 +80,7 @@ STOPWORDS=true
 DOC_FREQ_THRESHOLD=""   # empty: per-language default from the table below
 LEMMA_ALG=fft
 LEMMA_SEL=most_frequent
-STEPS="fetch,prepare,fit"
+STEPS="fetch,prepare,fit,merge,lsi"
 FORCE=0
 
 usage() {
@@ -121,7 +125,9 @@ Options:
                          the table in the script); pass a value to override it
   --lemma-algorithm A    fft | dnet | randsel | multirandsel (default fft)
   --lemma-selector S     most_frequent (default) | shortest | shortest_then_most_frequent
-  --steps LIST           comma list of fetch,prepare,fit (default all)
+  --steps LIST           comma list of fetch,prepare,fit,merge,lsi (default all). merge folds
+                         the parts into profiles/<name>.zip; lsi fits the LSI projection
+                         for that merged profile over the first paragraph of each article
   --force                re-download / re-convert even if outputs exist
   -h, --help             this help
 EOF
@@ -367,4 +373,48 @@ if has_step fit; then
   ls -la "$OUT_DIR" >&2
   log "NOT published. Verify first (see ../README.md), e.g.:"
   log "  textsearch install $OUT_DIR/${PROFILE_NAME}-0001.zip $PROFILE_NAME && textsearch info $PROFILE_NAME"
+fi
+
+# ── merge ────────────────────────────────────────────────────────────────────
+
+MERGED="$PROFILES_DIR/${PROFILE_NAME}.zip"
+
+if has_step merge; then
+  shopt -s nullglob
+  parts=("$OUT_DIR/${PROFILE_NAME}"-[0-9][0-9][0-9][0-9].zip)
+  shopt -u nullglob
+  [[ ${#parts[@]} -gt 0 ]] || die "no parts in $OUT_DIR -- run with --steps fit first"
+  # the same threshold the parts were fitted at: merge recomputes stopword candidates on the
+  # merged counters, and a different cutoff there would change what the fit already removed
+  args=(--out "$MERGED")
+  [[ "$STOPWORDS" == "true" ]] && args+=(--doc-freq-threshold "$DOC_FREQ_THRESHOLD")
+  if [[ ${#parts[@]} -eq 1 ]]; then
+    log "one part only; copying it as the merged profile"
+    cp -f "${parts[0]}" "$MERGED"
+  else
+    log "merging ${#parts[@]} part(s) -> $MERGED"
+    ts_cli merge "${parts[@]}" "${args[@]}"
+  fi
+fi
+
+# ── lsi ──────────────────────────────────────────────────────────────────────
+#
+# Not the LSI `fit` computes: that one is per part, over the part's vocabulary, and `save_lsi`
+# needs exactly the merged profile's. So it is fitted again, over the merged model, on one
+# document per article -- its first paragraph, the article's summary -- rather than on every
+# paragraph: every article gets one say, and the corpus is ~1/20 of the paragraph count.
+
+if has_step lsi; then
+  [[ -s "$MERGED" ]] || die "missing $MERGED -- run with --steps merge first"
+  [[ -s "$JSONL" ]] || die "missing $JSONL -- run with --steps prepare first"
+  LSI_OUT="$PROFILES_DIR/${PROFILE_NAME}-lsi.zip"
+  rm -f "$LSI_OUT"
+  # --group-key id is what makes this the first paragraph: consecutive records of one article
+  # share it. Article-level JSONL has one record per id, so the same call uses every article.
+  log "fitting LSI (outdim=$OUTDIM) for $MERGED over the first unit of each article"
+  ts_julia "$CP_ROOT/lib/fit_lsi.jl" "$MERGED" "$JSONL" "$LSI_OUT" \
+    --outdim "$OUTDIM" --group-key id --name "$LANG_CODE" \
+    || die "LSI fit failed"
+  log "NOT published. Both assets for this language:"
+  ls -la "$MERGED" "$LSI_OUT" >&2
 fi

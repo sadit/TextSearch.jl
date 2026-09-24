@@ -7,7 +7,7 @@ function parse_download_args(args::Vector{String})
             required = true
         "--tag"
             help = "GitHub release tag"
-            default = "v1.1.0"
+            default = PROFILES_RELEASE_TAG
         "--repo"
             help = "GitHub repository (owner/repo)"
             default = "sadit/TextSearch.jl"
