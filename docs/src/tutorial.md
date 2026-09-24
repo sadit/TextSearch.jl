@@ -608,6 +608,11 @@ path = download_profile("es")
 p = load_profile(path)
 ```
 
+Downloads come from the release named after the profile format, [`PROFILES_RELEASE_TAG`](@ref)
+(`"profiles-1.1"` today), so every package version that reads a format fetches the same files.
+Each profile there has an optional LSI projection beside it, `<nickname>-lsi.zip`, bound to it
+by [`profile_id`](@ref) — `load_lsi("es-lsi.zip", p)` refuses it against any other profile.
+
 #### Command-Line Interface (`textsearch`)
 
 The integrated CLI tool `textsearch` (located in `apps/textsearch/`) allows managing the complete lifecycle of profiles from the terminal:
@@ -621,7 +626,7 @@ textsearch download es en pt
 
 # Download from an arbitrary URL or custom release tag
 textsearch download https://example.com/profiles/custom_model.zip --as custom
-textsearch download es --tag v1.1.0 --force
+textsearch download es --tag profiles-1.1 --force
 
 # List locally installed profiles
 textsearch list
