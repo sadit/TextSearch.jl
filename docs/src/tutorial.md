@@ -32,8 +32,8 @@ To illustrate text retrieval workflows on real text, we use Edgar Allan Poe's sh
 ```@setup gutenberg
 using TextSearch, SimilaritySearch
 
-# Configure a quiet InvertedFileContext by suppressing informational progress lines during batch operations
-quietctx() = InvertedFileContext(logger=SimilaritySearch.LogList(SimilaritySearch.AbstractLog[]))
+# A quiet InvertedFileContext: `reporters=[]` suppresses the progress lines of batch operations
+quietctx() = InvertedFileContext(reporters=[])
 
 CASK_OF_AMONTILLADO = [
     "The thousand injuries of Fortunato I had borne as I best could, but when he ventured upon insult, I vowed revenge. You, who so well know the nature of my soul, will not suppose, however, that I gave utterance to a threat. _At length_ I would be avenged; this was a point definitely settled--but the very definitiveness with which it was resolved, precluded the idea of risk. I must not only punish, but punish with impunity. A wrong is unredressed when retribution overtakes its redresser. It is equally unredressed when the avenger fails to make himself felt as such to him who has done the wrong.",
@@ -584,9 +584,58 @@ tuned = refit_profile(p, CASK_OF_AMONTILLADO[1:6]; verbose=false)
 
 The predicates [`isbase`](@ref) and [`istuned`](@ref) verify model provenance directly from recorded lineage history.
 
+### Naming a Profile: `profile_id`
+
+[`profile_id`](@ref) is a 16-hex-character name for *what a profile does to text*: its policy, the artifacts it applies, its token sequence, its counters and its weighting. Two profiles share an id exactly when they turn any text into the same vector. Re-saving a profile keeps its id, and so does changing what it only carries (the expansion network, a lineage note); applying an artifact or refitting changes it:
+
+```@example gutenberg
+(oneshot=profile_id(oneshot),
+ resaved=profile_id(load_profile(save_profile(mktempdir(), oneshot))),
+ refitted=profile_id(refit_profile(oneshot, CASK_OF_AMONTILLADO[1:6]; verbose=false)))
+```
+
+### Storing the LSI Projection Beside a Profile: `save_lsi` / `load_lsi`
+
+`fit_profile` uses its LSI to build the expansion network and the lemma clusters, and does not keep it. To project new text with a profile's model, fit an LSI over that model and store it with [`save_lsi`](@ref). It is a **separate artifact** that names the profile it belongs to by `profile_id`, since most consumers of a profile never project anything and should not have to download a projection:
+
+```@example gutenberg
+plsi = LatentSemanticIndexing(oneshot.model, CASK_OF_AMONTILLADO; maxoutdim=16, verbose=false)
+lsidir = joinpath(mktempdir(), "cask-lsi")
+save_lsi(lsidir, plsi, oneshot; name="cask")
+sort(readdir(lsidir))
+```
+
+The projection is stored as per-column 8-bit codes and read back as a [`QuantizedProjection`](@ref), which dequantizes on access instead of expanding into a `Float32` matrix. Truncating an SVD is exact, so one artifact serves every smaller `outdim`:
+
+```@example gutenberg
+back = load_lsi(lsidir, oneshot)
+(outdim=outdim(back), truncated=outdim(load_lsi(lsidir, oneshot; outdim=4)),
+ cosine_to_fitted=vectorize(back, "wine vaults")' * vectorize(plsi, "wine vaults"))
+```
+
+A projection's columns are vocabulary ids, so against the wrong profile it would not fail; it would answer wrongly. [`load_lsi`](@ref) recomputes the id of the profile it is handed and refuses a mismatch:
+
+```@example gutenberg
+try
+    load_lsi(lsidir, profile)   # same corpus, but stopwords applied: a different profile
+catch e
+    first(sprint(showerror, e), 110) * "..."
+end
+```
+
+[`quantized_wordvectors`](@ref) serves the token embeddings straight from the stored codes, as a database `SimilaritySearch` can search. **The distance is not interchangeable**: use `ScalarQuant.Cosine()`, which reconstructs a true cosine from the codes. `SQu8.NormCosine()` assumes unit vectors, and LSI columns are not unit vectors, so it would rank by length rather than by direction:
+
+```@example gutenberg
+Q = quantized_wordvectors(back)
+qidx = ExhaustiveSearch(SimilaritySearch.ScalarQuant.Cosine(), Q)
+wid = token2id(oneshot.model.voc, "wine")
+res = search(qidx, GenericContext(), Q[wid], knnqueue(KnnSorted, 6))
+[gettoken(oneshot.model.voc, i) for i in IdView(res)]
+```
+
 ### Pre-trained Language Profiles and CLI Management
 
-`TextSearch.jl` distributes pre-computed linguistic profiles for major languages (e.g., English `en`, Spanish `es`, Basque `eu`, French `fr`, Italian `it`, and Portuguese `pt`) fitted on large Wikipedia paragraph corpora. These profiles provide production-ready vocabularies, IDF weights, lemma maps, and query expansion networks out of the box.
+`TextSearch.jl` distributes pre-computed linguistic profiles for major languages (English `en`, Spanish `es`, Basque `eu`, French `fr`, Italian `it`, Portuguese `pt` and Russian `ru`) fitted on large Wikipedia paragraph corpora. These profiles provide production-ready vocabularies, IDF weights, lemma maps, and query expansion networks out of the box.
 
 #### Julia API
 
@@ -610,8 +659,18 @@ p = load_profile(path)
 
 Downloads come from the release named after the profile format, [`PROFILES_RELEASE_TAG`](@ref)
 (`"profiles-1.1"` today), so every package version that reads a format fetches the same files.
-Each profile there has an optional LSI projection beside it, `<nickname>-lsi.zip`, bound to it
-by [`profile_id`](@ref) — `load_lsi("es-lsi.zip", p)` refuses it against any other profile.
+Each profile there has its LSI projection beside it as `<nickname>-lsi.zip` (256 dimensions,
+fitted on the first paragraph of every article). It is optional and much larger than the
+profile, so it is not downloaded with it:
+
+```julia
+using TextSearch, Downloads
+
+p = load_profile(download_profile("es"))
+url = "https://github.com/sadit/TextSearch.jl/releases/download/$PROFILES_RELEASE_TAG/es-lsi.zip"
+lsi = load_lsi(Downloads.download(url, "es-lsi.zip"), p; outdim=64)   # any outdim up to 256
+vectorize(lsi, "aprendizaje automático")
+```
 
 #### Command-Line Interface (`textsearch`)
 
@@ -676,6 +735,18 @@ resolve_query_tokens(cvoc, ["amontillado"], variants, QueryPolicy(correction=:of
 expansion_sources(r)
 ```
 
+### Typos: `:edit` Correction
+
+Variants bridge spellings of the *same* word, so they cannot reach a transposition like `Fortuanto`. [`derive_edits`](@ref) indexes the vocabulary for Damerau-Levenshtein distance-1 lookup, and passing that index as `edits` lets [`resolve_query_tokens`](@ref) correct such a token. It is consulted only after the deterministic folds, only for a token the vocabulary does not hold, and it acts only when **exactly one** vocabulary token lies one edit away. Measured on synthetic Spanish typos, that rule is right 99.9% of the time it fires, and it fires for 70% of them:
+
+```@example gutenberg
+edits = derive_edits(cvoc)
+r = resolve_query_tokens(cvoc, ["Fortuanto", "wine"], variants; edits)
+r.tokens, explain(r)
+```
+
+Like the variant map, the edit index is derived from the vocabulary and never stored. [`QueryPipeline`](@ref) takes it as `edits` in the same way, and `QueryPolicy(correction=:off)` disables it along with the rest of correction.
+
 ---
 
 ## Social Media and Informal Text Processing
@@ -689,7 +760,7 @@ expansion_sources(r)
 ```@example tweets
 using TextSearch, SimilaritySearch
 
-quietctx() = InvertedFileContext(logger=SimilaritySearch.LogList(SimilaritySearch.AbstractLog[]))
+quietctx() = InvertedFileContext(reporters=[])
 
 tweets = [
     "Just landed in Mexico City!! 🎉 cant wait to try the tacos @VisitMexico #travel",
