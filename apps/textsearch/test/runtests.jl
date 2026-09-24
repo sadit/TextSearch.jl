@@ -669,6 +669,28 @@ end
                 recs_json = collect(TextSearchApp.each_record(:json, json_path, "text"))
                 @test [r.first for r in recs_json] == ["hello", "world"]
             end
+
+            @testset "corpusio: CSV and Parquet2 load on first use, in a fresh process" begin
+                # In this process CSV is already loaded (see the top of this file), so the path
+                # that loads a reader mid-command -- and has to cross world ages to call it --
+                # only runs in a process that has not loaded them. Hence the subprocesses.
+                julia = Base.julia_cmd()
+                proj = Base.active_project()
+                pq_path = joinpath(dir, "rec.parquet")
+                run(`$julia --startup-file=no --project=$proj -e "using Parquet2; Parquet2.writefile(ARGS[1], (text=[\"hello\", \"world\"], extra=[1, 2]))" $pq_path`)
+                csv_path = joinpath(dir, "rec.csv")
+                reader = """
+                    using TextSearchApp
+                    loaded(name) = any(k -> k.name == name, keys(Base.loaded_modules))
+                    println(loaded("CSV"), " ", loaded("Parquet2"))
+                    for (fmt, path) in ((:csv, ARGS[1]), (:parquet, ARGS[2]))
+                        recs = collect(TextSearchApp.each_record(fmt, path, "text"))
+                        println(join(first.(recs), ","), " ", recs[2].second["extra"])
+                    end
+                    """
+                out = readchomp(`$julia --startup-file=no --project=$proj -e $reader $csv_path $pq_path`)
+                @test split(out, "\n") == ["false false", "hello,world 2", "hello,world 2"]
+            end
         end
     end
 end
