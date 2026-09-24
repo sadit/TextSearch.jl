@@ -82,11 +82,20 @@ using Test, TextSearch, SimilaritySearch, JSON3
         # indexed by vocabulary id -- to the profile it belongs to. Pointed at the wrong one it
         # would not fail, it would answer wrongly, so the id has to cover exactly what decides
         # a text's vector and nothing else.
-        mk(; kwargs...) = TextProfile(mkmodel(); kwargs...)
+        #
+        # ONE model, reused. `Vocabulary` is built threaded and merges per-thread partials, so
+        # two builds of one corpus can order their tokens differently (see the note in
+        # testrefit.jl) -- and the id covers that order deliberately, because the order IS the
+        # column index of anything fitted over the vocabulary. Two such vocabularies really are
+        # different profiles for this purpose, so comparing ids across builds would be asking
+        # the wrong question.
+        model = mkmodel()
+        mk(; kwargs...) = TextProfile(model; kwargs...)
         base = mk()
 
         @test length(profile_id(base)) == 16
-        @test profile_id(base) == profile_id(mk())          # deterministic across builds
+        @test profile_id(base) == profile_id(base)        # a pure function of the profile
+        @test profile_id(mk()) == profile_id(base)        # and of nothing outside it
 
         @testset "what must NOT move it" begin
             # a profile can gain any of these and still turn text into the same vector
@@ -102,13 +111,14 @@ using Test, TextSearch, SimilaritySearch, JSON3
             @test profile_id(mk(lemmas=lemmas,
                                 applied=AppliedArtifacts(lemmas=true))) != profile_id(base)
             @test profile_id(TextProfile(VectorModel(BinaryGlobalWeighting(), TfWeighting(),
-                                                     Vocabulary(tc, corpus; verbose=false)))) !=
-                  profile_id(base)
+                                                     model.voc))) != profile_id(base)
             @test profile_id(TextProfile(mkmodel(vcat(corpus, "un documento mas")))) !=
                   profile_id(base)
         end
 
         @testset "it survives the round trip, and the manifest records it" begin
+            # This is the invariant that matters in practice: a profile written and read back
+            # is the same profile, whatever order its vocabulary happened to come out in.
             p = mk(stopwords=stopwords, applied=AppliedArtifacts(stopwords=true),
                    query_expansion=query_expansion, lineage=lineage)
             dir = tempname()
