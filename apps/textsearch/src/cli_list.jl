@@ -6,7 +6,7 @@ function parse_list_args(args::Vector{String})
             action = :store_true
         "--tag"
             help = "GitHub release tag when listing remote profiles"
-            default = "v1.1.0"
+            default = PROFILES_RELEASE_TAG
         "--repo"
             help = "GitHub repository (owner/repo) when listing remote profiles"
             default = "sadit/TextSearch.jl"

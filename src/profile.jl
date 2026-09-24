@@ -1,7 +1,7 @@
 # This file is a part of TextSearch.jl
 
 export save_profile, load_profile, zip_profile, download_profile, list_remote_profiles,
-       profile_id
+       profile_id, PROFILES_RELEASE_TAG
 
 # Bumped to "1.1" for the expansion network's move to ids (see `_save_expansion`).
 #
@@ -26,6 +26,19 @@ export save_profile, load_profile, zip_profile, download_profile, list_remote_pr
 # `src/lsi.jl`.
 const _PROFILE_FORMAT_VERSION = "1.1"
 const _PROFILE_MANIFEST_NAME = "manifest.json"
+
+"""
+    PROFILES_RELEASE_TAG
+
+The GitHub release that [`download_profile`](@ref) and [`list_remote_profiles`](@ref) fetch
+from by default: `"profiles-<format version>"`, e.g. `"profiles-1.1"`.
+
+It follows the profile format and not the package version, because the format is what decides
+whether a file can be loaded. A package release that leaves the format alone keeps pointing at
+the same assets, and one that bumps it points at a release that does not exist until those
+profiles are refitted and published, instead of silently fetching files it will refuse.
+"""
+const PROFILES_RELEASE_TAG = "profiles-" * _PROFILE_FORMAT_VERSION
 
 # ── weighting tag tables ─────────────────────────────────────────────────────
 
@@ -694,14 +707,14 @@ end
 
 """
     list_remote_profiles(; repo::AbstractString="sadit/TextSearch.jl",
-                           tag::AbstractString="v1.1.0",
+                           tag::AbstractString=PROFILES_RELEASE_TAG,
                            url::Union{Nothing,AbstractString}=nothing) -> Vector{NamedTuple}
 
 Queries and returns available pre-computed linguistic profiles from GitHub releases or a custom URL.
 Returns a vector of `(name=nickname, filename=name, size=size_in_bytes, url=download_url, tag=tag)`.
 """
 function list_remote_profiles(; repo::AbstractString="sadit/TextSearch.jl",
-                                tag::AbstractString="v1.1.0",
+                                tag::AbstractString=PROFILES_RELEASE_TAG,
                                 url::Union{Nothing,AbstractString}=nothing)
     api_url = url !== nothing ? String(url) :
               (tag == "latest" ?
@@ -754,7 +767,7 @@ end
 """
     download_profile(nickname_or_url::AbstractString;
                      repo::AbstractString="sadit/TextSearch.jl",
-                     tag::AbstractString="v1.1.0",
+                     tag::AbstractString=PROFILES_RELEASE_TAG,
                      dest::Union{Nothing,AbstractString}=nothing,
                      url::Union{Nothing,AbstractString}=nothing,
                      force::Bool=false) -> String
@@ -766,7 +779,7 @@ Returns the file path of the downloaded archive.
 """
 function download_profile(nickname_or_url::AbstractString;
                           repo::AbstractString="sadit/TextSearch.jl",
-                          tag::AbstractString="v1.1.0",
+                          tag::AbstractString=PROFILES_RELEASE_TAG,
                           dest::Union{Nothing,AbstractString}=nothing,
                           url::Union{Nothing,AbstractString}=nothing,
                           force::Bool=false)

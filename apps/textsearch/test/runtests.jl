@@ -485,6 +485,10 @@ end
                 @test dargs["targets"] == ["en", "es"]
                 @test dargs["tag"] == "v1.1.0"
                 @test dargs["force"] == true
+                # the default follows the profile format, not the package version
+                @test PROFILES_RELEASE_TAG == "profiles-1.1"
+                @test TextSearchApp.parse_download_args(["es"])["tag"] == PROFILES_RELEASE_TAG
+                @test TextSearchApp.parse_list_args(["--remote"])["tag"] == PROFILES_RELEASE_TAG
                 # downloading non-existent url returns non-zero error code
                 @test TextSearchApp.cmd_download(["nonexistent_prof", "--repo", "invalid/repo"]) != 0
 
