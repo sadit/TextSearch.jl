@@ -255,29 +255,76 @@ end
 
 const BOW_CACHES = Channel{BOW}(Inf)
 
-function _locked_tokenize_and_push(voc, doc, bow::BOW, l; isnormalized::Bool=false)
-    # Returns how many tokens were pushed. `bow` cannot answer that: it is filled as a SET
-    # (`bow[id] = 1`) because its only job is to say which tokens the document contained, for
+"""
+    _VocabularyBatch
+
+The counts one batch of documents produces, before they reach the shared [`Vocabulary`](@ref):
+`tokens` in order of first appearance within the batch, with `occs`/`ndocs` parallel to it and
+`index` mapping a token to its position.
+"""
+struct _VocabularyBatch
+    tokens::Vector{String}
+    index::Dict{String,Int32}
+    occs::Vector{Int64}
+    ndocs::Vector{Int64}
+    numtokens::Int
+end
+
+function _tokenize_and_count!(tokens, index, occs, ndocs, bow::BOW, textconfig::TextConfig, doc; isnormalized::Bool=false)
+    # Returns how many tokens `doc` has. `bow` cannot answer that: it is filled as a SET
+    # (`bow[i] = 1`) because its only job is to say which tokens the document contained, for
     # `ndocs`. Reading a token count off it -- `length(bow)`, or equivalently summing its
     # values -- yields the number of DISTINCT tokens instead, which is what made `numtokens`,
     # and therefore `avgdoclen`, mean something other than its documented "average document
     # length in tokens".
     ntokens = Ref(0)
     tokenizerbuffer() do tok
-        tokenlist = tokenize(borrowtokenizedtext, voc.textconfig, doc, tok; isnormalized)
+        tokenlist = tokenize(borrowtokenizedtext, textconfig, doc, tok; isnormalized)
         ntokens[] = length(tokenlist)
         for token in tokenlist
-            id = 0
-            lock(l)
-            try
-                id = push_token!(voc, token, 1, 0)
-            finally
-                unlock(l)
-                bow[id] = 1
+            i = get(index, token, zero(Int32))
+            if i == 0
+                push!(tokens, token)
+                push!(occs, 0)
+                push!(ndocs, 0)
+                i = index[token] = length(tokens)
             end
+            occs[i] += 1
+            bow[i] = 1
         end
     end
     ntokens[]
+end
+
+function _count_batch(textconfig::TextConfig, corpus, range; isnormalized::Bool=false)
+    tokens = String[]
+    index = Dict{String,Int32}()
+    occs = Int64[]
+    ndocs = Int64[]
+    numtokens = 0
+    bow = take!(BOW_CACHES)
+
+    try
+        for i in range
+            doc = corpus[i]
+            empty!(bow)
+            if doc isa AbstractVector
+                for text in doc
+                    numtokens += _tokenize_and_count!(tokens, index, occs, ndocs, bow, textconfig, text; isnormalized)
+                end
+            else # if doc isa AbstractString
+                numtokens += _tokenize_and_count!(tokens, index, occs, ndocs, bow, textconfig, doc; isnormalized)
+            end
+
+            for j in keys(bow)
+                ndocs[j] += 1
+            end
+        end
+    finally
+        put!(BOW_CACHES, bow)
+    end
+
+    _VocabularyBatch(tokens, index, occs, ndocs, numtokens)
 end
 
 """
@@ -297,57 +344,79 @@ julia> vocsize(voc)
 ```
 """
 function tokenize_and_append!(voc::Vocabulary, corpus; isnormalized::Bool=false)
-    l = Threads.SpinLock()
+    # Each batch counts into its own table, with no lock, and the tables are then folded
+    # together in corpus order. What this replaces is a lock taken per token around
+    # `push_token!`, which cost even without contention: measured on 23k Markdown paragraphs,
+    # one thread built the vocabulary 4.8x faster without it, and sixteen threads only ran 1.7x
+    # faster than one with it.
+    #
+    # Folding in corpus order also fixes the ids: every token gets the id a sequential scan
+    # would give it (order of first appearance), whatever the thread count, where before it got
+    # whichever id its thread won the lock with.
     n = length(corpus)
-    minbatch = getminbatch(n)
+    n == 0 && return voc
+    # About two batches per thread, rather than `getminbatch`'s many small ones: every batch
+    # repeats the common tokens in its own table, so the fold grows with the number of batches.
+    # With word bigrams over 185k documents, 64 batches doubled the build time of 16 or 32.
+    nbatches = min(n, 2 * Threads.nthreads())
+    batchsize = cld(n, nbatches)
+    nbatches = cld(n, batchsize)
+    batches = Vector{_VocabularyBatch}(undef, nbatches)
+    textconfig = voc.textconfig
 
-    @BATCHES minbatch begin
-    @BEGINBATCH
-        batch_numtokens = 0
-        batch_ndocs = Dict{UInt32,Int}()
-    @LOOP for i in 1:n
-        doc = corpus[i]
-        bow = take!(BOW_CACHES)
-
-        try
-            empty!(bow)
-            if doc isa AbstractVector
-                for text in doc
-                    batch_numtokens += _locked_tokenize_and_push(voc, text, bow, l; isnormalized)
-                end
-            else # if doc isa AbstractString
-                batch_numtokens += _locked_tokenize_and_push(voc, doc, bow, l; isnormalized)
-            end
-
-            # `numtokens` accumulates OCCURRENCES, counted above as the tokens are pushed.
-            # It used to be `length(bow)`, i.e. the document's distinct-token count, which made
-            # `avgdoclen` something other than the "average document length in tokens" it
-            # documents. BM25 mixes the two: an index measures each document's length as its
-            # total occurrences (`bm25_register_postings!`) and divides by this average.
-            # Measured on 300 Spanish Wikipedia articles, avgdoclen read 863 against indexed
-            # lengths averaging 2992, so `doclen / avgdoclen` was 3.47 for an average document
-            # instead of 1.0, and the length normalization behaved as if `b` were 2.6 -- outside
-            # BM25's valid [0, 1] -- heavily over-penalizing long documents.
-            for id in keys(bow)
-                batch_ndocs[id] = get(batch_ndocs, id, 0) + 1
-            end
-        finally
-            put!(BOW_CACHES, bow)
-        end
+    @BATCHES 1 for b in 1:nbatches
+        batches[b] = _count_batch(textconfig, corpus, (b-1)*batchsize+1:min(b*batchsize, n); isnormalized)
     end
-    @ENDBATCH
-        lock(l)
-        try
-            voc.numtokens[] += batch_numtokens
-            for (id, c) in batch_ndocs
-                voc.ndocs[id] += c
-            end
-        finally
-            unlock(l)
-        end
+
+    batch = _fold_batches!(batches)
+    for (i, token) in enumerate(batch.tokens)
+        push_token!(voc, token, batch.occs[i], batch.ndocs[i])
     end
+    voc.numtokens[] += batch.numtokens
 
     voc
+end
+
+"""
+    _absorb!(a::_VocabularyBatch, b::_VocabularyBatch) -> a
+
+Adds `b`'s counts into `a`. Tokens new to `a` are appended in `b`'s order, so when `b` covers
+the documents right after `a`'s, the result lists tokens in order of first appearance over both.
+"""
+function _absorb!(a::_VocabularyBatch, b::_VocabularyBatch)
+    for (j, token) in enumerate(b.tokens)
+        i = get(a.index, token, zero(Int32))
+        if i == 0
+            push!(a.tokens, token)
+            push!(a.occs, b.occs[j])
+            push!(a.ndocs, b.ndocs[j])
+            a.index[token] = length(a.tokens)
+        else
+            a.occs[i] += b.occs[j]
+            a.ndocs[i] += b.ndocs[j]
+        end
+    end
+    _VocabularyBatch(a.tokens, a.index, a.occs, a.ndocs, a.numtokens + b.numtokens)
+end
+
+"""
+    _fold_batches!(batches) -> _VocabularyBatch
+
+Folds consecutive batches into one, pairwise and in parallel: each round absorbs batch `2k`
+into batch `2k-1`, halving the list while keeping it in corpus order. Folding them one by one
+into the vocabulary instead was the slow half of the build (2.4s of 5.3s with word bigrams over
+185k documents and 16 batches), because it is sequential.
+"""
+function _fold_batches!(batches::Vector{_VocabularyBatch})
+    while length(batches) > 1
+        m = length(batches)
+        folded = Vector{_VocabularyBatch}(undef, cld(m, 2))
+        @BATCHES 1 for k in 1:cld(m, 2)
+            folded[k] = 2k <= m ? _absorb!(batches[2k-1], batches[2k]) : batches[2k-1]
+        end
+        batches = folded
+    end
+    batches[1]
 end
 
 Base.length(voc::Vocabulary) = length(voc.occs)
