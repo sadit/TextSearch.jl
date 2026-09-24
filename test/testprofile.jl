@@ -324,6 +324,18 @@ using Test, TextSearch, SimilaritySearch, JSON3
         @test any(r -> r.name == "en", remotes)
         @test any(r -> r.name == "es", remotes)
 
+        # The default release is the one this build reads. This is the tutorial's walkthrough,
+        # and it rotted once already: v1.2.0 defaulted to a release in a format it refuses
+        # (#48). `eu` because it is the smallest profile published (12.6 MB).
+        let defaults = list_remote_profiles()
+            @test Set(r.name for r in defaults) ⊇ Set(["en", "es", "eu", "fr", "it", "pt", "ru"])
+            @test all(r -> r.tag == PROFILES_RELEASE_TAG, defaults)
+            mktempdir() do dir
+                eu = load_profile(download_profile("eu"; dest=joinpath(dir, "eu.zip")))
+                @test vocsize(eu.model) > 100_000
+            end
+        end
+
         # Custom mock URL returning json release structure
         mock_json = joinpath(tempname() * ".json")
         try

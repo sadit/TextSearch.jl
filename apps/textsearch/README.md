@@ -593,7 +593,7 @@ vocsize:   26
 numtokens: 39
 avgdoclen: 5.571428571428571
 kind:      base
-lineage:   fit(doc_freq_threshold=0.5, encoder=lsi, outdim=8, scaling=none, source_path=, trainsize=7)
+lineage:   fit(doc_freq_threshold=0.5, encoder=lsi, min_ndocs=1, outdim=8, scaling=none, source_path=, trainsize=7)
 stopwords: 2 (applied)
 lemmas:    0 (carried, not applied) remapped tokens
 query_expansion:  26 (carried, not applied) tokens, with 26 distance lists
@@ -654,14 +654,66 @@ textsearch search jardin "manzana pera" --collection corpus.jsonl --format jsonl
 
 Only the one document containing *both* words survives.
 
-### 6. Uninstall (which does not delete unless you ask)
+### 6. Adapt it to a dataset with `refit`
+
+`jardin` stands in for a bootstrap profile here -- in practice a downloaded one such as `es`.
+`refit` adapts it to a sample of the dataset you will actually search, and writes a new,
+self-contained profile:
+
+```sh
+cat > reviews.jsonl << 'EOF'
+{"text": "el jardin botanico abre sus rosales en primavera"}
+{"text": "los rosales del jardin necesitan riego cada semana"}
+{"text": "una rosa roja y una rosa blanca en el jardin"}
+{"text": "el riego por goteo ahorra agua en el jardin"}
+EOF
+
+textsearch refit jardin --sample reviews.jsonl --out reviews-jardin.zip
+```
+```
+base: vocsize=26 trainsize=7 lemmas=0 query_expansion=26
+refit: vocsize 26 (base) + 23 (sample) -> 42; 23 token(s) seen in the sample, 19 carried from the base alone (17 of them at the one-document floor)
+refit: 1 token(s) exceed doc_freq_threshold=0.5 in this dataset but are NOT stopwords of the language, so they are reported rather than filtered: jardin
+refit: min_ndocs=1 (the bar the base's own fit used); raise it to carry fewer
+refit: kappa=4.0 documents of prior against a 4-document sample -> trainsize=8, avgdoclen=8.12, lemmas=carried only
+refit -> reviews-jardin.zip
+  vocsize=42  trainsize=8  numtokens=65
+  query_expansion=26 tokens  distances=26 tokens  lemmas=0 remapped (carried only)  stopwords=2
+  lineage: fit(doc_freq_threshold=0.5, encoder=lsi, min_ndocs=1, outdim=8, scaling=none, source_path=, trainsize=7) -> refit(kappa=4.0, lemmas_applied=false, sample_trainsize=4, trainsize=8)
+```
+
+The output reports the two knobs the Manual describes:
+
+- `--kappa` is how many documents the base is worth as a prior. The default, `0`, means
+  "as many as the sample", 4 here -- so `trainsize=8` is the 4 sampled documents plus 4
+  documents of prior.
+- `--min-ndocs` decides what the base contributes beyond what the sample saw. It defaults to
+  the bar the base was fitted at (1 here), which is why all 19 base-only tokens were carried.
+  Raising it gives a smaller profile; the Manual has the measured cost.
+
+`jardin` is in 3 of the 4 sampled documents, above the base's stopword threshold, yet the refit
+reports it rather than filtering it: being common in one dataset does not make a word a
+stopword of the language. The expansion network is carried from the base (`26 tokens`), so the
+sample's new words (`rosales`, `riego`) have no expansions of their own.
+
+```sh
+textsearch install reviews-jardin.zip reviews-jardin
+textsearch search reviews-jardin "rosales riego" --collection reviews.jsonl --format jsonl
+```
+```
+{"text":"el jardin botanico abre sus rosales en primavera"}
+{"text":"los rosales del jardin necesitan riego cada semana"}
+{"text":"el riego por goteo ahorra agua en el jardin"}
+```
+
+### 7. Uninstall (which does not delete unless you ask)
 
 ```sh
 textsearch uninstall jardin
 ```
 ```
 'jardin' is installed at:
-  ~/.textsearch/profiles/jardin.zip  (30.479 KiB)
+  ~/.textsearch/profiles/jardin.zip  (10.426 KiB)
 nothing was deleted -- pass --force to remove the file:
   textsearch uninstall jardin --force
 ```
