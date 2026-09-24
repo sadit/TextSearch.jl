@@ -25,6 +25,13 @@ export save_profile, load_profile, zip_profile, download_profile, list_remote_pr
 # exists to enrich a query, and topically related terms are what serve that. See the note in
 # `src/lsi.jl`.
 const _PROFILE_FORMAT_VERSION = "1.1"
+# "1.2" is "1.1" plus a tokenization that lists `QgramGenerator`s. It is written only when a
+# profile has them, so every other profile -- the published ones included -- stays "1.1",
+# byte for byte and id for id. The bump exists for older readers: a "1.1"-only build would
+# otherwise ignore the unknown key and tokenize without the q-grams, quietly, where refusing
+# the version makes it say so.
+const _PROFILE_FORMAT_VERSION_GENERATORS = "1.2"
+const _PROFILE_FORMAT_VERSIONS = (_PROFILE_FORMAT_VERSION, _PROFILE_FORMAT_VERSION_GENERATORS)
 const _PROFILE_MANIFEST_NAME = "manifest.json"
 
 """
@@ -110,12 +117,24 @@ function _decode_normalization(d)
 end
 
 function _encode_tokenization(t::TokenizationConfig)
-    isempty(t.generators) ||
-        error("cannot serialize a TokenizationConfig with custom (non-empty) generators into a profile")
-    Dict("nlist" => Int.(t.nlist), "mark_token_type" => t.mark_token_type)
+    all(g -> g isa QgramGenerator, t.generators) ||
+        error("cannot serialize a TokenizationConfig with custom generators into a profile " *
+              "(only QgramGenerator is supported)")
+    d = Dict{String,Any}("nlist" => Int.(t.nlist), "mark_token_type" => t.mark_token_type)
+    # absent rather than empty when there are none, so a profile without generators encodes --
+    # and therefore hashes into `profile_id` -- exactly as it did before generators were saved
+    isempty(t.generators) || (d["generators"] = [Dict("kind" => "qgram", "q" => Int(g.q)) for g in t.generators])
+    d
 end
 
-_decode_tokenization(d) = TokenizationConfig(nlist=Int8.(d[:nlist]), mark_token_type=Bool(d[:mark_token_type]))
+function _decode_generator(d)
+    kind = String(d[:kind])
+    kind == "qgram" || error("unknown token generator kind in profile: $(repr(kind))")
+    QgramGenerator(Int(d[:q]))
+end
+
+_decode_tokenization(d) = TokenizationConfig(nlist=Int8.(d[:nlist]), mark_token_type=Bool(d[:mark_token_type]),
+                                             generators=AbstractTokenGenerator[_decode_generator(g) for g in get(d, :generators, [])])
 
 function _encode_policy(tc::TextConfig)
     Dict("normalization" => _encode_normalization(tc.normalization),
@@ -323,8 +342,9 @@ hand into a small, versioned schema, so every file is fully inspectable/diffable
 there is nothing pointer- or code-shaped to accidentally serialize.
 
 Load it back with [`load_profile`](@ref), or package it for distribution with
-[`zip_profile`](@ref). A `TokenizationConfig` with custom (non-empty) `generators` errors
-clearly rather than silently mis-saving.
+[`zip_profile`](@ref). Of the extra `generators` a `TokenizationConfig` can carry, only
+[`QgramGenerator`](@ref)s are saved (in format "1.2", which older builds refuse rather than
+misread); any other generator errors clearly rather than silently mis-saving.
 """
 function save_profile(dir::AbstractString, p::TextProfile)
     mkpath(dir)
@@ -358,7 +378,7 @@ function save_profile(dir::AbstractString, p::TextProfile)
     end
 
     _write_json(joinpath(dir, _PROFILE_MANIFEST_NAME), Dict(
-        "format_version" => _PROFILE_FORMAT_VERSION,
+        "format_version" => isempty(getpolicy(p).tokenization.generators) ? _PROFILE_FORMAT_VERSION : _PROFILE_FORMAT_VERSION_GENERATORS,
         # Recorded so a tool can read it without parsing a vocabulary. It is a convenience
         # copy: a check that must not be fooled calls `profile_id` on what it loaded.
         "id" => profile_id(p),
@@ -594,9 +614,9 @@ function load_profile(path::AbstractString)
     read_file(name) = JSON3.read(read_bytes(name))
     manifest = read_file(_PROFILE_MANIFEST_NAME)
     version = String(get(manifest, :format_version, "(missing)"))
-    version == _PROFILE_FORMAT_VERSION ||
+    version in _PROFILE_FORMAT_VERSIONS ||
         error("unsupported profile format_version: $version (this build reads " *
-              "$_PROFILE_FORMAT_VERSION only, and has no conversion path). Refit the profile.")
+              join(_PROFILE_FORMAT_VERSIONS, " and ") * " only, and has no conversion path). Refit the profile.")
 
     pol = _decode_policy(manifest[:policy])
 

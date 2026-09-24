@@ -51,7 +51,7 @@ export TextConfig, NormalizationConfig, TokenizationConfig, TokenizedText, token
        normalize_text, isemoji, tokenize_paragraphs, tokenize_sentences,
        TokenizerBuffer, tokenizerbuffer, borrowtokenizedtext,
        TokenPipeline, apply_pipeline, isidentity,
-       AbstractTokenGenerator, UnigramGenerator, NWordGenerator,
+       AbstractTokenGenerator, UnigramGenerator, NWordGenerator, QgramGenerator,
        needs_unigrams, tokentag, generate!, flush_token!, alltokengenerators
 
 include("dvec.jl")

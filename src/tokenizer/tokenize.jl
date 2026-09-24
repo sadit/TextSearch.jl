@@ -233,6 +233,7 @@ Runs `gen` over `buff`, appending its produced tokens to `buff.tokens`. Called b
 """
 generate!(::UnigramGenerator, buff::TokenizerBuffer, pipe::TokenPipeline, mark_token_type::Bool) = nothing
 generate!(gen::NWordGenerator, buff::TokenizerBuffer, pipe::TokenPipeline, mark_token_type::Bool) = nwords(gen, buff, pipe, mark_token_type)
+generate!(gen::QgramGenerator, buff::TokenizerBuffer, pipe::TokenPipeline, mark_token_type::Bool) = qgrams(gen, buff, pipe, mark_token_type)
 
 """
     flush_token!(buff::TokenizerBuffer, pipe::TokenPipeline, gen::AbstractTokenGenerator, mark_token_type::Bool)
@@ -321,6 +322,44 @@ function nwords(gen::NWordGenerator, buff::TokenizerBuffer, pipe::TokenPipeline,
         end
 
         write(buff.io, buff.unigrams[_last])
+        flush_token!(buff, pipe, gen, mark_token_type)
+    end
+
+    buff.tokens
+end
+
+# a blank right after another blank: skipped, so a run of blanks reads as one
+@inline _redundant_blank(t::Vector{Char}, j::Int) = @inbounds t[j] == BLANK && j > 1 && t[j-1] == BLANK
+
+"""
+    qgrams(gen::QgramGenerator, buff::TokenizerBuffer, pipe::TokenPipeline, mark_token_type)
+
+Emits every character `gen.q`-gram of `buff.normtext`, reading runs of blanks as one blank
+(see [`QgramGenerator`](@ref)). `normtext` is left as it is, since other generators read it too.
+"""
+function qgrams(gen::QgramGenerator, buff::TokenizerBuffer, pipe::TokenPipeline, mark_token_type)
+    q = Int(gen.q)
+    t = buff.normtext
+    n = length(t)
+
+    @inbounds for i in 1:n
+        _redundant_blank(t, i) && continue
+        # collect q characters from i on, skipping redundant blanks; stop short at the end
+        len = 0
+        j = i
+        while j <= n && len < q
+            if !_redundant_blank(t, j)
+                write(buff.io, t[j])
+                len += 1
+            end
+            j += 1
+        end
+
+        if len < q  # fewer than q characters left: no more windows start here or later
+            take!(buff.io)
+            break
+        end
+
         flush_token!(buff, pipe, gen, mark_token_type)
     end
 

@@ -49,7 +49,7 @@ removed as dead code once nothing in `src/` still produced or consumed it.
 | `tokenizer/tokentrans.jl` | `AbstractTokenTransformation` hooks (stemming, stopwords, chaining) |
 | `tokenizer/normalize.jl` | Character-level text normalization, emoji detection |
 | `tokenizer/tokenize.jl` | `TokenizedText`, `tokenize`/`tokenize_corpus`, q-grams/n-grams/skip-grams |
-| `tokenizer/generators.jl` | `AbstractTokenGenerator` and built-in generators (qgram/unigram/nword/skipgram/collocation) |
+| `tokenizer/generators.jl` | `AbstractTokenGenerator` and built-in generators (unigram, word n-gram, character q-gram) |
 | `voc.jl` | `Vocabulary` type: token↔id table, occurrence/ndocs counters |
 | `updatevoc.jl` | Merging/updating `Vocabulary` instances |
 | `approxvoc.jl` | Approximate vocabulary lookup (`QgramsLookup`) for fuzzy/OOV matching |
