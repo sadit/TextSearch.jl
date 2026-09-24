@@ -30,7 +30,9 @@ function each_record(format::Symbol, path::AbstractString, text_key::AbstractStr
         (p => Dict{String,Any}("text" => p) for p in tokenize_paragraphs(read(path, String)))
     elseif format === :jsonl
         (
-            let obj = JSON3.read(line)
+            # bytes, not the String: JSON3.read(::String) first asks `isfile(line)` of anything
+            # under 255 bytes -- a stat per record, which on a network filesystem is a round trip
+            let obj = JSON3.read(codeunits(line))
                 String(obj[key]) => Dict{String,Any}(String(k) => v for (k, v) in pairs(obj))
             end
             for line in eachline(path) if !isempty(strip(line))
