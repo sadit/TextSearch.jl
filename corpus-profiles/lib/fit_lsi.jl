@@ -70,7 +70,9 @@ function first_units(path::AbstractString; text_key::AbstractString, group_key::
     for line in eachline(path)
         isempty(line) && continue
         nrecords += 1
-        rec = JSON3.read(line)
+        # bytes, not the String: JSON3.read(::String) stats any string under 255 bytes to see
+        # whether it names a file, which is a round trip per record on a network filesystem
+        rec = JSON3.read(codeunits(line))
         if !isempty(group_key)
             g = get(rec, gk, nothing)
             g === nothing && error("record $nrecords has no \"$group_key\" key; pass --group-key \"\" to use every record")
@@ -78,8 +80,10 @@ function first_units(path::AbstractString; text_key::AbstractString, group_key::
             last = g
         end
         push!(texts, String(rec[tk]))
-        nrecords % 1_000_000 == 0 &&
+        if nrecords % 1_000_000 == 0
             @info "reading" nrecords kept=length(texts) elapsed_s=round(time() - t0; digits=1)
+            flush(stderr)   # a log file is block-buffered, and this is how a long read is watched
+        end
         limit > 0 && length(texts) >= limit && break
     end
     @info "corpus read" path nrecords kept=length(texts) elapsed_s=round(time() - t0; digits=1)
