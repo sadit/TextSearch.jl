@@ -1,5 +1,5 @@
 using Test, TextSearch, SimilaritySearch, LinearAlgebra
-using SimilaritySearch.ScalarQuant: SQu8
+using SimilaritySearch.ScalarQuant: SQu8, SQMinC, Cosine
 
 @testset "save_lsi / load_lsi" begin
     corpus = ["la casa roja tiene jardin", "la casa verde tiene jardin",
@@ -93,6 +93,56 @@ using SimilaritySearch.ScalarQuant: SQu8
                             encoder=(; outdim=6), expansion=(; k=2), verbose=false)
         mktempdir() do dir
             @test_throws ErrorException save_lsi(joinpath(dir, "art"), lsi, other)
+        end
+    end
+
+    @testset "quantized_wordvectors searches the codes without expanding them" begin
+        mktempdir() do dir
+            d = joinpath(dir, "art")
+            save_lsi(d, lsi, p)
+            back = load_lsi(d, p)
+
+            q = quantized_wordvectors(back)
+            @test q isa SQu8.SQu8Database
+            @test length(q) == m
+            # the stored codes themselves, not a re-quantization or a rescaling of anything
+            @test q.Q === back.P.codes
+
+            ctx = GenericContext()
+            W = wordvectors(back)
+            dense = ExhaustiveSearch(Dist.NormCosine(), W)
+            quant = ExhaustiveSearch(Cosine(), q)
+            ids(R) = collect(IdView(R))
+            nbrs(idx, db, j) = Set(ids(search(idx, ctx, db[j], knnqueue(KnnSorted, 3))))
+            ref(j) = Set(ids(search(dense, ctx, W[j], knnqueue(KnnSorted, 3))))
+
+            # As SETS, not as ordered lists. This corpus is small enough that six pairs of
+            # tokens occur in exactly the same documents -- casa/tiene, una/y, manzana/pera,
+            # esta/rica, es/grande, cielo/sobre -- so LSI gives each pair one identical column
+            # and their order within a result is an arbitrary tie-break that neither path
+            # promises. The dense reference does not even return every token as its own
+            # nearest neighbour here, for the same reason.
+            @test all(nbrs(quant, q, j) == ref(j) for j in 1:m)
+
+            @testset "and the dense route gives the same thing" begin
+                qd = quantized_wordvectors(lsi)
+                @test qd isa SQu8.SQu8Database
+                @test length(qd) == m
+                @test Set(ids(search(ExhaustiveSearch(Cosine(), qd), ctx, qd[1],
+                                     knnqueue(KnnSorted, 3)))) == ref(1)
+            end
+
+            @testset "the distance is load-bearing, not interchangeable" begin
+                # `Cosine` reconstructs a real cosine from the codes -- dot product from the
+                # full expansion, norms from the stored code sums. `NormCosine` is `1 - dot`,
+                # which is a cosine only for unit vectors, and LSI columns are not. Measured on
+                # a real 4,273-token vocabulary the second one's top-10 overlap against the
+                # dense answer is 0.25 against 0.99. The bound here is loose on purpose:
+                # nineteen tokens, six of them sharing a column, and three neighbours asked for
+                # leaves little room to diverge, so this fixture understates it badly.
+                wrong = ExhaustiveSearch(SQu8.NormCosine(), q)
+                @test count(nbrs(wrong, q, j) != ref(j) for j in 1:m) >= m ÷ 4
+            end
         end
     end
 

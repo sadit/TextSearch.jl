@@ -1,6 +1,6 @@
 # This file is a part of TextSearch.jl
 
-export save_lsi, load_lsi, QuantizedProjection
+export save_lsi, load_lsi, QuantizedProjection, quantized_wordvectors
 
 # ── the stored projection ────────────────────────────────────────────────────
 #
@@ -207,4 +207,68 @@ function load_lsi(path::AbstractString, profile::TextProfile;
     P = QuantizedProjection(codes, mins, scales)
     LatentSemanticIndexing(profile.model, P, svals, want, Int(manifest[:maxoutdim]),
                            Symbol(String(manifest[:scaling])))
+end
+
+
+# ── the token embeddings, still quantized ────────────────────────────────────
+#
+# `wordvectors(lsi)` materializes a `(outdim, vocsize)` Float32 matrix and normalizes its
+# columns. For a stored projection that copy is the thing this format exists to avoid: 187 MB
+# for a 64 x 730,320 model, to hold what 47 MB of codes already say.
+#
+# So this hands the stored codes to `SimilaritySearch` as they are, and the only thing a
+# caller has to get right is the distance. Use `ScalarQuant.Cosine()`, which computes a real
+# cosine from the codes -- the dot product from the full expansion, and both norms from the
+# per-vector code sums every quantized vector already carries.
+#
+# NOT `SQu8.NormCosine()`. That one is `1 - dot`, which is a cosine only for unit vectors (its
+# docstring says so), and LSI columns are not unit vectors: their lengths vary by orders of
+# magnitude, so it ranks by length rather than by direction. Measured over 4,273 columns
+# against the dense normalized answer, top-10 overlap:
+#
+#   raw codes + NormCosine     0.2526 (outdim 256) / 0.0952 (64)   <- wrong, and plausible
+#   raw codes + SqL2           0.3419              / 0.3917
+#   raw codes + Cosine         0.9941              / 0.9921
+#
+# and a token is its own nearest neighbour 7.1% of the time in the first row. Note the trap in
+# the obvious diagnostic too: `SqL2` puts every token first by construction (`d(x, x) = 0`)
+# while disagreeing with cosine on two thirds of the list, so "is it its own nearest
+# neighbour" is necessary and not sufficient.
+#
+# Cosine is scale-invariant, which is why the RAW columns serve: `cos(u, v)` does not change
+# when either is scaled, so the stored projection answers the same question the normalized one
+# would. That also settles what the artifact stores -- raw, with nothing to undo.
+#
+# Per-column quantization rather than global, and that is measured too: `GlobalQuantDatabase`
+# at 8 bits scores 0.8042 / 0.8105 on the same task. Its shared `(min, scale)` saves the 8
+# bytes per column this keeps -- 34,184 B against 1,093,888 B of codes, 3% of the artifact --
+# and costs 19 points of overlap. Not a trade worth making here, though 4-bit global (0.7159,
+# half the codes) is the shape to revisit if a much smaller artifact is ever wanted.
+
+"""
+    quantized_wordvectors(lsi::LatentSemanticIndexing) -> SQu8Database
+
+The LSI embedding of every vocabulary token, as a quantized database `SimilaritySearch` can
+search directly.
+
+Search it with `ScalarQuant.Cosine()`, which reconstructs a true cosine from the codes. Do
+**not** use `SQu8.NormCosine()`: that assumes unit vectors and LSI columns are not unit
+vectors, so it ranks by length rather than direction -- wrongly, and plausibly enough to go
+unnoticed (a top-10 overlap of 0.25 against the dense answer, with a token its own nearest
+neighbour 7% of the time).
+
+From a projection that came from [`load_lsi`](@ref) this reuses the stored codes untouched,
+so it costs nothing but the wrapper. [`wordvectors`](@ref) is the dense counterpart, and
+returns normalized columns as a `Float32` matrix.
+"""
+function quantized_wordvectors(lsi::LatentSemanticIndexing{<:QuantizedProjection})
+    P = lsi.P
+    E = [SQMinC(P.mins[j], P.scales[j]) for j in eachindex(P.mins)]
+    SQu8Database(E, P.codes)
+end
+
+function quantized_wordvectors(lsi::LatentSemanticIndexing)
+    # a dense projection has no codes to reuse; quantize the columns as they are, since
+    # `Cosine` needs no normalization
+    SQu8.quantize(Matrix{Float32}(lsi.P))
 end
