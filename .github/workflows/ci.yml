@@ -8,6 +8,13 @@ on:
       - main
     # Sequence of patterns matched against refs/tags
     tags: '*'
+  # Pull requests too. Without this the suite ran only AFTER a merge, so a pull request's
+  # single green check was the Documentation build and nothing else -- which is how two
+  # branches that were each green on their own landed together red: neither had ever run the
+  # other's tests.
+  pull_request:
+    branches:
+      - main
 
 jobs:
   test:
