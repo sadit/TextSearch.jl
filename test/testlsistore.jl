@@ -1,5 +1,5 @@
 using Test, TextSearch, SimilaritySearch, LinearAlgebra
-using SimilaritySearch.ScalarQuant: SQu8, SQMinC
+using SimilaritySearch.ScalarQuant: SQu8, SQMinC, Cosine
 
 @testset "save_lsi / load_lsi" begin
     corpus = ["la casa roja tiene jardin", "la casa verde tiene jardin",
@@ -105,14 +105,16 @@ using SimilaritySearch.ScalarQuant: SQu8, SQMinC
             q = quantized_wordvectors(back)
             @test q isa SQu8.SQu8Database
             @test length(q) == m
-            # the stored codes themselves, not a re-quantization of anything
+            # the stored codes themselves, not a re-quantization or a rescaling of anything
             @test q.Q === back.P.codes
 
             ctx = GenericContext()
             W = wordvectors(back)
             dense = ExhaustiveSearch(Dist.NormCosine(), W)
-            quant = ExhaustiveSearch(SQu8.NormCosine(), q)
+            quant = ExhaustiveSearch(Cosine(), q)
             ids(R) = collect(IdView(R))
+            nbrs(idx, db, j) = Set(ids(search(idx, ctx, db[j], knnqueue(KnnSorted, 3))))
+            ref(j) = Set(ids(search(dense, ctx, W[j], knnqueue(KnnSorted, 3))))
 
             # As SETS, not as ordered lists. This corpus is small enough that six pairs of
             # tokens occur in exactly the same documents -- casa/tiene, una/y, manzana/pera,
@@ -120,39 +122,26 @@ using SimilaritySearch.ScalarQuant: SQu8, SQMinC
             # and their order within a result is an arbitrary tie-break that neither path
             # promises. The dense reference does not even return every token as its own
             # nearest neighbour here, for the same reason.
-            @test all(Set(ids(search(quant, ctx, q[j], knnqueue(KnnSorted, 3)))) ==
-                      Set(ids(search(dense, ctx, W[j], knnqueue(KnnSorted, 3)))) for j in 1:m)
+            @test all(nbrs(quant, q, j) == ref(j) for j in 1:m)
 
             @testset "and the dense route gives the same thing" begin
                 qd = quantized_wordvectors(lsi)
                 @test qd isa SQu8.SQu8Database
                 @test length(qd) == m
-                @test ids(search(ExhaustiveSearch(SQu8.NormCosine(), qd), ctx, qd[1],
-                                 knnqueue(KnnSorted, 3))) ==
-                      ids(search(dense, ctx, W[1], knnqueue(KnnSorted, 3)))
+                @test Set(ids(search(ExhaustiveSearch(Cosine(), qd), ctx, qd[1],
+                                     knnqueue(KnnSorted, 3)))) == ref(1)
             end
 
-            @testset "the normalization is load-bearing, not decoration" begin
-                # Handing `NormCosine` the RAW codes is the shortcut this function exists to
-                # prevent: that distance is `1 - dot`, a cosine only for unit vectors, and LSI
-                # columns are not unit vectors. Measured over 4,273 real columns the top-10
-                # overlap against the dense answer drops to 0.25, with a token its own nearest
-                # neighbour 7% of the time. Here it is enough to pin that the shortcut is not
-                # equivalent: some token stops being its own nearest neighbour.
-                raw = SQu8.SQu8Database([SQMinC(back.P.mins[j], back.P.scales[j]) for j in 1:m],
-                                        back.P.codes)
-                rawidx = ExhaustiveSearch(SQu8.NormCosine(), raw)
-                nbrs(idx, db, j) = Set(ids(search(idx, ctx, db[j], knnqueue(KnnSorted, 3))))
-                ref(j) = Set(ids(search(dense, ctx, W[j], knnqueue(KnnSorted, 3))))
-
-                # The normalized route reproduces the dense neighbourhood for EVERY token;
-                # the raw-code shortcut disagrees on a large share of them (8 of 19 as this
-                # fixture stands). The bound is loose on purpose: 19 tokens, six pairs of them
-                # sharing a column, and only three neighbours asked for leaves little room to
-                # diverge, so this understates the effect badly. Measured on a real 4,273-token
-                # vocabulary the shortcut's top-10 overlap against the dense answer is 0.25.
-                @test count(nbrs(quant, q, j) != ref(j) for j in 1:m) == 0
-                @test count(nbrs(rawidx, raw, j) != ref(j) for j in 1:m) >= m ÷ 4
+            @testset "the distance is load-bearing, not interchangeable" begin
+                # `Cosine` reconstructs a real cosine from the codes -- dot product from the
+                # full expansion, norms from the stored code sums. `NormCosine` is `1 - dot`,
+                # which is a cosine only for unit vectors, and LSI columns are not. Measured on
+                # a real 4,273-token vocabulary the second one's top-10 overlap against the
+                # dense answer is 0.25 against 0.99. The bound here is loose on purpose:
+                # nineteen tokens, six of them sharing a column, and three neighbours asked for
+                # leaves little room to diverge, so this fixture understates it badly.
+                wrong = ExhaustiveSearch(SQu8.NormCosine(), q)
+                @test count(nbrs(wrong, q, j) != ref(j) for j in 1:m) >= m ÷ 4
             end
         end
     end

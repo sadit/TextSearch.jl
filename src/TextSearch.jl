@@ -11,7 +11,7 @@ using SimilaritySearch: getminbatch
 using JSON3
 using ZipArchives
 using SHA: SHA2_256_CTX, update!, digest!
-using SimilaritySearch.ScalarQuant: SQMinC
+using SimilaritySearch.ScalarQuant: SQMinC, Cosine
 using SimilaritySearch.ScalarQuant.SQu8: SQu8Database
 import SimilaritySearch.ScalarQuant.SQu8 as SQu8
 using Downloads
