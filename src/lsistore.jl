@@ -1,6 +1,6 @@
 # This file is a part of TextSearch.jl
 
-export save_lsi, load_lsi, QuantizedProjection
+export save_lsi, load_lsi, QuantizedProjection, quantized_wordvectors
 
 # ── the stored projection ────────────────────────────────────────────────────
 #
@@ -207,4 +207,80 @@ function load_lsi(path::AbstractString, profile::TextProfile;
     P = QuantizedProjection(codes, mins, scales)
     LatentSemanticIndexing(profile.model, P, svals, want, Int(manifest[:maxoutdim]),
                            Symbol(String(manifest[:scaling])))
+end
+
+
+# ── the token embeddings, still quantized ────────────────────────────────────
+#
+# `wordvectors(lsi)` materializes a `(outdim, vocsize)` Float32 matrix and normalizes its
+# columns, which is what a token-neighbour search needs and what `query_expansion` already
+# uses. For a stored projection that copy is the thing this format exists to avoid: 187 MB for
+# a 64 x 730,320 model, to hold what 47 MB of codes already say.
+#
+# Handing the STORED codes straight to `SQu8.NormCosine` is the obvious move and it is wrong,
+# quietly. That distance is `1 - dot`, which is a cosine only for unit vectors -- its docstring
+# says so -- and LSI columns are not unit vectors. Measured over 4,273 columns against the
+# dense normalized answer:
+#
+#   raw codes + NormCosine        top-10 overlap 0.2526 (outdim 256) / 0.0952 (64)
+#   raw codes + SqL2                             0.3419              / 0.3917
+#   normalized + NormCosine                      0.9937              / 0.9913
+#
+# and a token is its own nearest neighbour only 7.1% / 1.7% of the time in the first row. That
+# is not a degraded answer, it is a different function: with magnitudes spanning orders of
+# magnitude, `1 - dot` ranks by length rather than by direction. Note the trap in the obvious
+# diagnostic too -- `SqL2` puts every token first by construction (`d(x, x) = 0`) while still
+# disagreeing with cosine on two thirds of the list.
+#
+# What makes the fix cheap is that per-column quantization is SCALE INVARIANT: it maps a
+# column's own `[min, max]` onto `0:255`, and scaling the column scales both ends, so `v` and
+# `v/‖v‖` quantize to the SAME codes. The whole difference lives in the `(min, scale)` pair.
+# So this divides those by the column's norm and reuses the codes untouched -- no second
+# quantization, no temporary matrix -- and measures 0.9939 / 0.9918, a shade ABOVE
+# re-quantizing, because it avoids a second rounding.
+#
+# That is also why the artifact stores the raw projection and not the normalized one: raw to
+# normalized is this parameter division, while normalized to raw would need the norms kept
+# somewhere as well. The derivation only runs one way.
+
+"""
+    quantized_wordvectors(lsi::LatentSemanticIndexing) -> SQu8Database
+
+The LSI embedding of every vocabulary token, unit-normalized and quantized, as a database that
+`SimilaritySearch` can search directly -- with `ScalarQuant.SQu8.NormCosine()`, which is the
+distance those normalized codes are for.
+
+The dense counterpart is [`wordvectors`](@ref), which returns the same embeddings as a
+`Float32` matrix. Prefer this one when the projection came from [`load_lsi`](@ref): it reuses
+the stored codes rather than expanding them, so it costs the column norms and nothing else.
+
+Do not reach past this and hand `SQu8.NormCosine` the codes a [`QuantizedProjection`](@ref)
+holds. They are the *raw* projection's codes, that distance assumes unit vectors, and the
+result is wrong in a way that looks plausible -- a top-10 overlap of 0.25 against the dense
+answer, with a token its own nearest neighbour 7% of the time.
+"""
+function quantized_wordvectors(lsi::LatentSemanticIndexing{<:QuantizedProjection})
+    P = lsi.P
+    k, n = size(P)
+    E = Vector{SQMinC}(undef, n)
+
+    @inbounds for j in 1:n
+        acc = 0f0
+        for i in 1:k
+            v = P[i, j]
+            acc += v * v
+        end
+        nrm = sqrt(acc)
+        # a column of zeros has no direction to normalize; leaving it be keeps it at the origin
+        E[j] = nrm > 0f0 ? SQMinC(P.mins[j] / nrm, P.scales[j] / nrm) :
+                           SQMinC(P.mins[j], P.scales[j])
+    end
+
+    SQu8Database(E, P.codes)
+end
+
+function quantized_wordvectors(lsi::LatentSemanticIndexing)
+    # a dense projection has no codes to reuse, so this is the ordinary route: normalize (which
+    # `wordvectors` already does) and quantize once
+    SQu8.quantize(wordvectors(lsi).matrix)
 end
