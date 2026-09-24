@@ -705,6 +705,11 @@ function zip_profile(dir::AbstractString, zippath::AbstractString=dir * ".zip";
     zippath
 end
 
+# A release carries each profile's LSI projection beside it as `<nickname>-lsi.zip` (see
+# `save_lsi`). That is not a profile -- `load_profile` would refuse it -- so it is left out of
+# the listing rather than offered for `download_profile` to install under a nickname.
+_is_profile_asset(name::AbstractString) = endswith(name, ".zip") && !endswith(name, "-lsi.zip")
+
 """
     list_remote_profiles(; repo::AbstractString="sadit/TextSearch.jl",
                            tag::AbstractString=PROFILES_RELEASE_TAG,
@@ -712,6 +717,7 @@ end
 
 Queries and returns available pre-computed linguistic profiles from GitHub releases or a custom URL.
 Returns a vector of `(name=nickname, filename=name, size=size_in_bytes, url=download_url, tag=tag)`.
+LSI artifacts published beside the profiles (`<nickname>-lsi.zip`) are not listed.
 """
 function list_remote_profiles(; repo::AbstractString="sadit/TextSearch.jl",
                                 tag::AbstractString=PROFILES_RELEASE_TAG,
@@ -732,7 +738,7 @@ function list_remote_profiles(; repo::AbstractString="sadit/TextSearch.jl",
     if haskey(data, :assets)
         for asset in data.assets
             name = String(asset.name)
-            if endswith(name, ".zip")
+            if _is_profile_asset(name)
                 nickname = first(splitext(name))
                 sz = Int(asset.size)
                 dl_url = String(asset.browser_download_url)
@@ -745,14 +751,14 @@ function list_remote_profiles(; repo::AbstractString="sadit/TextSearch.jl",
                 rtag = haskey(item, :tag_name) ? String(item.tag_name) : String(tag)
                 for asset in item.assets
                     name = String(asset.name)
-                    if endswith(name, ".zip")
+                    if _is_profile_asset(name)
                         nickname = first(splitext(name))
                         sz = Int(asset.size)
                         dl_url = String(asset.browser_download_url)
                         push!(results, (name=nickname, filename=name, size=sz, url=dl_url, tag=rtag))
                     end
                 end
-            elseif haskey(item, :name) && endswith(String(item.name), ".zip")
+            elseif haskey(item, :name) && _is_profile_asset(String(item.name))
                 name = String(item.name)
                 nickname = first(splitext(name))
                 sz = haskey(item, :size) ? Int(item.size) : 0
