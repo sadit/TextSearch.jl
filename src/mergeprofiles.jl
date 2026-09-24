@@ -18,9 +18,10 @@ export merge_profiles
 # is the whole point.
 
 # Value equality now lives on the config types themselves. What stays here is the one thing a
-# merge is stricter about: `save_profile` refuses to serialize custom generators, so any *loaded*
-# profile has none, and a non-empty list means someone built the config in-process -- two such
-# configs cannot be shown equivalent, so a merge declines rather than assuming.
+# merge is stricter about: any generator list. `save_profile` refuses custom generators, so a
+# non-empty list is either built in-process -- two such configs cannot be shown equivalent -- or
+# a `QgramGenerator` encoder, which is not what merging (a corpus-wide published profile from
+# parts) is for. A merge declines either rather than assuming.
 _same_tokenization(a::TokenizationConfig, b::TokenizationConfig) =
     a == b && isempty(a.generators) && isempty(b.generators)
 

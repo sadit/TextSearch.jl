@@ -64,4 +64,5 @@ include("fulltext.jl")
 include("testlsi.jl")
 include("testlemmas.jl")
 include("testri.jl")
+include("testqgrams.jl")
 @info "FINISH"

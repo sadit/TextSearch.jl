@@ -1,6 +1,6 @@
 # This file is a part of TextSearch.jl
 
-export AbstractTokenGenerator, UnigramGenerator, NWordGenerator, needs_unigrams, tokentag
+export AbstractTokenGenerator, UnigramGenerator, NWordGenerator, QgramGenerator, needs_unigrams, tokentag
 
 """
     AbstractTokenGenerator
@@ -68,3 +68,42 @@ struct NWordGenerator <: AbstractTokenGenerator
 end
 needs_unigrams(::NWordGenerator) = true
 tokentag(::NWordGenerator) = 'n'
+
+"""
+    QgramGenerator(q)
+
+Produces character `q`-grams (tagged `'q'`) over the whole normalized text, blanks included:
+they are not sub-words, since a window can span a word boundary (`"o de"` is a 4-gram of
+`"todo de"`), and the boundary blanks the normalizer adds make word starts and ends visible
+(`" to"`, `"do "`). Runs of blanks count as a single blank, so layout does not produce q-grams
+of its own. Each field of a multi-field document is its own text, so no q-gram spans two
+fields. Texts shorter than `q` produce none.
+
+Aimed at document-vs-document encodings (classification, clustering, dense encoders built on
+top) rather than short queries. Several lengths are several generators, and they combine with
+word tokens freely:
+
+```julia
+julia> tc = TextConfig(tokenization=TokenizationConfig(generators=[QgramGenerator(3)]));
+
+julia> collect(tokenize(tc, "ab c"))
+4-element Vector{String}:
+ " ab\tq"
+ "ab \tq"
+ "b c\tq"
+ " c \tq"
+```
+
+The tag is what keeps the 3-gram `que` (from `porque`) and the word `que` apart when both are
+generated, and what keeps word-level stopwords and lemmas from matching a q-gram; with
+`mark_token_type=false` they are the same token.
+"""
+struct QgramGenerator <: AbstractTokenGenerator
+    q::Int8
+
+    function QgramGenerator(q::Integer)
+        q >= 1 || throw(ArgumentError("QgramGenerator: q must be positive, got $q"))
+        new(q)
+    end
+end
+tokentag(::QgramGenerator) = 'q'
