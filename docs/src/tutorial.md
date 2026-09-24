@@ -687,16 +687,18 @@ textsearch list --remote
 # Download and install profiles locally
 textsearch download es en pt
 
-# LSI projections: list the release's, download one beside its profile, list installed ones
-textsearch list --remote --lsi
-textsearch download es --lsi
-textsearch list --lsi
+# LSI projections: listed beside the profiles, in their own section; downloaded on request
+textsearch list --remote                 # profiles, then LSI projections
+textsearch download es --lsi             # profile + its LSI, checked to belong to it
+textsearch install ./es-lsi.zip          # or an LSI zip you already have, bound to 'es'
+textsearch info es --lsi                 # which profile it names, bound or not, outdim
+textsearch uninstall es --lsi --force    # the LSI only; without --lsi, profile and LSI
 
 # Download from an arbitrary URL or custom release tag
 textsearch download https://example.com/profiles/custom_model.zip --as custom
 textsearch download es --tag profiles-1.1 --force
 
-# List locally installed profiles
+# List locally installed profiles and LSI projections
 textsearch list
 
 # Inspect detailed vocabulary, lineage, and artifact statistics

@@ -532,7 +532,7 @@ end
                 # it is not a profile, so it does not show up as one
                 @test "corp" in TextSearchApp.list_nicknames()
                 @test !any(endswith("-lsi"), TextSearchApp.list_nicknames())
-                @test occursin("corp  outdim=4", capture_stdout(() -> TextSearchApp.cmd_list(["--lsi"])))
+                @test occursin("  corp  outdim=4\n", capture_stdout(() -> TextSearchApp.cmd_list(["--lsi"])))
                 @test occursin("lsi:       installed, outdim=4",
                                capture_stdout(() -> TextSearchApp.cmd_info(["corp"])))
 
@@ -551,6 +551,40 @@ end
                 @test occursin("lsi:       not installed",
                                capture_stdout(() -> TextSearchApp.cmd_info(["other"])))
                 @test TextSearchApp.cmd_download(["https://example.org/x.zip", "--lsi"]) != 0
+
+                # list shows both, in separate sections; --profiles / --lsi narrow it
+                both = capture_stdout(() -> TextSearchApp.cmd_list(String[]))
+                @test occursin("profiles (", both) && occursin("LSI projections (", both)
+                @test findfirst("LSI projections", both).start > findfirst("corp", both).start
+                @test !occursin("LSI projections", capture_stdout(() -> TextSearchApp.cmd_list(["--profiles"])))
+                @test !occursin("profiles (", capture_stdout(() -> TextSearchApp.cmd_list(["--lsi"])))
+
+                # info on the LSI: by nickname with --lsi, or by path, told apart by its manifest
+                li = capture_stdout(() -> TextSearchApp.cmd_info(["corp", "--lsi"]))
+                @test occursin("bound:     yes, to the installed 'corp'", li)
+                @test occursin("outdim:    4", li)
+                lp = capture_stdout(() -> TextSearchApp.cmd_info([joinpath(rel, "corp-lsi.zip")]))
+                @test occursin("profile:   corp  id=$(TextSearch.profile_id(p))", lp)
+                @test_throws Exception TextSearchApp.cmd_info(["other", "--lsi"])
+
+                # uninstall --lsi keeps the profile
+                capture_stdout(() -> TextSearchApp.cmd_uninstall(["corp", "--lsi", "--force"]))
+                @test !isfile(TextSearchApp.lsi_path("corp")) && isfile(TextSearchApp.profile_path("corp"))
+                @test_throws Exception TextSearchApp.cmd_uninstall(["corp", "--lsi"])
+
+                # install recognizes an LSI zip, names it without -lsi, and binds it
+                capture_stdout(() -> TextSearchApp.cmd_install([joinpath(rel, "corp-lsi.zip")]))
+                @test TextSearchApp.lsi_binding("corp").bound
+                @test_throws Exception TextSearchApp.cmd_install([joinpath(rel, "corp-lsi.zip")])  # exists
+                # ...and refuses one bound to a different profile than the installed nickname's
+                @test_throws Exception TextSearchApp.cmd_install([joinpath(rel, "other-lsi.zip"), "corp", "--force"])
+                @test TextSearchApp.lsi_binding("corp").bound                    # untouched
+                # with no profile of that nickname installed it is accepted, and listed as waiting
+                capture_stdout(() -> TextSearchApp.cmd_install([joinpath(rel, "other-lsi.zip"), "lonely"]))
+                @test occursin("lonely  outdim=2  (profile 'lonely' is not installed)",
+                               capture_stdout(() -> TextSearchApp.cmd_list(["--lsi"])))
+                capture_stdout(() -> TextSearchApp.cmd_uninstall(["lonely", "--force"]))
+                @test !isfile(TextSearchApp.lsi_path("lonely"))
 
                 # uninstall takes the LSI with the profile, and says so before deleting
                 preview = capture_stdout(() -> TextSearchApp.cmd_uninstall(["corp"]))

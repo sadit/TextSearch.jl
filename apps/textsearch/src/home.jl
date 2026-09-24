@@ -61,6 +61,33 @@ Nicknames of the profiles that have an LSI projection installed, sorted alphabet
 list_lsi_nicknames() = sort([first(splitext(f)) for f in readdir(lsi_dir()) if endswith(f, ".zip")])
 
 """
+    default_lsi_nickname(path::AbstractString) -> String
+
+The nickname an LSI zip installs under by default: its filename without `.zip`, and without the
+`-lsi` suffix the releases name them with, so `es-lsi.zip` lands beside profile `es`.
+"""
+function default_lsi_nickname(path::AbstractString)
+    n = default_nickname(path)
+    endswith(n, "-lsi") ? n[1:end-4] : n
+end
+
+"""
+    _is_lsi_artifact(path) -> Bool
+
+Whether `path` (a zip or a directory) is an LSI artifact rather than a profile, told apart by its
+manifest: [`save_lsi`](@ref)'s names the profile it is bound to and stores quantized codes, which
+a profile manifest never does.
+"""
+function _is_lsi_artifact(path::AbstractString)
+    m = try
+        JSON3.read(TextSearch._profile_reader(path)("manifest.json"))
+    catch
+        return false
+    end
+    haskey(m, :profile) && haskey(m, :codes)
+end
+
+"""
     lsi_binding(nickname) -> Union{Nothing,NamedTuple}
 
 `nothing` when no LSI is installed for `nickname`; otherwise its [`lsi_summary`](@ref) plus

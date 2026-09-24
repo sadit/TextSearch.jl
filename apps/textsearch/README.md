@@ -280,18 +280,19 @@ downloaded, under `~/.textsearch/lsi/` (override the whole base directory with t
 `TEXTSEARCH_HOME` environment variable).
 
 ```
-textsearch list [--remote] [--lsi] [--tag TAG] [--url URL]      # installed profiles/LSIs, or a release's
-textsearch download <targets...> [--lsi] [--force] [--tag TAG]  # download and install from a release or URL
-textsearch install <path.zip> [nickname] [--force]       # copy a profile zip in, under a nickname
-textsearch info <nickname|path>                          # corpus stats, TextConfig, file path
-textsearch uninstall <nickname> [--force]                # print the file's path; --force deletes it
+textsearch list [--remote] [--profiles|--lsi] [--tag TAG] [--url URL]  # installed, or a release's
+textsearch download <targets...> [--lsi] [--force] [--tag TAG]         # from a release or URL
+textsearch install <path.zip> [nickname] [--force]          # a profile zip, or an LSI zip, in
+textsearch info <nickname|path> [--lsi]                     # stats, TextConfig, file path; or the LSI
+textsearch uninstall <nickname> [--lsi] [--force]           # print the paths; --force deletes
 ```
 
-- `list` lists installed nicknames. With `--remote` (or `-r`), queries available pre-computed
-  profiles directly from GitHub releases (`sadit/TextSearch.jl` by default) or from a custom `--url`.
-  With `--lsi` it lists LSI projections instead: the installed ones (flagging any that is not
-  bound to the installed profile of its nickname), or with `--remote` the release's
-  `<nickname>-lsi.zip` assets.
+- `list` lists what is installed in two sections, profiles and LSI projections -- separate
+  because an LSI is not a profile but belongs to one -- flagging an LSI that is not bound to the
+  installed profile of its nickname, or whose profile is not installed. With `--remote` (or `-r`)
+  it lists what a GitHub release offers (`sadit/TextSearch.jl` by default, or a custom `--url`),
+  in the same two sections: the release's `<nickname>.zip` and `<nickname>-lsi.zip` assets.
+  `--profiles` or `--lsi` shows one section only.
 - `download` fetches pre-computed profiles (e.g. `en`, `es`, `eu`, `fr`, `it`, `pt`, `ru` or
   direct HTTP/HTTPS/`file://` URLs) and installs them into `~/.textsearch/profiles/`; `--force`
   overwrites existing profiles. With `--lsi` it also fetches each profile's LSI projection into
@@ -299,16 +300,23 @@ textsearch uninstall <nickname> [--force]                # print the file's path
   checks it is bound to that profile by `profile_id`: one that names another profile is removed
   again rather than left where a consumer would load it.
 - `install` derives the nickname from the zip's filename if you don't give one explicitly;
-  `--force` overwrites an existing nickname (without it, a name collision is an error).
+  `--force` overwrites an existing nickname (without it, a name collision is an error). An LSI
+  zip is recognized by its manifest and installed into `~/.textsearch/lsi/`, named without the
+  `-lsi` suffix (`es-lsi.zip` -> `es`). It is refused if the installed profile of that nickname
+  is not the one it was fitted against; with no such profile installed yet it is accepted, and
+  `list` shows it as waiting for its profile. Replacing a profile whose installed LSI it no
+  longer matches prints a note saying so.
 - `info` prints `trainsize`/`vocsize`/`numtokens`/`avgdoclen`, how many query_expansion/lemma/
   stopword entries were saved, how many orthographic variants the vocabulary yields, the
   lineage, the full `TextConfig` (normalization + tokenization + pipeline), and the file's
   absolute path. It takes a path as well as an installed nickname, so a freshly fitted or
   merged profile can be inspected before deciding whether to install it. For an installed
   nickname it also reports its LSI: installed and bound, installed but bound to another
-  profile, or not installed.
+  profile, or not installed. `info <nickname> --lsi`, or `info` on a path to an LSI zip, shows
+  the LSI itself: the profile it names (id, and where it was published), whether that profile
+  is installed and bound, `outdim` and scaling.
 - `uninstall` deletes only with `--force`, and takes the profile's LSI with it, since an LSI
-  bound to a removed profile is one nothing can load. Without `--force`, the command prints the
+  bound to a removed profile is one nothing can load; `--lsi` removes only the LSI. Without `--force`, the command prints the
   installed files' paths and sizes and the exact invocation that would delete them. The reason for that default is
   that here the registration *is* the file: a profile zip can represent hours of compute and the
   installed copy may be the only one left, so the destructive reading of "uninstall" has to be
@@ -590,7 +598,11 @@ installed 'jardin' -> ~/.textsearch/profiles/jardin.zip
 textsearch list
 ```
 ```
-jardin
+profiles (~/.textsearch/profiles):
+  jardin
+
+LSI projections (~/.textsearch/lsi):
+  (none)
 ```
 
 ```sh
