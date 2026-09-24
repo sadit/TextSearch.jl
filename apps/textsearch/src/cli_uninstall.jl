@@ -25,17 +25,24 @@ deleted. The default is the reporting one because the name is ambiguous in a way
 """
 function cmd_uninstall(args::Vector{String})
     o = parse_uninstall_args(args)
-    path = profile_path(o["nickname"])
-    isfile(path) || error("no installed profile named '$(o["nickname"])'; run 'textsearch list' to see installed profiles")
-    size = Base.format_bytes(filesize(path))
+    nick = o["nickname"]
+    # the profile and, if installed, its LSI: removing only the profile would leave a projection
+    # that nothing can load, since it is bound to exactly that profile
+    paths = filter(isfile, [profile_path(nick), lsi_path(nick)])
+    isempty(paths) && error("no installed profile named '$nick'; run 'textsearch list' to see installed profiles")
 
     if o["force"]
-        rm(path)
-        println("deleted '$(o["nickname"])' ($size) from $path")
+        for path in paths
+            size = Base.format_bytes(filesize(path))
+            rm(path)
+            println("deleted ", path == lsi_path(nick) ? "LSI for '$nick'" : "'$nick'", " ($size) from $path")
+        end
     else
-        println("'$(o["nickname"])' is installed at:")
-        println("  $path  ($size)")
-        println("nothing was deleted -- pass --force to remove the file:")
-        println("  textsearch uninstall $(o["nickname"]) --force")
+        println("'$nick' is installed at:")
+        for path in paths
+            println("  $path  ($(Base.format_bytes(filesize(path))))")
+        end
+        println("nothing was deleted -- pass --force to remove ", length(paths) == 1 ? "the file:" : "them:")
+        println("  textsearch uninstall $nick --force")
     end
 end

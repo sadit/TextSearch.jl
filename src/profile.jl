@@ -1,7 +1,7 @@
 # This file is a part of TextSearch.jl
 
 export save_profile, load_profile, zip_profile, download_profile, list_remote_profiles,
-       profile_id, PROFILES_RELEASE_TAG
+       download_lsi, list_remote_lsi, profile_id, PROFILES_RELEASE_TAG
 
 # Bumped to "1.1" for the expansion network's move to ids (see `_save_expansion`).
 #
@@ -726,22 +726,23 @@ function zip_profile(dir::AbstractString, zippath::AbstractString=dir * ".zip";
 end
 
 # A release carries each profile's LSI projection beside it as `<nickname>-lsi.zip` (see
-# `save_lsi`). That is not a profile -- `load_profile` would refuse it -- so it is left out of
-# the listing rather than offered for `download_profile` to install under a nickname.
-_is_profile_asset(name::AbstractString) = endswith(name, ".zip") && !endswith(name, "-lsi.zip")
+# `save_lsi`). That is not a profile -- `load_profile` would refuse it -- so the two are listed
+# and downloaded separately: `list_remote_profiles`/`download_profile` never offer an LSI under
+# a profile nickname, and `list_remote_lsi`/`download_lsi` are how one is reached.
+const _LSI_ASSET_SUFFIX = "-lsi.zip"
+_is_lsi_asset(name::AbstractString) = endswith(name, _LSI_ASSET_SUFFIX)
+_is_profile_asset(name::AbstractString) = endswith(name, ".zip") && !_is_lsi_asset(name)
+_profile_nickname(name::AbstractString) = String(first(splitext(name)))
+_lsi_nickname(name::AbstractString) = String(chop(name; tail=length(_LSI_ASSET_SUFFIX)))
 
-"""
-    list_remote_profiles(; repo::AbstractString="sadit/TextSearch.jl",
-                           tag::AbstractString=PROFILES_RELEASE_TAG,
-                           url::Union{Nothing,AbstractString}=nothing) -> Vector{NamedTuple}
+_textsearch_home() = get(ENV, "TEXTSEARCH_HOME", joinpath(homedir(), ".textsearch"))
 
-Queries and returns available pre-computed linguistic profiles from GitHub releases or a custom URL.
-Returns a vector of `(name=nickname, filename=name, size=size_in_bytes, url=download_url, tag=tag)`.
-LSI artifacts published beside the profiles (`<nickname>-lsi.zip`) are not listed.
-"""
-function list_remote_profiles(; repo::AbstractString="sadit/TextSearch.jl",
-                                tag::AbstractString=PROFILES_RELEASE_TAG,
-                                url::Union{Nothing,AbstractString}=nothing)
+const _RemoteAsset = NamedTuple{(:name, :filename, :size, :url, :tag), Tuple{String, String, Int, String, String}}
+
+# `keep` selects the assets and `nick` names them; everything else -- the API endpoint, the
+# three JSON shapes a release listing or a custom URL can come in -- is shared by the two kinds.
+function _list_remote_assets(keep, nick; repo::AbstractString, tag::AbstractString,
+                             url::Union{Nothing,AbstractString})
     api_url = url !== nothing ? String(url) :
               (tag == "latest" ?
                   "https://api.github.com/repos/$repo/releases/latest" :
@@ -754,16 +755,13 @@ function list_remote_profiles(; repo::AbstractString="sadit/TextSearch.jl",
         rm(tmppath; force=true)
     end
 
-    results = NamedTuple{(:name, :filename, :size, :url, :tag), Tuple{String, String, Int, String, String}}[]
+    results = _RemoteAsset[]
     if haskey(data, :assets)
         for asset in data.assets
             name = String(asset.name)
-            if _is_profile_asset(name)
-                nickname = first(splitext(name))
-                sz = Int(asset.size)
-                dl_url = String(asset.browser_download_url)
-                push!(results, (name=nickname, filename=name, size=sz, url=dl_url, tag=String(tag)))
-            end
+            keep(name) || continue
+            push!(results, (name=nick(name), filename=name, size=Int(asset.size),
+                            url=String(asset.browser_download_url), tag=String(tag)))
         end
     elseif data isa AbstractVector
         for item in data
@@ -771,24 +769,73 @@ function list_remote_profiles(; repo::AbstractString="sadit/TextSearch.jl",
                 rtag = haskey(item, :tag_name) ? String(item.tag_name) : String(tag)
                 for asset in item.assets
                     name = String(asset.name)
-                    if _is_profile_asset(name)
-                        nickname = first(splitext(name))
-                        sz = Int(asset.size)
-                        dl_url = String(asset.browser_download_url)
-                        push!(results, (name=nickname, filename=name, size=sz, url=dl_url, tag=rtag))
-                    end
+                    keep(name) || continue
+                    push!(results, (name=nick(name), filename=name, size=Int(asset.size),
+                                    url=String(asset.browser_download_url), tag=rtag))
                 end
-            elseif haskey(item, :name) && _is_profile_asset(String(item.name))
+            elseif haskey(item, :name) && keep(String(item.name))
                 name = String(item.name)
-                nickname = first(splitext(name))
                 sz = haskey(item, :size) ? Int(item.size) : 0
                 dl_url = haskey(item, :url) ? String(item.url) : (haskey(item, :browser_download_url) ? String(item.browser_download_url) : "")
-                push!(results, (name=nickname, filename=name, size=sz, url=dl_url, tag=String(tag)))
+                push!(results, (name=nick(name), filename=name, size=sz, url=dl_url, tag=String(tag)))
             end
         end
     end
     results
 end
+
+"""
+    list_remote_profiles(; repo::AbstractString="sadit/TextSearch.jl",
+                           tag::AbstractString=PROFILES_RELEASE_TAG,
+                           url::Union{Nothing,AbstractString}=nothing) -> Vector{NamedTuple}
+
+Queries and returns available pre-computed linguistic profiles from GitHub releases or a custom URL.
+Returns a vector of `(name=nickname, filename=name, size=size_in_bytes, url=download_url, tag=tag)`.
+LSI artifacts published beside the profiles (`<nickname>-lsi.zip`) are not listed; see
+[`list_remote_lsi`](@ref).
+"""
+list_remote_profiles(; repo::AbstractString="sadit/TextSearch.jl",
+                       tag::AbstractString=PROFILES_RELEASE_TAG,
+                       url::Union{Nothing,AbstractString}=nothing) =
+    _list_remote_assets(_is_profile_asset, _profile_nickname; repo, tag, url)
+
+"""
+    list_remote_lsi(; repo::AbstractString="sadit/TextSearch.jl",
+                      tag::AbstractString=PROFILES_RELEASE_TAG,
+                      url::Union{Nothing,AbstractString}=nothing) -> Vector{NamedTuple}
+
+The LSI projections published beside the profiles of a release, as `<nickname>-lsi.zip`, in the
+same shape [`list_remote_profiles`](@ref) returns: `name` is the nickname of the **profile** each
+one belongs to (`"es"` for `es-lsi.zip`), which is what [`download_lsi`](@ref) takes.
+"""
+list_remote_lsi(; repo::AbstractString="sadit/TextSearch.jl",
+                  tag::AbstractString=PROFILES_RELEASE_TAG,
+                  url::Union{Nothing,AbstractString}=nothing) =
+    _list_remote_assets(_is_lsi_asset, _lsi_nickname; repo, tag, url)
+
+# Fetches `filename` from a release (or from `url`: a base URL it is appended to, or a direct
+# `.zip` link) into `target`, through a temporary file so an interrupted download never leaves a
+# truncated archive under the installed name.
+function _download_release_file(dl_url::AbstractString, target::AbstractString, force::Bool)
+    isfile(target) && !force && return String(target)
+    mkpath(dirname(target))
+    tmppath = tempname() * ".zip"
+    try
+        Downloads.download(dl_url, tmppath; headers=["User-Agent" => "TextSearch.jl"])
+        mv(tmppath, target; force=true)
+    catch e
+        rm(tmppath; force=true)
+        rethrow(e)
+    end
+    String(target)
+end
+
+_release_url(filename, repo, tag, url) =
+    url === nothing ? "https://github.com/$repo/releases/download/$tag/$filename" :
+    endswith(url, ".zip") ? String(url) : joinpath(String(url), filename)
+
+# `file://` too: a mirror or a test can serve a release from a directory
+_is_direct_url(s::AbstractString) = any(startswith(s, p) for p in ("http://", "https://", "file://"))
 
 """
     download_profile(nickname_or_url::AbstractString;
@@ -801,7 +848,8 @@ end
 Downloads a pre-computed linguistic profile (`<nickname>.zip`) from a GitHub release or direct URL
 and saves it locally. By default, installs under `~/.textsearch/profiles/<nickname>.zip` (or
 `\$TEXTSEARCH_HOME/profiles/<nickname>.zip`), or into `dest` if explicitly specified.
-Returns the file path of the downloaded archive.
+Returns the file path of the downloaded archive. Its LSI projection, if the release has one, is
+fetched separately with [`download_lsi`](@ref).
 """
 function download_profile(nickname_or_url::AbstractString;
                           repo::AbstractString="sadit/TextSearch.jl",
@@ -809,32 +857,50 @@ function download_profile(nickname_or_url::AbstractString;
                           dest::Union{Nothing,AbstractString}=nothing,
                           url::Union{Nothing,AbstractString}=nothing,
                           force::Bool=false)
-    is_direct_url = startswith(nickname_or_url, "http://") || startswith(nickname_or_url, "https://")
-    nickname = is_direct_url ? first(splitext(basename(nickname_or_url))) : String(nickname_or_url)
+    direct = _is_direct_url(nickname_or_url)
+    nickname = direct ? _profile_nickname(basename(nickname_or_url)) : String(nickname_or_url)
+    target = dest === nothing ? joinpath(_textsearch_home(), "profiles", "$nickname.zip") : String(dest)
+    dl_url = direct ? String(nickname_or_url) : _release_url("$nickname.zip", repo, tag, url)
+    _download_release_file(dl_url, target, force)
+end
 
-    target = dest === nothing ?
-        joinpath(get(ENV, "TEXTSEARCH_HOME", joinpath(homedir(), ".textsearch")), "profiles", "$nickname.zip") :
-        String(dest)
-    if isfile(target) && !force
-        return target
-    end
-    mkpath(dirname(target))
+"""
+    download_lsi(nickname_or_url::AbstractString;
+                 repo::AbstractString="sadit/TextSearch.jl",
+                 tag::AbstractString=PROFILES_RELEASE_TAG,
+                 dest::Union{Nothing,AbstractString}=nothing,
+                 url::Union{Nothing,AbstractString}=nothing,
+                 force::Bool=false) -> String
 
-    dl_url = if is_direct_url
-        String(nickname_or_url)
-    elseif url !== nothing
-        endswith(url, ".zip") ? String(url) : joinpath(String(url), "$nickname.zip")
+Downloads the LSI projection published beside profile `nickname` (the release asset
+`<nickname>-lsi.zip`) and returns its local path: `~/.textsearch/lsi/<nickname>.zip` by default
+(or under `\$TEXTSEARCH_HOME`), or `dest`. Kept apart from `profiles/` because it is not a
+profile, and it is several times larger than one, so it is only ever fetched on request.
+
+Nothing is checked here. What binds the file to its profile is [`profile_id`](@ref), and
+[`load_lsi`](@ref) refuses it against any other profile; [`lsi_summary`](@ref) reads which
+profile it names without loading the projection.
+
+```julia
+p = load_profile(download_profile("es"))
+lsi = load_lsi(download_lsi("es"), p; outdim=64)
+```
+"""
+function download_lsi(nickname_or_url::AbstractString;
+                      repo::AbstractString="sadit/TextSearch.jl",
+                      tag::AbstractString=PROFILES_RELEASE_TAG,
+                      dest::Union{Nothing,AbstractString}=nothing,
+                      url::Union{Nothing,AbstractString}=nothing,
+                      force::Bool=false)
+    direct = _is_direct_url(nickname_or_url)
+    nickname = if direct
+        f = basename(nickname_or_url)
+        _is_lsi_asset(f) ? _lsi_nickname(f) : _profile_nickname(f)
     else
-        "https://github.com/$repo/releases/download/$tag/$nickname.zip"
+        String(nickname_or_url)
     end
-
-    tmppath = tempname() * ".zip"
-    try
-        Downloads.download(dl_url, tmppath; headers=["User-Agent" => "TextSearch.jl"])
-        mv(tmppath, target; force=true)
-    catch e
-        rm(tmppath; force=true)
-        rethrow(e)
-    end
-    target
+    target = dest === nothing ? joinpath(_textsearch_home(), "lsi", "$nickname.zip") : String(dest)
+    dl_url = direct ? String(nickname_or_url) :
+             _release_url("$nickname$_LSI_ASSET_SUFFIX", repo, tag, url)
+    _download_release_file(dl_url, target, force)
 end

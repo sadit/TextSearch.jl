@@ -661,14 +661,18 @@ Downloads come from the release named after the profile format, [`PROFILES_RELEA
 (`"profiles-1.1"` today), so every package version that reads a format fetches the same files.
 Each profile there has its LSI projection beside it as `<nickname>-lsi.zip` (256 dimensions,
 fitted on the first paragraph of every article). It is optional and much larger than the
-profile, so it is not downloaded with it:
+profile, so it is not downloaded with it. [`list_remote_lsi`](@ref) lists them and
+[`download_lsi`](@ref) fetches one into `~/.textsearch/lsi/`, apart from the profiles;
+[`lsi_summary`](@ref) says which profile a file is bound to without loading the projection:
 
 ```julia
-using TextSearch, Downloads
+using TextSearch
 
+[r.name for r in list_remote_lsi()]           # the profiles that have one
 p = load_profile(download_profile("es"))
-url = "https://github.com/sadit/TextSearch.jl/releases/download/$PROFILES_RELEASE_TAG/es-lsi.zip"
-lsi = load_lsi(Downloads.download(url, "es-lsi.zip"), p; outdim=64)   # any outdim up to 256
+path = download_lsi("es")
+lsi_summary(path).profile_id == profile_id(p)  # true: this LSI belongs to this profile
+lsi = load_lsi(path, p; outdim=64)             # any outdim up to 256
 vectorize(lsi, "aprendizaje automático")
 ```
 
@@ -682,6 +686,11 @@ textsearch list --remote
 
 # Download and install profiles locally
 textsearch download es en pt
+
+# LSI projections: list the release's, download one beside its profile, list installed ones
+textsearch list --remote --lsi
+textsearch download es --lsi
+textsearch list --lsi
 
 # Download from an arbitrary URL or custom release tag
 textsearch download https://example.com/profiles/custom_model.zip --as custom

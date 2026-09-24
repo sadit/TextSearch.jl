@@ -352,6 +352,12 @@ using Test, TextSearch, SimilaritySearch, JSON3
             mock_remotes = list_remote_profiles(; url="file://" * mock_json)
             # the LSI artifact beside it is not a profile, so it is not listed
             @test length(mock_remotes) == 1
+            # it is listed by list_remote_lsi instead, under the nickname of its profile
+            mock_lsi = list_remote_lsi(; url="file://" * mock_json)
+            @test length(mock_lsi) == 1
+            @test mock_lsi[1].name == "mock_es"
+            @test mock_lsi[1].filename == "mock_es-lsi.zip"
+            @test mock_lsi[1].size == 4096
             @test mock_remotes[1].name == "mock_es"
             @test mock_remotes[1].size == 1024
         finally

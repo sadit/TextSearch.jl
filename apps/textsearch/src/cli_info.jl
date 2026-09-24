@@ -44,6 +44,15 @@ function cmd_info(args::Vector{String})
     println("variants:  ", nvar == 0 ?
             "none derivable (the profile folds what a query would fold)" :
             "$nvar folded spellings derivable from the vocabulary")
+    # Only an installed nickname has an installed LSI to look for; a path is a profile on its own.
+    if path == profile_path(o["profile"])
+        b = lsi_binding(o["profile"])
+        println("lsi:       ", b === nothing ?
+                "not installed (textsearch download $(o["profile"]) --lsi)" :
+                b.bound ? "installed, outdim=$(b.outdim) -> $(b.path)" :
+                "installed at $(b.path) but bound to profile id=$(b.profile_id), not this one " *
+                "(id=$(profile_id(p))) -- load_lsi will refuse it")
+    end
     println()
     show(stdout, gettextconfig(p))
 end
