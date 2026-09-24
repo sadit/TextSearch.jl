@@ -116,9 +116,9 @@ coverage to Codecov. `documentation.yml` builds and deploys docs on pushes/tags 
   on demand by the others rather than duplicated.
 - **Parallelism uses SimilaritySearch's `@BATCHES`** (v1.0+; no `Polyester` dependency
   anywhere in this package anymore). Simple per-item loops use the one-argument form
-  (`@BATCHES getminbatch(n) for i in 1:n ... end`); `voc.jl`'s `tokenize_and_append!` uses
-  the 5-section form (`@BEGINBATCH`/`@LOOP`/`@ENDBATCH`) to merge per-batch counters into
-  `Vocabulary` once per batch instead of once per document. Always call `getminbatch(n)`
+  (`@BATCHES getminbatch(n) for i in 1:n ... end`); `voc.jl`'s `tokenize_and_append!` instead
+  counts each batch into its own lock-free table and folds the tables pairwise, in corpus
+  order, so token ids come out in order of first appearance whatever the thread count. Always call `getminbatch(n)`
   with **one** argument — `getminbatch(n, nt)`'s second argument is a thread count, not a
   second corpus-size-like quantity; passing anything corpus-derived there silently returns
   a useless batch size (this was a real, previously-unnoticed bug in this codebase before
