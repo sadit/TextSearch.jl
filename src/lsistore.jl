@@ -1,6 +1,6 @@
 # This file is a part of TextSearch.jl
 
-export save_lsi, load_lsi, QuantizedProjection, quantized_wordvectors
+export save_lsi, load_lsi, lsi_summary, QuantizedProjection, quantized_wordvectors
 
 # ── the stored projection ────────────────────────────────────────────────────
 #
@@ -143,6 +143,33 @@ function save_lsi(dir::AbstractString, lsi::LatentSemanticIndexing, profile::Tex
 
     _write_json(joinpath(dir, _LSI_MANIFEST_NAME), manifest)
     dir
+end
+
+"""
+    lsi_summary(path) -> NamedTuple
+
+What an LSI artifact (a directory or a zip written by [`save_lsi`](@ref)) says about itself,
+read from its manifest without loading the projection:
+`(profile_id, name, repo, tag, outdim, maxoutdim, scaling)`.
+
+`profile_id` is the [`profile_id`](@ref) of the profile it was fitted against -- the same
+check [`load_lsi`](@ref) makes, at the cost of a manifest read rather than of dequantizing
+hundreds of megabytes, which is what a listing or an install check wants:
+
+```julia
+lsi_summary(download_lsi("es")).profile_id == profile_id(p)
+```
+"""
+function lsi_summary(path::AbstractString)
+    manifest = JSON3.read(_profile_reader(path)(_LSI_MANIFEST_NAME))
+    version = String(get(manifest, :format_version, "(missing)"))
+    version == _LSI_FORMAT_VERSION ||
+        error("unsupported LSI artifact format_version: $version (this build reads " *
+              "$_LSI_FORMAT_VERSION only). Refit it.")
+    ref = manifest[:profile]
+    (profile_id=String(ref[:id]), name=String(ref[:name]), repo=String(ref[:repo]),
+     tag=String(ref[:tag]), outdim=Int(manifest[:outdim]), maxoutdim=Int(manifest[:maxoutdim]),
+     scaling=Symbol(String(manifest[:scaling])))
 end
 
 """

@@ -505,6 +505,96 @@ end
                 @test occursin("es", list_remote_out)
             end
 
+            @testset "download --lsi / list --lsi / info / uninstall, against a local release" begin
+                # a release laid out the way profiles-1.1 is: <nick>.zip beside <nick>-lsi.zip,
+                # served over file:// through --url so the test needs no network
+                rel = joinpath(dir, "release")
+                mkpath(rel)
+                cp(zippath, joinpath(rel, "corp.zip"); force=true)
+                p = TextSearch.load_profile(zippath)
+                lsi = LatentSemanticIndexing(p.model, docs; maxoutdim=4, verbose=false)
+                save_lsi(joinpath(dir, "corp-lsi"), lsi, p; name="corp")
+                zip_profile(joinpath(dir, "corp-lsi"), joinpath(rel, "corp-lsi.zip"))
+                # and one whose LSI names a different profile: the batch profile fitted above
+                other = TextSearch.load_profile(joinpath(dir, "profiles2", "corpus-0001.zip"))
+                olsi = LatentSemanticIndexing(other.model, docs; maxoutdim=2, verbose=false)
+                save_lsi(joinpath(dir, "other-lsi"), olsi, other)
+                cp(zippath, joinpath(rel, "other.zip"); force=true)
+                zip_profile(joinpath(dir, "other-lsi"), joinpath(rel, "other-lsi.zip"))
+                url = "file://" * rel
+
+                out = capture_stdout() do
+                    @test TextSearchApp.cmd_download(["corp", "--lsi", "--url", url]) == 0
+                end
+                @test occursin("installed LSI for 'corp' (outdim=4)", out)
+                @test isfile(TextSearchApp.lsi_path("corp"))
+                @test TextSearchApp.lsi_binding("corp").bound
+                # it is not a profile, so it does not show up as one
+                @test "corp" in TextSearchApp.list_nicknames()
+                @test !any(endswith("-lsi"), TextSearchApp.list_nicknames())
+                @test occursin("  corp  outdim=4\n", capture_stdout(() -> TextSearchApp.cmd_list(["--lsi"])))
+                @test occursin("lsi:       installed, outdim=4",
+                               capture_stdout(() -> TextSearchApp.cmd_info(["corp"])))
+
+                # an installed profile is what an LSI is added to: no --force needed for it
+                rm(TextSearchApp.lsi_path("corp"))
+                capture_stdout() do
+                    @test TextSearchApp.cmd_download(["corp", "--lsi", "--url", url]) == 0
+                end
+                @test isfile(TextSearchApp.lsi_path("corp"))
+
+                # an LSI bound to another profile is refused and not left installed
+                capture_stdout() do
+                    @test TextSearchApp.cmd_download(["other", "--lsi", "--url", url]) != 0
+                end
+                @test !isfile(TextSearchApp.lsi_path("other"))
+                @test occursin("lsi:       not installed",
+                               capture_stdout(() -> TextSearchApp.cmd_info(["other"])))
+                @test TextSearchApp.cmd_download(["https://example.org/x.zip", "--lsi"]) != 0
+
+                # list shows both, in separate sections; --profiles / --lsi narrow it
+                both = capture_stdout(() -> TextSearchApp.cmd_list(String[]))
+                @test occursin("profiles (", both) && occursin("LSI projections (", both)
+                @test findfirst("LSI projections", both).start > findfirst("corp", both).start
+                @test !occursin("LSI projections", capture_stdout(() -> TextSearchApp.cmd_list(["--profiles"])))
+                @test !occursin("profiles (", capture_stdout(() -> TextSearchApp.cmd_list(["--lsi"])))
+
+                # info on the LSI: by nickname with --lsi, or by path, told apart by its manifest
+                li = capture_stdout(() -> TextSearchApp.cmd_info(["corp", "--lsi"]))
+                @test occursin("bound:     yes, to the installed 'corp'", li)
+                @test occursin("outdim:    4", li)
+                lp = capture_stdout(() -> TextSearchApp.cmd_info([joinpath(rel, "corp-lsi.zip")]))
+                @test occursin("profile:   corp  id=$(TextSearch.profile_id(p))", lp)
+                @test_throws Exception TextSearchApp.cmd_info(["other", "--lsi"])
+
+                # uninstall --lsi keeps the profile
+                capture_stdout(() -> TextSearchApp.cmd_uninstall(["corp", "--lsi", "--force"]))
+                @test !isfile(TextSearchApp.lsi_path("corp")) && isfile(TextSearchApp.profile_path("corp"))
+                @test_throws Exception TextSearchApp.cmd_uninstall(["corp", "--lsi"])
+
+                # install recognizes an LSI zip, names it without -lsi, and binds it
+                capture_stdout(() -> TextSearchApp.cmd_install([joinpath(rel, "corp-lsi.zip")]))
+                @test TextSearchApp.lsi_binding("corp").bound
+                @test_throws Exception TextSearchApp.cmd_install([joinpath(rel, "corp-lsi.zip")])  # exists
+                # ...and refuses one bound to a different profile than the installed nickname's
+                @test_throws Exception TextSearchApp.cmd_install([joinpath(rel, "other-lsi.zip"), "corp", "--force"])
+                @test TextSearchApp.lsi_binding("corp").bound                    # untouched
+                # with no profile of that nickname installed it is accepted, and listed as waiting
+                capture_stdout(() -> TextSearchApp.cmd_install([joinpath(rel, "other-lsi.zip"), "lonely"]))
+                @test occursin("lonely  outdim=2  (profile 'lonely' is not installed)",
+                               capture_stdout(() -> TextSearchApp.cmd_list(["--lsi"])))
+                capture_stdout(() -> TextSearchApp.cmd_uninstall(["lonely", "--force"]))
+                @test !isfile(TextSearchApp.lsi_path("lonely"))
+
+                # uninstall takes the LSI with the profile, and says so before deleting
+                preview = capture_stdout(() -> TextSearchApp.cmd_uninstall(["corp"]))
+                @test occursin(TextSearchApp.lsi_path("corp"), preview)
+                capture_stdout(() -> TextSearchApp.cmd_uninstall(["corp", "--force"]))
+                @test !isfile(TextSearchApp.profile_path("corp"))
+                @test !isfile(TextSearchApp.lsi_path("corp"))
+                capture_stdout(() -> TextSearchApp.cmd_uninstall(["other", "--force"]))
+            end
+
             @testset "merge: folds batched profiles back into one" begin
                 # profiles2/ holds the 3 profiles fit above with batch_size=3 over 7 docs
                 batchdir = joinpath(dir, "profiles2")

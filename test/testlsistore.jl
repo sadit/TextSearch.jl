@@ -36,6 +36,43 @@ using SimilaritySearch.ScalarQuant: SQu8, SQMinC, Cosine
         end
     end
 
+    @testset "lsi_summary reads the binding without loading the projection" begin
+        mktempdir() do dir
+            d = joinpath(dir, "art")
+            save_lsi(d, lsi, p; name="test", repo="sadit/TextSearch.jl", tag="profiles-1.1")
+            z = joinpath(dir, "art.zip")
+            zip_profile(d, z)
+            for path in (d, z)
+                s = lsi_summary(path)
+                @test s.profile_id == profile_id(p)
+                @test (s.name, s.repo, s.tag) == ("test", "sadit/TextSearch.jl", "profiles-1.1")
+                @test s.outdim == outdim(lsi)
+                @test s.scaling === :none
+            end
+        end
+    end
+
+    @testset "download_lsi fetches <nick>-lsi.zip into lsi/, apart from the profiles" begin
+        mktempdir() do dir
+            rel = joinpath(dir, "release")
+            save_lsi(joinpath(dir, "art"), lsi, p)
+            mkpath(rel)
+            zip_profile(joinpath(dir, "art"), joinpath(rel, "test-lsi.zip"))
+            withenv("TEXTSEARCH_HOME" => joinpath(dir, "home")) do
+                path = download_lsi("test"; url="file://" * rel)
+                @test path == joinpath(dir, "home", "lsi", "test.zip")
+                @test lsi_summary(path).profile_id == profile_id(p)
+                @test outdim(load_lsi(path, p)) == outdim(lsi)
+                # an existing file is kept unless forced, like download_profile
+                write(path, "not a zip")
+                @test download_lsi("test"; url="file://" * rel) == path
+                @test read(path, String) == "not a zip"
+                download_lsi("test"; url="file://" * rel, force=true)
+                @test lsi_summary(path).profile_id == profile_id(p)
+            end
+        end
+    end
+
     @testset "it reads back from a zip as well as a directory" begin
         mktempdir() do dir
             d = joinpath(dir, "art")
