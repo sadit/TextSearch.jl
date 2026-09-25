@@ -317,6 +317,22 @@ using Test, TextSearch, SimilaritySearch, JSON3
         end
     end
 
+    @testset "the API token goes to api.github.com and nowhere else" begin
+        gh = "https://api.github.com/repos/sadit/TextSearch.jl/releases/tags/profiles-1.1"
+        auth(h) = [v for (k, v) in h if k == "Authorization"]
+        withenv("GITHUB_TOKEN" => "tok", "GH_TOKEN" => nothing) do
+            @test auth(TextSearch._api_headers(gh)) == ["Bearer tok"]
+            @test isempty(auth(TextSearch._api_headers("https://example.org/releases.json")))
+            @test isempty(auth(TextSearch._api_headers("https://api.github.com.evil.org/x")))
+        end
+        withenv("GITHUB_TOKEN" => nothing, "GH_TOKEN" => "ghtok") do
+            @test auth(TextSearch._api_headers(gh)) == ["Bearer ghtok"]
+        end
+        withenv("GITHUB_TOKEN" => nothing, "GH_TOKEN" => nothing) do
+            @test isempty(auth(TextSearch._api_headers(gh)))
+        end
+    end
+
     @testset "list_remote_profiles and download_profile" begin
         # Querying GitHub release assets
         remotes = list_remote_profiles(; repo="sadit/TextSearch.jl", tag="v1.1.0")

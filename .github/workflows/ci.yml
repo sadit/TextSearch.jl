@@ -55,6 +55,12 @@ jobs:
       # Coverage off: `julia-runtest` instruments by default, and the two steps that used to
       # follow -- `julia-processcoverage` and `codecov-action` -- uploaded a report nobody
       # reads. Instrumentation is not free, and neither is a badge that no decision depends on.
+      # The suite lists the release's assets through the GitHub API, which allows 60
+      # unauthenticated requests an hour per IP -- shared across runners, so a job can fail on
+      # requests other jobs used up ("403 rate limit exceeded", seen on #59). With the token the
+      # limit is the token's; `_api_headers` sends it to api.github.com only.
       - uses: julia-actions/julia-runtest@v1
         with:
           coverage: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

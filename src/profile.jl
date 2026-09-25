@@ -737,6 +737,21 @@ _lsi_nickname(name::AbstractString) = String(chop(name; tail=length(_LSI_ASSET_S
 
 _textsearch_home() = get(ENV, "TEXTSEARCH_HOME", joinpath(homedir(), ".textsearch"))
 
+# Unauthenticated, the GitHub API allows 60 requests an hour per IP, and CI runners share their
+# IPs: `list_remote_profiles` failed in CI with "403 rate limit exceeded" on requests other jobs
+# had used up. With a token the limit is per token (1,000/h for Actions' GITHUB_TOKEN, 5,000/h for
+# a personal one). It is sent ONLY to api.github.com: a custom `url` is someone else's server, and
+# the asset downloads need no authentication.
+function _api_headers(api_url::AbstractString)
+    headers = ["User-Agent" => "TextSearch.jl"]
+    token = get(ENV, "GITHUB_TOKEN", "")
+    isempty(token) && (token = get(ENV, "GH_TOKEN", ""))
+    if !isempty(token) && startswith(api_url, "https://api.github.com/")
+        push!(headers, "Authorization" => "Bearer $token")
+    end
+    headers
+end
+
 const _RemoteAsset = NamedTuple{(:name, :filename, :size, :url, :tag), Tuple{String, String, Int, String, String}}
 
 # `keep` selects the assets and `nick` names them; everything else -- the API endpoint, the
@@ -749,7 +764,7 @@ function _list_remote_assets(keep, nick; repo::AbstractString, tag::AbstractStri
                   "https://api.github.com/repos/$repo/releases/tags/$tag")
     tmppath = tempname() * ".json"
     data = try
-        Downloads.download(api_url, tmppath; headers=["User-Agent" => "TextSearch.jl"])
+        Downloads.download(api_url, tmppath; headers=_api_headers(api_url))
         JSON3.read(read(tmppath, String))
     finally
         rm(tmppath; force=true)
@@ -793,6 +808,10 @@ Queries and returns available pre-computed linguistic profiles from GitHub relea
 Returns a vector of `(name=nickname, filename=name, size=size_in_bytes, url=download_url, tag=tag)`.
 LSI artifacts published beside the profiles (`<nickname>-lsi.zip`) are not listed; see
 [`list_remote_lsi`](@ref).
+
+The GitHub API allows 60 unauthenticated requests an hour per IP. If `GITHUB_TOKEN` (or
+`GH_TOKEN`) is set, it is sent to `api.github.com` -- and only there, never to a custom `url` --
+which raises that limit to the token's.
 """
 list_remote_profiles(; repo::AbstractString="sadit/TextSearch.jl",
                        tag::AbstractString=PROFILES_RELEASE_TAG,
