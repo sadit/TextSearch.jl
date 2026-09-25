@@ -73,7 +73,7 @@ To run the test suite:
 ### 1. Vector Model and Inverted Index Search
 
 ```julia
-# TextSearch v1.2
+# TextSearch v1.3
 using TextSearch, SimilaritySearch
 
 # Sample documents
@@ -107,7 +107,7 @@ end
 ### 2. BM25 Inverted File Search
 
 ```julia
-# TextSearch v1.2
+# TextSearch v1.3
 using TextSearch, SimilaritySearch
 
 corpus = [
@@ -141,7 +141,7 @@ and weights they form a **profile** -- a directory of plain JSON files (or a zip
 that can be shipped, inspected, and adapted.
 
 ```julia
-# TextSearch v1.2
+# TextSearch v1.3
 using TextSearch, SimilaritySearch
 
 corpus = [
@@ -208,7 +208,7 @@ both are answerable literally -- a [`QueryPolicy`](@ref) travels with the query 
 make.
 
 ```julia
-# TextSearch v1.2
+# TextSearch v1.3
 using TextSearch, SimilaritySearch
 
 # Keeping case and diacritics lets the corpus distinguish senses that folding destroys, at the

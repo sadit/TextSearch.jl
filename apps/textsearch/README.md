@@ -8,7 +8,7 @@ corpus, packaged as a single `.zip` you can install, share, and query.
 <!-- The version this document's commands and outputs were produced against. Checked by
      apps/textsearch/test/runtests.jl against TextSearch's Project.toml, because a marker
      nobody verifies drifts exactly the way the examples themselves did. -->
-Documented for **TextSearch v1.2**. Every command in the Tutorial was run to write it and the
+Documented for **TextSearch v1.3**. Every command in the Tutorial was run to write it and the
 output shown is real.
 
 - **[Install](#install)**
