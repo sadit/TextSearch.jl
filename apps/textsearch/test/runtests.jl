@@ -62,10 +62,14 @@ function write_jsonl_corpus(path, docs)
     end
 end
 
+# The paths go inside TOML basic strings ("..."), where `\` starts an escape: a Windows path
+# (`C:\Users\...`) is otherwise read as `\U` and fails to parse as "invalid unicode scalar".
+toml_str(s) = replace(s, "\\" => "\\\\", "\"" => "\\\"")
+
 function write_fit_config(path; corpus, outdir, batch_size=0, stopwords=false, min_ndocs=1,
                           resume=false, lemma_apply=true, lc=true, del_diac=true)
     cfg = replace(FIT_CONFIG,
-        "%CORPUS%" => corpus, "%OUTDIR%" => outdir,
+        "%CORPUS%" => toml_str(corpus), "%OUTDIR%" => toml_str(outdir),
         "%BATCH_SIZE%" => string(batch_size), "%STOPWORDS%" => string(stopwords),
         "%MIN_NDOCS%" => string(min_ndocs), "%RESUME%" => string(resume),
         "%LEMMA_APPLY%" => string(lemma_apply), "%LC%" => string(lc),
