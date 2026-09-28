@@ -64,3 +64,43 @@ jobs:
           coverage: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # The `textsearch` app is its own project (apps/textsearch, with TextSearch from this checkout
+  # through [sources]), and `julia-runtest` only tests the package at the root. So nothing ran
+  # its tests: #58 changed how the app loads its readers and #59 added five commands' worth of
+  # LSI handling, and the green checks on both covered none of it.
+  app-test:
+    name: textsearch app - Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ github.event_name }}
+    runs-on: ${{ matrix.os }}
+    env:
+      JULIA_NUM_THREADS: auto
+    strategy:
+      fail-fast: false
+      matrix:
+        version:
+          - '1.12'
+        os:
+          - ubuntu-latest
+          - windows-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: julia-actions/setup-julia@v1
+        with:
+          version: ${{ matrix.version }}
+      - uses: actions/cache@v3
+        env:
+          cache-name: cache-artifacts
+        with:
+          path: ~/.julia/artifacts
+          key: ${{ runner.os }}-app-${{ env.cache-name }}-${{ hashFiles('**/Project.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-app-${{ env.cache-name }}-
+            ${{ runner.os }}-test-${{ env.cache-name }}-
+            ${{ runner.os }}-
+      # No Manifest is committed for the app, so this resolves it fresh, the same way
+      # `pkg"app develop apps/textsearch"` does on a user's machine.
+      - name: Test the textsearch app
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: julia --project=apps/textsearch -e 'using Pkg; Pkg.instantiate(); Pkg.test()'
