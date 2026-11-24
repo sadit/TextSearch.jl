@@ -285,7 +285,8 @@ unnoticed (a top-10 overlap of 0.25 against the dense answer, with a token its o
 neighbour 7% of the time).
 
 From a projection that came from [`load_lsi`](@ref) this reuses the stored codes untouched,
-so it costs nothing but the wrapper. [`wordvectors`](@ref) is the dense counterpart, and
+so it costs nothing but the wrapper. The result's field `Q` is a `MatrixDatabase` whose
+`matrix` is the stored code matrix itself, not a copy. [`wordvectors`](@ref) is the dense counterpart, and
 returns normalized columns as a `Float32` matrix.
 """
 function quantized_wordvectors(lsi::LatentSemanticIndexing{<:QuantizedProjection})

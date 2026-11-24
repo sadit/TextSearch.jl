@@ -143,7 +143,7 @@ using SimilaritySearch.ScalarQuant: SQu8, SQMinC, Cosine
             @test q isa SQu8.SQu8Database
             @test length(q) == m
             # the stored codes themselves, not a re-quantization or a rescaling of anything
-            @test q.Q === back.P.codes
+            @test q.Q.matrix === back.P.codes
 
             ctx = GenericContext()
             W = wordvectors(back)
@@ -196,7 +196,7 @@ using SimilaritySearch.ScalarQuant: SQu8, SQMinC, Cosine
         X = randn(Float32, 16, 500)
         codes, mins, scales = TextSearch._quantize_columns(X)
         db = SQu8.quantize(X)
-        @test codes == db.Q
+        @test codes == db.Q.matrix
         @test all(db.E[j].min === mins[j] && db.E[j].c === scales[j] for j in 1:size(X, 2))
     end
 
