@@ -22,7 +22,7 @@
 # artifact, because `de` is in nearly every paragraph while `referencias` is a one-word heading
 # block that never survives the filter, though it sits in 82% of articles.
 
-using Parquet2, JSON3, Tables
+using Parquet2, JSON, Tables
 
 function parse_args(argv)
     argv = copy(argv)
@@ -191,7 +191,7 @@ function main(argv)
                     rec = Dict{String,Any}("text" => body)
                     merge!(rec, extra)
                     split_paras && (rec["paragraph"] = pi)
-                    println(io, JSON3.write(rec))
+                    println(io, JSON.json(rec))
 
                     written += 1
                     nshard += 1

@@ -8,7 +8,7 @@ import SimilaritySearch: search, append_items!, push_item!, database, distance
 using Accessors
 using SimilaritySearch, LinearAlgebra, SparseArrays
 using SimilaritySearch: getminbatch
-using JSON3
+using JSON
 using ZipArchives
 using SHA: SHA2_256_CTX, update!, digest!
 using SimilaritySearch.ScalarQuant: SQMinC

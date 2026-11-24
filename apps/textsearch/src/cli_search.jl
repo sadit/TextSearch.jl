@@ -251,7 +251,7 @@ function cmd_search(args::Vector{String})
             tokenizerbuffer() do buff
                 for i in r
                     if _matches(qtokens, texts[i], tc, buff, t)
-                        out[i] = JSON3.write(records[i])
+                        out[i] = JSON.json(records[i])
                     end
                 end
             end

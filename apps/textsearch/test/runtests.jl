@@ -1,5 +1,5 @@
 using Test
-using JSON3, CSV
+using JSON, CSV
 using TextSearch
 
 include(joinpath(@__DIR__, "..", "src", "TextSearchApp.jl"))
@@ -57,7 +57,7 @@ apply = %LEMMA_APPLY%
 function write_jsonl_corpus(path, docs)
     open(path, "w") do io
         for d in docs
-            println(io, JSON3.write((; text=d)))
+            println(io, JSON.json((; text=d)))
         end
     end
 end
@@ -272,7 +272,7 @@ end
                     TextSearchApp.cmd_search([zippath, args...,
                                               "--collection", corpus_path, "--format", "jsonl"])
                 end
-                [JSON3.read(l)[:text] for l in filter(!isempty, split(out, '\n'))]
+                [JSON.parse(l)[:text] for l in filter(!isempty, split(out, '\n'))]
             end
 
             @testset "search: token-intersection matching" begin
@@ -325,7 +325,7 @@ end
                         TextSearchApp.cmd_search([zp, args..., "--collection", accented,
                                                   "--format", "jsonl", "--no-query_expansion"])
                     end
-                    [JSON3.read(l)[:text] for l in filter(!isempty, split(out, '\n'))]
+                    [JSON.parse(l)[:text] for l in filter(!isempty, split(out, '\n'))]
                 end
 
                 # `música` has 3 documents to `musica`'s 1, so at ratio 2 the typed spelling is
@@ -371,7 +371,7 @@ end
                         TextSearchApp.cmd_search([zp, args..., "--collection", typo,
                                                   "--format", "jsonl", "--no-query_expansion"])
                     end
-                    [JSON3.read(l)[:text] for l in filter(!isempty, split(out, '\n'))]
+                    [JSON.parse(l)[:text] for l in filter(!isempty, split(out, '\n'))]
                 end
 
                 # one edit from `musica` and from nothing else: corrected, where before the
@@ -437,7 +437,7 @@ end
                     end
                     lines = filter(!isempty, split(out, '\n'))
                     # every line is intact JSON: a concurrent write would tear one
-                    parsed = [JSON3.read(l) for l in lines]
+                    parsed = [JSON.parse(l) for l in lines]
                     @test [String(r[:text]) for r in parsed] == expected
                 end
             end
@@ -687,7 +687,7 @@ end
                     # the sample's documents are LONGER than the base's, so pinning raises it
                     svoc = TextSearch.Vocabulary(
                         TextSearch.refit_textconfig(TextSearch.load_profile(zippath)),
-                        [JSON3.read(l)[:text] for l in eachline(samplepath)]; verbose=false)
+                        [JSON.parse(l)[:text] for l in eachline(samplepath)]; verbose=false)
                     @test isapprox(TextSearch.avgdoclen(q.model.voc),
                                    TextSearch.avgdoclen(svoc); rtol=0.05)
                     @test TextSearch.avgdoclen(q.model.voc) != TextSearch.avgdoclen(r.model.voc)
@@ -755,7 +755,7 @@ end
                 @test string(recs_csv[1].second["extra"]) == "1"
 
                 json_path = joinpath(dir, "rec.json")
-                write(json_path, JSON3.write([(; text="hello"), (; text="world")]))
+                write(json_path, JSON.json([(; text="hello"), (; text="world")]))
                 recs_json = collect(TextSearchApp.each_record(:json, json_path, "text"))
                 @test [r.first for r in recs_json] == ["hello", "world"]
             end

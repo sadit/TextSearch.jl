@@ -87,7 +87,7 @@ qgramconfig(qs...; nlist=Int8[], kwargs...) =
         p = TextProfile(model)
         mktempdir() do dir
             save_profile(dir, p)
-            man = TextSearch.JSON3.read(read(joinpath(dir, "manifest.json"), String))
+            man = TextSearch.JSON.parse(read(joinpath(dir, "manifest.json"), String))
             # a profile with generators is "1.2", which a "1.1"-only build refuses outright
             @test man.format_version == "1.2"
             q = load_profile(dir)
@@ -104,7 +104,7 @@ qgramconfig(qs...; nlist=Int8[], kwargs...) =
         plain = TextProfile(VectorModel(Vocabulary(TextConfig(), corpus; verbose=false)))
         mktempdir() do dir
             save_profile(dir, plain)
-            man = TextSearch.JSON3.read(read(joinpath(dir, "manifest.json"), String))
+            man = TextSearch.JSON.parse(read(joinpath(dir, "manifest.json"), String))
             @test man.format_version == "1.1"
             @test !haskey(man.policy.tokenization, :generators)
         end

@@ -2,7 +2,7 @@ module TextSearchApp
 
 using ArgParse
 using TOML
-using JSON3
+using JSON
 # CSV and Parquet2 are dependencies but are NOT loaded here: see `_lazy_rows` in corpusio.jl.
 using Tables
 using Downloads
