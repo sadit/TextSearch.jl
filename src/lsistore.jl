@@ -161,7 +161,7 @@ lsi_summary(download_lsi("es")).profile_id == profile_id(p)
 ```
 """
 function lsi_summary(path::AbstractString)
-    manifest = JSON3.read(_profile_reader(path)(_LSI_MANIFEST_NAME))
+    manifest = JSON.parse(_profile_reader(path)(_LSI_MANIFEST_NAME))
     version = String(get(manifest, :format_version, "(missing)"))
     version == _LSI_FORMAT_VERSION ||
         error("unsupported LSI artifact format_version: $version (this build reads " *
@@ -191,7 +191,7 @@ column, so the coordinates read out of a larger artifact are exactly the first o
 function load_lsi(path::AbstractString, profile::TextProfile;
                   outdim::Union{Nothing,Integer}=nothing)
     read_bytes = _profile_reader(path)
-    manifest = JSON3.read(read_bytes(_LSI_MANIFEST_NAME))
+    manifest = JSON.parse(read_bytes(_LSI_MANIFEST_NAME))
 
     version = String(get(manifest, :format_version, "(missing)"))
     version == _LSI_FORMAT_VERSION ||

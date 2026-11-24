@@ -22,7 +22,7 @@
 # fraction of the paragraph count (one record per article instead of ~20). Pass
 # `--group-key ""` to use every record.
 
-using JSON3, TextSearch
+using JSON, TextSearch
 
 function parse_args(argv)
     argv = copy(argv)
@@ -70,9 +70,8 @@ function first_units(path::AbstractString; text_key::AbstractString, group_key::
     for line in eachline(path)
         isempty(line) && continue
         nrecords += 1
-        # bytes, not the String: JSON3.read(::String) stats any string under 255 bytes to see
-        # whether it names a file, which is a round trip per record on a network filesystem
-        rec = JSON3.read(codeunits(line))
+        # the bytes of the line; JSON.parse never treats its argument as a file name
+        rec = JSON.parse(codeunits(line))
         if !isempty(group_key)
             g = get(rec, gk, nothing)
             g === nothing && error("record $nrecords has no \"$group_key\" key; pass --group-key \"\" to use every record")

@@ -49,7 +49,7 @@ Loads a `token -> vector` JSON mapping (`{"cat": [0.1, 0.2, ...], ...}`) and bui
 corpus). Missing tokens get a zero vector; `oov` counts them.
 """
 function _load_external_embeddings(path::AbstractString, voc)
-    mapping = JSON3.read(read(path))
+    mapping = JSON.parse(read(path))
     dim = length(first(v for (_, v) in pairs(mapping)))
     m = vocsize(voc)
     X = zeros(Float32, dim, m)

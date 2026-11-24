@@ -158,7 +158,22 @@ _decode_lineage(d) =
 
 # ── file-backed I/O helpers (directory or zip, symmetrically) ──────────────
 
-_write_json(path::AbstractString, data) = open(io -> JSON3.write(io, data), path, "w")
+_write_json(path::AbstractString, data) = open(io -> JSON.json(io, data), path, "w")
+
+# The shape of the two large JSON members of a profile, as `load_profile` reads them: parsing
+# into these builds the typed vectors directly (a 730,320-token vocabulary is three vectors of
+# that length), instead of generic arrays that are then converted element by element.
+struct _VocabularyFile
+    tokens::Vector{String}
+    occs::Vector{Int32}
+    ndocs::Vector{Int32}
+    trainsize::Int64
+    numtokens::Int64
+end
+
+struct _WeightsFile
+    weight::Vector{Float32}
+end
 
 """
     _profile_reader(path::AbstractString) -> read_bytes::Function
@@ -169,7 +184,7 @@ archive (opened once and re-read from memory for every subsequent call). This is
 [`load_profile`](@ref) not care which of the two forms it was handed.
 
 It hands back **bytes** rather than parsed JSON so that one closure serves both kinds of member:
-`load_profile` wraps it in `JSON3.read` for the text ones and passes it straight to
+`load_profile` wraps it in `JSON.parse` for the text ones and passes it straight to
 [`_load_array`](@ref) for the binary ones. Parsing here would have meant a second, parallel
 reader for the binary path -- and two readers that must agree about a directory-versus-zip
 distinction is exactly the kind of duplicated knowledge this format has been bitten by before.
@@ -611,7 +626,10 @@ copies of an artifact drift apart in the first place.
 """
 function load_profile(path::AbstractString)
     read_bytes = _profile_reader(path)
-    read_file(name) = JSON3.read(read_bytes(name))
+    # the manifest is small and nested: a `JSON.Object` (keyed by String, indexable by Symbol).
+    # The big members are parsed straight into their Julia types, with no `Vector{Any}` between
+    read_file(name) = JSON.parse(read_bytes(name))
+    read_file(name, ::Type{T}) where {T} = JSON.parse(read_bytes(name), T)
     manifest = read_file(_PROFILE_MANIFEST_NAME)
     version = String(get(manifest, :format_version, "(missing)"))
     version in _PROFILE_FORMAT_VERSIONS ||
@@ -620,38 +638,37 @@ function load_profile(path::AbstractString)
 
     pol = _decode_policy(manifest[:policy])
 
-    vocd = read_file(String(manifest[:vocabulary_file]))
-    tokens = String.(vocd[:tokens])
+    vocd = read_file(String(manifest[:vocabulary_file]), _VocabularyFile)
+    tokens = vocd.tokens
     tok2id = Dict{String,UInt32}(tok => UInt32(i) for (i, tok) in enumerate(tokens))
     voc = Vocabulary(
         pol,
         tokens,
-        Int32.(vocd[:occs]),
-        Int32.(vocd[:ndocs]),
+        vocd.occs,
+        vocd.ndocs,
         tok2id,
-        Ref{Int64}(Int64(vocd[:trainsize])),
-        Ref{Int64}(Int64(vocd[:numtokens])),
+        Ref{Int64}(vocd.trainsize),
+        Ref{Int64}(vocd.numtokens),
     )
 
     wd = manifest[:weighting]
     gw = _decode_global_weighting(String(wd[:global_weighting]))
     lw = _decode_local_weighting(String(wd[:local_weighting]))
-    weightd = read_file(String(wd[:weight_file]))
-    model = VectorModel(gw, lw, voc, Int32(wd[:maxoccs]), Float32.(weightd[:weight]))
+    weightd = read_file(String(wd[:weight_file]), _WeightsFile)
+    model = VectorModel(gw, lw, voc, Int32(wd[:maxoccs]), weightd.weight)
 
     art = manifest[:artifacts]
 
     stopwords, sw_applied = if haskey(art, :stopwords)
         e = art[:stopwords]
-        Set{String}(String(w) for w in read_file(String(e[:file]))), Bool(e[:applied])
+        Set{String}(read_file(String(e[:file]), Vector{String})), Bool(e[:applied])
     else
         Set{String}(), false
     end
 
     lemmas, lem_applied = if haskey(art, :lemmas)
         e = art[:lemmas]
-        d = read_file(String(e[:file]))
-        Dict{String,String}(String(k) => String(v) for (k, v) in pairs(d)), Bool(e[:applied])
+        read_file(String(e[:file]), Dict{String,String}), Bool(e[:applied])
     else
         Dict{String,String}(), false
     end
@@ -765,7 +782,7 @@ function _list_remote_assets(keep, nick; repo::AbstractString, tag::AbstractStri
     tmppath = tempname() * ".json"
     data = try
         Downloads.download(api_url, tmppath; headers=_api_headers(api_url))
-        JSON3.read(read(tmppath, String))
+        JSON.parse(read(tmppath, String))
     finally
         rm(tmppath; force=true)
     end

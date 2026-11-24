@@ -270,7 +270,7 @@ cost, unlike a real `grep`. Prefer it over `grep` only when you need corpus-cons
 tokenization/normalization (accents, casing, number/URL grouping, stopword removal, ...),
 not raw byte-level matching. Collections stream rather than load fully into memory: JSONL
 and CSV are read one line/row at a time, Parquet at row-group granularity; a plain JSON
-array cannot stream (JSON3 needs to see the closing `]` before trusting any element) and
+array cannot stream (the parser needs to see the closing `]` before trusting any element) and
 is read whole -- prefer JSONL for large collections.
 
 ### Profile management -- `list` / `info` / `install` / `download` / `uninstall`

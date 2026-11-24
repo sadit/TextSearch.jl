@@ -1,4 +1,4 @@
-using Test, TextSearch, JSON3
+using Test, TextSearch, JSON
 
 @testset "binary array members" begin
     TS = TextSearch
@@ -78,11 +78,11 @@ using Test, TextSearch, JSON3
         mktempdir() do dir
             save_profile(dir, p)
             mpath = joinpath(dir, "manifest.json")
-            m = JSON3.read(read(mpath), Dict{String,Any})
+            m = JSON.parse(read(mpath); dicttype=Dict{String,Any})
             m["format_version"] = "1.0"
             m["artifacts"]["query_expansion"]["distances_file"] = "query_expansion_distances.json"
             delete!(m["artifacts"]["query_expansion"], "distances")
-            open(io -> JSON3.write(io, m), mpath, "w")
+            open(io -> JSON.json(io, m), mpath, "w")
             err = try (load_profile(dir); nothing) catch e; e end
             @test err isa ErrorException
             @test occursin("format_version", err.msg)

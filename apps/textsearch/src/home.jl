@@ -80,7 +80,7 @@ a profile manifest never does.
 """
 function _is_lsi_artifact(path::AbstractString)
     m = try
-        JSON3.read(TextSearch._profile_reader(path)("manifest.json"))
+        JSON.parse(TextSearch._profile_reader(path)("manifest.json"))
     catch
         return false
     end

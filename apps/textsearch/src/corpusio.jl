@@ -27,7 +27,7 @@ _plain(v) = v isa AbstractString ? String(v) : v
     _table_record(row, key) -> Pair{String,Dict{String,Any}}
 
 A Tables.jl row (a `CSV.Row`, a Parquet2 row, ...) as `text => fields`, with every field in a
-plain `Dict{String,Any}` so `search`'s hits can be re-serialized with `JSON3.write` whatever the
+plain `Dict{String,Any}` so `search`'s hits can be re-serialized with `JSON.json` whatever the
 source format's native row type -- and, per `_plain`, from the command's own world.
 """
 _table_record(row, key::Symbol) =
@@ -53,7 +53,7 @@ Streaming properties, by format:
   one row in memory at a time).
 - `:parquet` streams at row-group granularity (lazy column-chunk reads via Parquet2) --
   not strictly one-row-at-a-time, but not whole-file either.
-- `:json` (a single top-level JSON array) CANNOT stream with JSON3: the closing `]` must
+- `:json` (a single top-level JSON array) CANNOT stream with JSON.parse: the closing `]` must
   be seen before any element can be trusted as complete. This is an inherent format
   limitation, not a bug -- avoid `:json` for large corpora, prefer `:jsonl`.
 """
@@ -63,9 +63,8 @@ function each_record(format::Symbol, path::AbstractString, text_key::AbstractStr
         (p => Dict{String,Any}("text" => p) for p in tokenize_paragraphs(read(path, String)))
     elseif format === :jsonl
         (
-            # bytes, not the String: JSON3.read(::String) first asks `isfile(line)` of anything
-            # under 255 bytes -- a stat per record, which on a network filesystem is a round trip
-            let obj = JSON3.read(codeunits(line))
+            # the bytes of the line; JSON.parse never treats its argument as a file name
+            let obj = JSON.parse(codeunits(line))
                 String(obj[key]) => Dict{String,Any}(String(k) => v for (k, v) in pairs(obj))
             end
             for line in eachline(path) if !isempty(strip(line))
@@ -77,7 +76,7 @@ function each_record(format::Symbol, path::AbstractString, text_key::AbstractStr
     elseif format === :json
         (
             String(rec[key]) => Dict{String,Any}(String(k) => v for (k, v) in pairs(rec))
-            for rec in JSON3.read(read(path))
+            for rec in JSON.parse(read(path))
         )
     else
         error("unsupported corpus format: $format; supported: plaintext, jsonl, csv, parquet, json")

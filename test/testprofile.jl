@@ -1,4 +1,4 @@
-using Test, TextSearch, SimilaritySearch, JSON3
+using Test, TextSearch, SimilaritySearch, JSON
 
 @testset "save_profile / load_profile / zip_profile" begin
     corpus = [
@@ -124,7 +124,7 @@ using Test, TextSearch, SimilaritySearch, JSON3
             dir = tempname()
             try
                 save_profile(dir, p)
-                m = JSON3.read(read(joinpath(dir, "manifest.json")))
+                m = JSON.parse(read(joinpath(dir, "manifest.json")))
                 @test String(m.id) == profile_id(p)
                 q = load_profile(dir)
                 @test profile_id(q) == profile_id(p)
@@ -134,7 +134,7 @@ using Test, TextSearch, SimilaritySearch, JSON3
                 dir2 = tempname()
                 try
                     save_profile(dir2, q)
-                    m2 = JSON3.read(read(joinpath(dir2, "manifest.json")))
+                    m2 = JSON.parse(read(joinpath(dir2, "manifest.json")))
                     @test String(m2.id) == String(m.id)
                     # the whole manifest is byte-identical, not only the id -- an unsorted
                     # emoji set used to make two saves of one profile differ here
@@ -225,11 +225,11 @@ using Test, TextSearch, SimilaritySearch, JSON3
         dir = tempname()
         try
             save_profile(dir, p)
-            man = JSON3.read(read(joinpath(dir, "manifest.json"), String), Dict{String,Any})
+            man = JSON.parse(read(joinpath(dir, "manifest.json"), String); dicttype=Dict{String,Any})
             # any version that is not the current one; "1.0" would silently stop testing the
             # refusal the day the current version became 1.0, which is exactly what happened
             man["format_version"] = "0.9"
-            open(io -> JSON3.write(io, man), joinpath(dir, "manifest.json"), "w")
+            open(io -> JSON.json(io, man), joinpath(dir, "manifest.json"), "w")
 
             err = try
                 load_profile(dir); nothing

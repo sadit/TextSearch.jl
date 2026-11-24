@@ -157,8 +157,8 @@ end
 
 Reads `key` out of a manifest entry whichever way it is keyed.
 
-[`_save_array`](@ref) builds a `Dict{String,Any}` and a round trip through JSON3 hands the same
-entry back keyed by `Symbol`, so a reader that assumed one of the two worked in production and
+[`_save_array`](@ref) builds a `Dict{String,Any}` and a round trip through JSON hands it back as a
+`JSON.Object` (JSON3, used before, keyed it by `Symbol`), so a reader that assumed one of the two worked in production and
 failed in a test -- or would have failed the first time anything decoded an entry it had just
 built. Accepting both is one line here against a conversion at every call site.
 """
